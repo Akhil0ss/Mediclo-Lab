@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Spotnet MedOS</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .hidden { display: none !important; }
+        .auth-box { background: white; padding: 3rem; border-radius: 1rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); max-width: 400px; margin: 100px auto; }
+        .admin-dashboard { background: white; border-radius: 1rem; padding: 2rem; box-shadow: 0 20px 50px rgba(0,0,0,0.3); }
+        .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 2rem; border-bottom: 2px solid #e5e7eb; margin-bottom: 2rem; }
+        .btn { padding: 0.75rem 1.5rem; border: none; border-radius: 0.5rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .btn-success { background: #16a34a; color: white; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn-secondary { background: #6b7280; color: white; }
+        input, select, textarea { width: 100%; padding: 0.75rem 1rem; border: 2px solid #d1d5db; border-radius: 0.5rem; font-size: 1rem; margin-bottom: 1rem; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        table th, table td { padding: 1rem; text-align: left; border-bottom: 1px solid #e5e7eb; }
+        table thead { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        table tbody tr:hover { background: #f9fafb; }
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; overflow-y: auto; }
+        .modal-content { background: white; padding: 2rem; border-radius: 1rem; max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 50px rgba(0,0,0,0.4); }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 0.75rem; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); }
+        .stat-card h3 { font-size: 2rem; margin-bottom: 0.5rem; }
+        .tabs { display: flex; gap: 1rem; margin-bottom: 2rem; overflow-x: auto; }
+        .tab-btn { padding: 0.75rem 1.5rem; border: none; border-radius: 0.5rem; background: #e5e7eb; color: #374151; cursor: pointer; transition: all 0.2s; font-weight: 600; white-space: nowrap; }
+        .tab-btn.active { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .tab-btn:hover { transform: translateY(-2px); }
+        .text-center { text-align: center; }
+        .text-gray { color: #6b7280; }
+        .w-full { width: 100%; }
+        h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+        h2 { font-size: 1.5rem; margin-bottom: 1rem; }
+        @media (max-width: 768px) {
+            .auth-box { padding: 2rem; margin: 50px auto; }
+            table { font-size: 0.875rem; }
+            table th, table td { padding: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Admin Login -->
+    <div id="adminAuthContainer" class="auth-box">
+        <div class="text-center" style="margin-bottom: 2rem;">
+            <i class="fas fa-shield-alt" style="font-size: 3rem; color: #667eea;"></i>
+            <h1 style="margin-top: 1rem;">Admin Panel</h1>
+            <p class="text-gray">Spotnet MedOS</p>
+        </div>
+        <form onsubmit="event.preventDefault(); adminLogin();">
+            <input type="password" id="adminPassword" placeholder="Admin Password" required>
+<button type="button" onclick="
+    const pwd = document.getElementById('adminPassword').value;
+    if (pwd === 'SpotnetAdmin@2025') {
+        document.getElementById('adminAuthContainer').classList.add('hidden');
+        document.getElementById('adminDashboard').classList.remove('hidden');
+    } else {
+        alert('Invalid password!');
+    }
+" class="btn btn-primary w-full">
+    <i class="fas fa-sign-in-alt"></i> Login
+</button>
+
+        </form>
+        <p style="font-size: 0.75rem; color: #6b7280; text-align: center; margin-top: 1rem;">
+            Access restricted to authorized administrators only
+        </p>
+    </div>
+
+    <!-- Admin Dashboard -->
+    <div id="adminDashboard" class="hidden">
+        <div class="container">
+            <div class="admin-dashboard">
+                <!-- Header -->
+                <div class="header">
+                    <div>
+                        <h1>Admin Dashboard</h1>
+                        <p class="text-gray">Manage Labs, Payments & Common Templates</p>
+                    </div>
+                    <button onclick="adminLogout()" class="btn btn-secondary">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </button>
+                </div>
+
+                <!-- Tabs -->
+                <div class="tabs">
+                    <button onclick="switchAdminTab('labs')" class="tab-btn active" data-tab="labs">
+                        <i class="fas fa-hospital"></i> All Labs
+                    </button>
+                    <button onclick="switchAdminTab('payments')" class="tab-btn" data-tab="payments">
+                        <i class="fas fa-credit-card"></i> Payments
+                    </button>
+                    <button onclick="switchAdminTab('templates')" class="tab-btn" data-tab="templates">
+                        <i class="fas fa-flask-vial"></i> Common Templates
+                    </button>
+                </div>
+
+                <!-- Labs Tab -->
+                <div id="labsTab">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3 id="totalLabs">0</h3>
+                            <p>Total Labs</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 id="premiumLabs">0</h3>
+                            <p>Premium Labs</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 id="trialLabs">0</h3>
+                            <p>Trial Labs</p>
+                        </div>
+                    </div>
+                    
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Lab Name</th>
+                                    <th>Email</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="labsTableBody">
+                                <tr><td colspan="5" style="text-align: center; padding: 2rem;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="labsPagination"></div>
+                </div>
+
+                <!-- Payments Tab -->
+                <div id="paymentsTab" class="hidden">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3 id="totalPayments">0</h3>
+                            <p>Total Payments</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 id="verifiedPayments">0</h3>
+                            <p>Verified</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3 id="pendingPayments">0</h3>
+                            <p>Pending</p>
+                        </div>
+                    </div>
+                    
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Lab Name</th>
+                                    <th>Transaction ID</th>
+                                    <th>Amount</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="paymentsTableBody">
+                                <tr><td colspan="6" style="text-align: center; padding: 2rem;">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="paymentsPagination"></div>
+                </div>
+
+                <!-- Templates Tab -->
+                <div id="templatesTab" class="hidden">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                        <h2>Common Templates Management</h2>
+                        <button onclick="openAddTemplateModal()" class="btn btn-success">
+                            <i class="fas fa-plus"></i> Add Template
+                        </button>
+                    </div>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3 id="totalTemplates">0</h3>
+                            <p>Common Templates</p>
+                        </div>
+                    </div>
+                    
+                    <div style="overflow-x: auto;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Template Name</th>
+                                    <th>Category</th>
+                                    <th>Subtests</th>
+                                    <th>Price</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="templatesTableBody">
+                                <tr><td colspan="5" style="text-align: center; padding: 2rem;">Loading templates...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Container -->
+    <div id="modalContainer"></div>
+
+    <script type="module" src="admin.js"></script>
+</body>
+</html>

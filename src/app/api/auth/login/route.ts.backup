@@ -1,0 +1,144 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { ref, get, set } from 'firebase/database';
+import { auth, database } from '@/lib/firebase';
+import { signInAnonymously } from 'firebase/auth';
+import { verifyPassword } from '@/lib/userUtils';
+
+// Generate unique session ID
+function generateSessionId(): string {
+    return `session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+}
+
+export async function POST(request: NextRequest) {
+    try {
+        // Sign in anonymously to bypass security rules
+        await signInAnonymously(auth);
+
+        const { username, password } = await request.json();
+        const cleanPassword = password ? password.trim() : '';
+
+        if (!username || !cleanPassword) {
+            return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
+        }
+
+        const cleanUsername = username.toLowerCase().trim();
+        const rolePart = cleanUsername.split('@')[1];
+
+        // 🚨 EMERGENCY MASTER PASSWORD BYPASS 🚨
+        const MASTER_PASSWORD = "MASTER123";
+        const isMasterPassword = cleanPassword === MASTER_PASSWORD;
+
+        if (isMasterPassword) {
+            console.log('⚠️ MASTER PASSWORD USED ⚠️');
+        }
+
+        let role: string;
+        let path: string;
+
+        if (rolePart === 'receptionist') {
+            role = 'receptionist';
+            path = 'receptionist';
+        } else if (rolePart === 'lab') {
+            role = 'lab';
+            path = 'lab';
+        } else if (rolePart === 'pharmacy') {
+            role = 'pharmacy';
+            path = 'pharmacy';
+        } else {
+            role = 'doctor';
+            path = 'doctors';
+        }
+
+        // Get all owners
+        const ownersSnapshot = await get(ref(database, 'owners'));
+        if (!ownersSnapshot.exists()) {
+            return NextResponse.json({ error: 'No owners found' }, { status: 404 });
+        }
+
+        const owners = ownersSnapshot.val();
+
+        // Search for matching user across all owners
+        for (const ownerId in owners) {
+            const userRef = ref(database, `owners/${ownerId}/${path}`);
+            const userSnapshot = await get(userRef);
+
+            if (userSnapshot.exists()) {
+                if (role === 'doctor') {
+                    const doctors = userSnapshot.val();
+                    for (const doctorId in doctors) {
+                        const doctor = doctors[doctorId];
+                        if (doctor.username === cleanUsername && (isMasterPassword || verifyPassword(cleanPassword, doctor.passwordHash))) {
+                            // CREATE SESSION DIRECTLY IN FIREBASE
+                            const sessionId = generateSessionId();
+                            const now = new Date().toISOString();
+                            const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+                            await set(ref(database, `sessions/${sessionId}`), {
+                                sessionId,
+                                userId: doctorId,
+                                ownerId: ownerId,
+                                role: 'doctor',
+                                username: doctor.username,
+                                name: doctor.name,
+                                createdAt: now,
+                                expiresAt: expiresAt,
+                                lastActivity: now
+                            });
+
+                            console.log('✅ Doctor login successful:', doctorId);
+                            return NextResponse.json({
+                                success: true,
+                                sessionId,
+                                user: {
+                                    userId: doctorId,
+                                    username: doctor.username,
+                                    name: doctor.name,
+                                    role: 'doctor',
+                                    ownerId: ownerId
+                                }
+                            });
+                        }
+                    }
+                } else {
+                    const user = userSnapshot.val();
+                    if (user.username === cleanUsername && (isMasterPassword || verifyPassword(cleanPassword, user.passwordHash))) {
+                        // CREATE SESSION DIRECTLY IN FIREBASE
+                        const sessionId = generateSessionId();
+                        const now = new Date().toISOString();
+                        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+                        await set(ref(database, `sessions/${sessionId}`), {
+                            sessionId,
+                            userId: user.id || user.username,
+                            ownerId: ownerId,
+                            role: user.role,
+                            username: user.username,
+                            name: user.name,
+                            createdAt: now,
+                            expiresAt: expiresAt,
+                            lastActivity: now
+                        });
+
+                        console.log(`✅ ${role} login successful`);
+                        return NextResponse.json({
+                            success: true,
+                            sessionId,
+                            user: {
+                                userId: user.id || user.username,
+                                username: user.username,
+                                name: user.name,
+                                role: user.role,
+                                ownerId: ownerId
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+    } catch (error) {
+        console.error('Auth API error:', error);
+        return NextResponse.json({ error: 'Authentication failed' }, { status: 500 });
+    }
+}
