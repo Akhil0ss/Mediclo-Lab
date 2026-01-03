@@ -1,8 +1,8 @@
 {
-    "name": "Spotnet MedOS Patient Portal",
-    "short_name": "MedOS Patient",
-    "description": "Access your medical reports on the go.",
-    "start_url": "/patient/dashboard",
+    "name": "Spotnet MedOS Lab",
+    "short_name": "MedOS Lab",
+    "description": "Spotnet MedOS - Advanced Lab Management System",
+    "start_url": "/",
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#16a34a",
@@ -19,5 +19,5 @@
             "type": "image/svg+xml"
         }
     ],
-    "scope": "/patient"
+    "scope": "/"
 }
