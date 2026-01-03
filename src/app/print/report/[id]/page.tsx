@@ -103,12 +103,28 @@ export default function PrintReportPage() {
         const theme = themes[selectedTheme] || themes.blue;
 
         // Identifiers
-        const sampleId = report.sampleId || `SMP-${new Date(report.createdAt).getTime().toString().slice(-8)}`;
         const labName = branding.labName || 'Spotnet MedOS';
-        const labPrefix = labName.substring(0, 4).toUpperCase().replace(/[^A-Z]/g, 'X');
-        const patientIdNum = report.patientId ? report.patientId.substring(0, 6).toUpperCase() : String(Date.now()).slice(-6);
-        const generatedPatientId = `${labPrefix}-${patientIdNum}`;
-        const patientUserName = `${labPrefix}@${report.patientMobile}`;
+        const labPrefix = labName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X').padEnd(3, 'X');
+
+        // Sample ID: Fallback to new format S{YYMMDD}-{SEQ} simulation if missing
+        let sampleId = report.sampleId;
+        if (!sampleId) {
+            const dateObj = new Date(report.createdAt);
+            const yymmdd = `${String(dateObj.getFullYear()).slice(-2)}${String(dateObj.getMonth() + 1).padStart(2, '0')}${String(dateObj.getDate()).padStart(2, '0')}`;
+            const seq = String(dateObj.getTime()).slice(-3);
+            sampleId = `${labPrefix}-S${yymmdd}-${seq}`;
+        }
+
+        let generatedPatientId = report.patientId;
+        // Check if ID is likely a new format (contains hyphen, reasonable length)
+        if (generatedPatientId && generatedPatientId.includes('-') && generatedPatientId.length <= 20) {
+            // Use as is
+        } else {
+            // Legacy UUID or missing: Format it
+            const patientIdNum = generatedPatientId ? generatedPatientId.substring(0, 6).toUpperCase() : String(Date.now()).slice(-6);
+            generatedPatientId = `${labPrefix}-${patientIdNum}`;
+        }
+
 
         const testsDoneList = report.testDetails ? report.testDetails.map((t: any) => t.testName).join(', ') : '';
 
@@ -838,15 +854,12 @@ export default function PrintReportPage() {
                             <div class="footer-left">
                                 <strong>${branding.labName || 'Spotnet MedOS'}</strong>
                                 <p>Report Generated: ${new Date().toLocaleString()}</p>
-                                <p style="font-size: 8px; opacity: 0.8; margin-top: 2px;">Patient Credentials: ${patientUserName} | PWD - Your Mobile Number</p>
                             </div>
-                            <div style="flex: 1; text-align: center; margin-top: 2px;">
-                                <p style="font-size: 9px; opacity: 0.8;">Report ID: ${report.id}</p>
-                                <p style="font-size: 9px; font-weight: 700; margin-top: 2px;">Patient Portal: medos.spotnet.in</p>
+                            <div style="flex: 1; text-align: center;">
+                                <p style="font-size: 9px; opacity: 0.9; font-weight: 700;">Sample ID: ${sampleId}</p>
                                 <p style="font-size: 8px; opacity: 0.6; margin-top: 2px;">Powered by Spotnet MedOS</p>
                             </div>
                             <div class="footer-right">
-                                <p>Results electronically verified.</p>
                                 <p>Computer Generated Report</p>
                                 <div class="footer-barcode">|${report.id.replace(/-/g, '').substring(0, 12)}|</div>
                             </div>

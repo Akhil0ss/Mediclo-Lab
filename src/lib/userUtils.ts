@@ -19,46 +19,10 @@ export async function generateUniqueBrandPrefix(labName: string): Promise<string
         .substring(0, 4)
         .padEnd(4, 'x'); // Pad with 'x' if less than 4 chars
 
-    // Check all existing users for brand prefixes
-    const usersRef = ref(database, 'users');
-    const snapshot = await get(usersRef);
+    // Add random suffix to ensure uniqueness without reading database (avoids permissions errors)
+    const randomSuffix = Math.floor(1000 + Math.random() * 9000); // 1000-9999
 
-    if (!snapshot.exists()) {
-        return basePrefix; // First user with this prefix
-    }
-
-    const users = snapshot.val();
-    const existingPrefixes: string[] = [];
-
-    // Collect all existing prefixes from usernames
-    for (const uid in users) {
-        const auth = users[uid]?.auth;
-        if (auth) {
-            // Check receptionist username for prefix
-            if (auth.receptionist?.username) {
-                const prefix = auth.receptionist.username.split('@')[0];
-                if (prefix) existingPrefixes.push(prefix.toLowerCase());
-            }
-        }
-        // Also check profile for stored brandPrefix
-        const profile = users[uid]?.profile;
-        if (profile?.brandPrefix) {
-            existingPrefixes.push(profile.brandPrefix.toLowerCase());
-        }
-    }
-
-    // Check if base prefix is available
-    if (!existingPrefixes.includes(basePrefix)) {
-        return basePrefix;
-    }
-
-    // Find next available number
-    let counter = 1;
-    while (existingPrefixes.includes(`${basePrefix}${counter}`)) {
-        counter++;
-    }
-
-    return `${basePrefix}${counter}`;
+    return `${basePrefix}${randomSuffix}`;
 }
 
 /**
@@ -86,7 +50,7 @@ export function generateUsername(
         case 'pharmacy':
             return `${prefix}@pharmacy`;
         case 'receptionist':
-            return `${prefix}@receptionist`;
+            return `${prefix}@admin`;
         default:
             return `${prefix}@user`;
     }

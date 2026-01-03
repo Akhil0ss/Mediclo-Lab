@@ -12,7 +12,7 @@ export interface BackupData {
     version: string;
     data: {
         patients?: any;
-        opd?: any;
+
         reports?: any;
         samples?: any;
         templates?: any;
@@ -41,11 +41,7 @@ export async function createBackup(ownerId: string): Promise<BackupData | null> 
             backupData.data.patients = patientsSnapshot.val();
         }
 
-        // Backup OPD visits
-        const opdSnapshot = await get(ref(database, `opd/${ownerId}`));
-        if (opdSnapshot.exists()) {
-            backupData.data.opd = opdSnapshot.val();
-        }
+
 
         // Backup reports
         const reportsSnapshot = await get(ref(database, `reports/${ownerId}`));

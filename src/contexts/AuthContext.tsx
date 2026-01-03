@@ -147,6 +147,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                 window.location.href = '/login?reason=session_replaced';
                             }
                         }
+                    }, (error) => {
+                        console.warn("⚠️ Session monitor error (internal):", error);
                     });
                 }
 
@@ -175,6 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Google authentication - uses Firebase Auth
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             setUser(firebaseUser);
+            let unsubSession: (() => void) | undefined;
 
             if (firebaseUser) {
                 // CRITICAL: Check localStorage BEFORE everything else
@@ -227,7 +230,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     }
 
                     // 2. Listen for remote session changes
-                    const unsubSession = onValue(sessionRef, async (snapshot) => {
+                    unsubSession = onValue(sessionRef, async (snapshot) => {
                         if (snapshot.exists()) {
                             const data = snapshot.val();
                             // If remote session ID exists and is different from local -> LOGOUT
@@ -241,6 +244,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                 window.location.href = '/login?reason=concurrent_login';
                             }
                         }
+                    }, (error) => {
+                        console.warn("⚠️ Session monitor error (google):", error);
                     });
 
                     // Ensure we write THIS session ID to Firebase if it's missing (e.g. fresh login)
@@ -258,7 +263,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 const hasSession = false; // Will be set by session check above
 
                 // 1. Patient Portal Check
-                if (typeof window !== 'undefined' && window.location.pathname.includes('/patient')) {
+                if (typeof window !== 'undefined' && window.location.pathname.startsWith('/patient')) {
                     setUserProfile({ role: 'patient', name: 'Patient', email: '' });
                     setLoading(false);
                     return;
@@ -328,7 +333,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             setUserProfile({ role: 'patient', name: 'Patient', email: '' });
                             setLoading(false);
                             if (typeof window !== 'undefined' &&
-                                !window.location.pathname.includes('/patient') &&
+                                !window.location.pathname.startsWith('/patient') &&
                                 !window.location.pathname.includes('/print/') &&
                                 !window.location.pathname.includes('/verify/')
                             ) {
@@ -365,15 +370,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             }
                         }
                     }
+                }, (error) => {
+                    console.warn("⚠️ Profile monitor error:", error);
                 });
 
                 return () => {
-                    unsubProfile();
-                    // unsubSession(); // Scope issue: unsubSession is defined in the block.
-                    // We rely on the component unmount or next useEffect run to cleanup? 
-                    // Actually, since this is inside the auth listener which runs once... we need to be careful.
-                    // Ideally we should store unsubSession in a ref or similar if we want to clean it up perfectly,
-                    // but for this top-level provider, it's okay if it persists until user changes.
+                    if (unsubProfile) unsubProfile();
+                    if (unsubSession) unsubSession();
                 };
             } else {
                 setUserProfile(null);
@@ -391,7 +394,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (typeof window !== 'undefined' &&
                     !window.location.pathname.includes('/login') &&
                     !window.location.pathname.includes('/register') &&
-                    !window.location.pathname.includes('/patient') && // Allow patient portal access
+                    !window.location.pathname.startsWith('/patient') && // Allow patient portal access
                     !window.location.pathname.includes('/print/') && // Allow public print access
                     !window.location.pathname.includes('/verify/') && // Allow public verification access
                     window.location.pathname !== '/') {

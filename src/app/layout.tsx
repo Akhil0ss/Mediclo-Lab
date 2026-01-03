@@ -10,8 +10,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Spotnet MedOS - Lab & OPD Management",
-  description: "Advanced Lab and OPD Management System",
+  title: "Spotnet MedOS - Lab Management System",
+  description: "Advanced Lab Management System",
 };
 
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";

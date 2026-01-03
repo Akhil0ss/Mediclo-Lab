@@ -14,51 +14,19 @@ import { database } from './firebase';
  */
 export async function generatePatientId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
     try {
-        // Get clinic code (first 4 letters, uppercase, remove spaces)
+        // Clinic Code: First 3 letters
         const clinicCode = clinicName
             .replace(/[^A-Za-z]/g, '')
-            .substring(0, 4)
+            .substring(0, 3)
             .toUpperCase()
-            .padEnd(4, 'X');
+            .padEnd(3, 'X');
 
-        // Get current month in YYYYMM format
+        // YYMMDD
         const now = new Date();
-        const monthKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const yymmdd = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
 
-        // Get and increment counter using transaction (prevents duplicates)
-        const counterRef = ref(database, `counters/${ownerId}/patientIds/${monthKey}`);
-
-        const newCount = await runTransaction(counterRef, (currentCount) => {
-            return (currentCount || 0) + 1;
-        });
-
-        const sequence = String(newCount.snapshot.val()).padStart(4, '0');
-
-        return `${clinicCode}-${monthKey}-${sequence}`;
-    } catch (error) {
-        console.error('Error generating patient ID:', error);
-        // Fallback to timestamp-based ID
-        return `PAT-${Date.now()}`;
-    }
-}
-
-/**
- * Generate Auto RX ID
- * Format: RX-{YYYYMMDD}-{SEQUENCE}
- * Example: RX-20251223-001
- */
-export async function generateRxId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
-    try {
-        const clinicCode = clinicName
-            .replace(/[^A-Za-z]/g, '')
-            .substring(0, 4)
-            .toUpperCase()
-            .padEnd(4, 'X');
-
-        const now = new Date();
-        const dateKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-
-        const counterRef = ref(database, `counters/${ownerId}/rxIds/${dateKey}`);
+        // Use daily counter instead of monthly for consistency
+        const counterRef = ref(database, `counters/${ownerId}/patientIds/${yymmdd}`);
 
         const newCount = await runTransaction(counterRef, (currentCount) => {
             return (currentCount || 0) + 1;
@@ -66,30 +34,31 @@ export async function generateRxId(ownerId: string, clinicName: string = 'CLINIC
 
         const sequence = String(newCount.snapshot.val()).padStart(3, '0');
 
-        return `${clinicCode}-RX-${dateKey}-${sequence}`;
+        return `${clinicCode}-P${yymmdd}-${sequence}`;
     } catch (error) {
-        console.error('Error generating RX ID:', error);
-        return `RX-${Date.now()}`;
+        console.error('Error generating patient ID:', error);
+        return `P-${Date.now()}`;
     }
 }
 
+
+
 /**
  * Generate Auto Report ID
- * Format: {CLINIC_CODE}-LAB-{YYYYMMDD}-{SEQUENCE}
- * Example: SPOT-LAB-20251223-001
+ * Format: {CLINIC}-L{YYMMDD}-{SEQUENCE}
  */
 export async function generateReportId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
     try {
         const clinicCode = clinicName
             .replace(/[^A-Za-z]/g, '')
-            .substring(0, 4)
+            .substring(0, 3)
             .toUpperCase()
-            .padEnd(4, 'X');
+            .padEnd(3, 'X');
 
         const now = new Date();
-        const dateKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const yymmdd = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
 
-        const counterRef = ref(database, `counters/${ownerId}/reportIds/${dateKey}`);
+        const counterRef = ref(database, `counters/${ownerId}/reportIds/${yymmdd}`);
 
         const newCount = await runTransaction(counterRef, (currentCount) => {
             return (currentCount || 0) + 1;
@@ -97,30 +66,29 @@ export async function generateReportId(ownerId: string, clinicName: string = 'CL
 
         const sequence = String(newCount.snapshot.val()).padStart(3, '0');
 
-        return `${clinicCode}-LAB-${dateKey}-${sequence}`;
+        return `${clinicCode}-L${yymmdd}-${sequence}`;
     } catch (error) {
         console.error('Error generating report ID:', error);
-        return `LAB-${Date.now()}`;
+        return `L-${Date.now()}`;
     }
 }
 
 /**
  * Generate Auto Sample ID
- * Format: {CLINIC_CODE}-SMP-{YYYYMMDD}-{SEQUENCE}
- * Example: SPOT-SMP-20251223-001
+ * Format: {CLINIC}-S{YYMMDD}-{SEQUENCE}
  */
 export async function generateSampleId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
     try {
         const clinicCode = clinicName
             .replace(/[^A-Za-z]/g, '')
-            .substring(0, 4)
+            .substring(0, 3)
             .toUpperCase()
-            .padEnd(4, 'X');
+            .padEnd(3, 'X');
 
         const now = new Date();
-        const dateKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const yymmdd = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
 
-        const counterRef = ref(database, `counters/${ownerId}/sampleIds/${dateKey}`);
+        const counterRef = ref(database, `counters/${ownerId}/sampleIds/${yymmdd}`);
 
         const newCount = await runTransaction(counterRef, (currentCount) => {
             return (currentCount || 0) + 1;
@@ -128,10 +96,10 @@ export async function generateSampleId(ownerId: string, clinicName: string = 'CL
 
         const sequence = String(newCount.snapshot.val()).padStart(3, '0');
 
-        return `${clinicCode}-SMP-${dateKey}-${sequence}`;
+        return `${clinicCode}-S${yymmdd}-${sequence}`;
     } catch (error) {
         console.error('Error generating sample ID:', error);
-        return `SMP-${Date.now()}`;
+        return `S-${Date.now()}`;
     }
 }
 

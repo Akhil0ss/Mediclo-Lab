@@ -37,75 +37,35 @@ export default function AnalyticsPage() {
     const { user, userProfile } = useAuth();
     const dataSourceId = userProfile?.ownerId || user?.uid || '';
     const [loading, setLoading] = useState(true);
-    const [timeframe, setTimeframe] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+    const [timeframe, setTimeframe] = useState<'today' | 'week' | 'month'>('month');
 
-    // Core Metrics
+    // Lab Core Metrics
     const [metrics, setMetrics] = useState({
         // Patients
         totalPatients: 0,
-        newPatientsToday: 0,
-        newPatientsThisMonth: 0,
-        activePatients: 0,
-
-        // OPD
-        totalOPDVisits: 0,
-        opdToday: 0,
-        opdThisWeek: 0,
-        opdThisMonth: 0,
-        pendingOPD: 0,
-        finalizedOPD: 0,
-        avgOPDPerDay: 0,
-
-        // Queue
-        tokensToday: 0,
-        avgWaitTime: 0,
-        completedToday: 0,
-        inConsultation: 0,
+        newPatients: 0,
 
         // Lab
         totalReports: 0,
-        reportsToday: 0,
-        reportsThisMonth: 0,
+        reportsGenerated: 0, // based on timeframe
         pendingSamples: 0,
-        completedSamples: 0,
 
-        // Appointments
-        totalAppointments: 0,
-        upcomingAppointments: 0,
-        completedAppointments: 0,
-        cancelledAppointments: 0,
-
-        // Pharmacy
-        totalPrescriptions: 0,
-        prescriptionsToday: 0,
-
-        // Doctors
-        totalDoctors: 0,
-        activeDoctorsToday: 0,
-
-        // Revenue (if applicable)
+        // Revenue
         totalRevenue: 0,
-        revenueToday: 0,
-        revenueThisMonth: 0,
-        doctorRevenue: 0,
-        doctorRevenueToday: 0,
-        doctorRevenueThisMonth: 0
+        revenueCollection: 0, // based on timeframe
+        outstandingDues: 0,
     });
 
-    // Charts Data
-    const [opdTrendData, setOpdTrendData] = useState<any>(null);
-    const [patientGrowthData, setPatientGrowthData] = useState<any>(null);
-    const [departmentData, setDepartmentData] = useState<any>(null);
-    const [topDoctorsData, setTopDoctorsData] = useState<any[]>([]);
+    // Charts & Lists Data
+    const [reportsTrendData, setReportsTrendData] = useState<any>(null);
     const [topTestsData, setTopTestsData] = useState<any[]>([]);
-    const [showDoctorStatsModal, setShowDoctorStatsModal] = useState(false);
-    const [doctorRevenueData, setDoctorRevenueData] = useState<any[]>([]);
-    const [doctorStatsFilter, setDoctorStatsFilter] = useState<'weekly' | 'monthly'>('monthly');
+    const [topDoctorsData, setTopDoctorsData] = useState<any[]>([]);
+    const [recentActivity, setRecentActivity] = useState<any[]>([]);
+
     const [aiInsights, setAiInsights] = useState<any>(null);
     const [generatingAI, setGeneratingAI] = useState(false);
 
     const handleGenerateAI = async () => {
-        // Owner only - receptionists cannot access AI analytics
         if (!user || !userProfile || userProfile.role === 'receptionist') return;
 
         setGeneratingAI(true);
@@ -129,343 +89,158 @@ export default function AnalyticsPage() {
             setLoading(false);
             return;
         }
-
-        fetchComprehensiveAnalytics();
+        fetchLabAnalytics();
     }, [user, timeframe]);
 
-    const fetchComprehensiveAnalytics = async () => {
-        if (!user?.uid) {
-            return;
-        }
+    const fetchLabAnalytics = async () => {
+        if (!user?.uid) return;
 
-        const today = new Date().toISOString().split('T')[0];
-        const thisMonth = new Date().toISOString().slice(0, 7);
-        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+
+        // Calculate start date based on timeframe
+        let startDate = new Date();
+        if (timeframe === 'today') {
+            startDate = now;
+        } else if (timeframe === 'week') {
+            startDate.setDate(now.getDate() - 7);
+        } else if (timeframe === 'month') {
+            startDate.setDate(now.getDate() - 30);
+        }
+        const startDateStr = startDate.toISOString().split('T')[0];
+
+        // Helper to check if date satisfies timeframe
+        const isInTimeframe = (dateStr: string) => {
+            if (!dateStr) return false;
+            const itemDate = dateStr.split('T')[0];
+            if (timeframe === 'today') return itemDate === todayStr;
+            return itemDate >= startDateStr && itemDate <= todayStr;
+        };
 
         try {
-            // Fetch all data without timeout
-            const [patientsSnap, opdSnap, reportsSnap, appointmentsSnap, queueSnap, doctorsSnap, invoicesSnap] = await Promise.all([
+            const [patientsSnap, reportsSnap, invoicesSnap] = await Promise.all([
                 get(ref(database, `patients/${dataSourceId}`)),
-                get(ref(database, `opd/${dataSourceId}`)),
                 get(ref(database, `reports/${dataSourceId}`)),
-                get(ref(database, `appointments/${dataSourceId}`)),
-                get(ref(database, `opd_queue/${dataSourceId}`)),
-                get(ref(database, `doctors/${dataSourceId}`)),
                 get(ref(database, `invoices/${dataSourceId}`))
             ]).catch(error => {
                 console.error('Error fetching analytics data:', error);
-                // Return empty snapshots on error
                 return [
-                    { exists: () => false, val: () => ({}) },
-                    { exists: () => false, val: () => ({}) },
-                    { exists: () => false, val: () => ({}) },
-                    { exists: () => false, val: () => ({}) },
                     { exists: () => false, val: () => ({}) },
                     { exists: () => false, val: () => ({}) },
                     { exists: () => false, val: () => ({}) }
                 ];
             });
 
-            // Process Patients
+            // --- Process Patients ---
             const patients = patientsSnap.exists() ? Object.values(patientsSnap.val()) : [];
-            const newPatientsToday = patients.filter((p: any) => p.createdAt?.startsWith(today)).length;
-            const newPatientsThisMonth = patients.filter((p: any) => p.createdAt?.startsWith(thisMonth)).length;
+            const newPatients = patients.filter((p: any) => isInTimeframe(p.createdAt)).length;
 
-            // Process OPD
-            const opdRecords = opdSnap.exists() ? Object.values(opdSnap.val()) : [];
-            const opdToday = opdRecords.filter((o: any) => o.visitDate?.startsWith(today) || o.createdAt?.startsWith(today)).length;
-            const opdThisWeek = opdRecords.filter((o: any) => (o.visitDate || o.createdAt) >= oneWeekAgo).length;
-            const opdThisMonth = opdRecords.filter((o: any) => (o.visitDate || o.createdAt)?.startsWith(thisMonth)).length;
-            const finalizedOPD = opdRecords.filter((o: any) => o.isFinalized).length;
-            const pendingOPD = opdRecords.length - finalizedOPD;
-
-            // Process Queue
-            const queueData = queueSnap.exists() ? queueSnap.val() : {};
-            let tokensToday = 0;
-            let completedToday = 0;
-            let inConsultation = 0;
-
-            for (const dateKey in queueData) {
-                const tokens = Object.values(queueData[dateKey]);
-                if (dateKey === today.replace(/-/g, '')) {
-                    tokensToday = tokens.length;
-                    completedToday = tokens.filter((t: any) => t.status === 'completed').length;
-                    inConsultation = tokens.filter((t: any) => t.status === 'in-consultation').length;
-                }
-            }
-
-            // Process Reports
+            // --- Process Reports ---
             const reports = reportsSnap.exists() ? Object.values(reportsSnap.val()) : [];
-            const reportsToday = reports.filter((r: any) => r.createdAt?.startsWith(today)).length;
-            const reportsThisMonth = reports.filter((r: any) => r.createdAt?.startsWith(thisMonth)).length;
+            // Sort reports by date desc for Recent Activity
+            const sortedReports = reports.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-            // Process Samples
-            const samples = reportsSnap.exists() ? Object.values(reportsSnap.val()).map((r: any) => r.samples || []).flat() : [];
-            const pendingSamples = samples.filter((s: any) => s?.status === 'Pending').length;
-            const completedSamples = samples.filter((s: any) => s?.status === 'Completed').length;
+            const reportsGenerated = reports.filter((r: any) => isInTimeframe(r.createdAt)).length;
+            const pendingSamples = reports.filter((r: any) => r.status === 'Pending' || r.status === 'processing').length;
 
-            // Process Appointments
-            const appointmentsRaw = appointmentsSnap.exists() ? appointmentsSnap.val() : {};
-            // Flatten structure: appointments -> date -> appointmentList
-            const appointments = Object.values(appointmentsRaw)
-                .map((dateObj: any) => Object.values(dateObj))
-                .flat();
-
-            const upcomingAppointments = appointments.filter((a: any) => {
-                if (!a?.date) return false;
-                const aptDate = new Date(a.date);
-                return aptDate >= new Date();
-            }).length;
-            const completedAppointments = appointments.filter((a: any) => a?.status === 'completed').length;
-            const cancelledAppointments = appointments.filter((a: any) => a?.status === 'cancelled').length;
-
-            // Process Doctors
-            const doctors = doctorsSnap.exists() ? Object.values(doctorsSnap.val()) : [];
-
-            // Process Invoices for Revenue
-            const invoices = invoicesSnap.exists() ? Object.values(invoicesSnap.val()) : [];
-            const totalRevenue: number = invoices.reduce((sum: number, inv: any) => sum + (parseFloat(inv.total) || 0), 0);
-            const revenueToday: number = invoices.filter((inv: any) => inv.createdAt?.startsWith(today)).reduce((sum: number, inv: any) => sum + (parseFloat(inv.total) || 0), 0);
-            const revenueThisMonth: number = invoices.filter((inv: any) => inv.createdAt?.startsWith(thisMonth)).reduce((sum: number, inv: any) => sum + (parseFloat(inv.total) || 0), 0);
-
-            // Calculate Doctor Fee Revenue (Internal)
-            const doctorFeeRevenue: number = opdRecords.reduce((sum: number, opd: any) => {
-                const doctor: any = doctors.find((d: any) => d.id === opd.assignedDoctorId || d.name === opd.doctorName);
-                return sum + (parseFloat(doctor?.consultationFee || '0') || 0);
-            }, 0);
-
-            const doctorFeeRevenueToday: number = opdRecords
-                .filter((opd: any) => (opd.visitDate || opd.createdAt)?.startsWith(today))
-                .reduce((sum: number, opd: any) => {
-                    const doctor: any = doctors.find((d: any) => d.id === opd.assignedDoctorId || d.name === opd.doctorName);
-                    return sum + (parseFloat(doctor?.consultationFee || '0') || 0);
-                }, 0);
-
-            const doctorFeeRevenueThisMonth: number = opdRecords
-                .filter((opd: any) => (opd.visitDate || opd.createdAt)?.startsWith(thisMonth))
-                .reduce((sum: number, opd: any) => {
-                    const doctor: any = doctors.find((d: any) => d.id === opd.assignedDoctorId || d.name === opd.doctorName);
-                    return sum + (parseFloat(doctor?.consultationFee || '0') || 0);
-                }, 0);
-
-            // Process Doctor Stats with Revenue
-            const doctorStats: any = {};
-            opdRecords.forEach((opd: any) => {
-                const docId = opd.consultingDoctorId || opd.consultingDoctor;
-                if (docId) {
-                    if (!doctorStats[docId]) {
-                        const doctor: any = doctors.find((d: any) => d.id === opd.assignedDoctorId || d.name === opd.doctorName || d.name === opd.consultingDoctor);
-                        doctorStats[docId] = {
-                            name: opd.consultingDoctor || 'Unknown',
-                            count: 0,
-                            finalized: 0,
-                            revenue: 0,
-                            consultationFee: parseFloat(doctor?.consultationFee || '0') || 0
-                        };
-                    }
-                    doctorStats[docId].count++;
-                    if (opd.isFinalized) doctorStats[docId].finalized++;
-                    // Add revenue
-                    const doctor: any = doctors.find((d: any) => d.id === opd.assignedDoctorId || d.name === opd.doctorName || d.name === opd.consultingDoctor);
-                    doctorStats[docId].revenue += parseFloat(doctor?.consultationFee || '0') || 0;
-                }
+            // Test Stats
+            const testStats: Record<string, number> = {};
+            reports.forEach((r: any) => {
+                const name = r.testName || 'Unknown';
+                testStats[name] = (testStats[name] || 0) + 1;
             });
-
-            // Create detailed doctor revenue data for modal
-            const detailedDoctorRevenue = Object.values(doctorStats).map((stat: any) => ({
-                ...stat,
-                revenueWeekly: 0,
-                revenueMonthly: 0
-            }));
-
-            // Calculate weekly and monthly revenue per doctor
-            opdRecords.forEach((opd: any) => {
-                const docId = opd.consultingDoctorId || opd.consultingDoctor;
-                if (docId) {
-                    const doctor: any = doctors.find((d: any) => d.id === opd.assignedDoctorId || d.name === opd.doctorName || d.name === opd.consultingDoctor);
-                    const fee = parseFloat(doctor?.consultationFee || '0') || 0;
-                    const doctorStat = detailedDoctorRevenue.find((d: any) => d.name === (opd.consultingDoctor || 'Unknown'));
-
-                    if (doctorStat) {
-                        // Weekly
-                        if ((opd.visitDate || opd.createdAt) >= oneWeekAgo) {
-                            doctorStat.revenueWeekly += fee;
-                        }
-                        // Monthly
-                        if ((opd.visitDate || opd.createdAt)?.startsWith(thisMonth)) {
-                            doctorStat.revenueMonthly += fee;
-                        }
-                    }
-                }
-            });
-
-            setDoctorRevenueData(detailedDoctorRevenue.sort((a: any, b: any) => b.revenue - a.revenue));
-
-            const topDoctors = Object.values(doctorStats)
-                .sort((a: any, b: any) => b.count - a.count)
-                .slice(0, 5);
-
-            // Process Test Stats
-            const testStats: any = {};
-            reports.forEach((report: any) => {
-                const testName = report.testName || 'Unknown';
-                testStats[testName] = (testStats[testName] || 0) + 1;
-            });
-
             const topTests = Object.entries(testStats)
                 .map(([name, count]) => ({ name, count }))
-                .sort((a: any, b: any) => b.count - a.count)
+                .sort((a, b) => b.count - a.count)
                 .slice(0, 5);
+            setTopTestsData(topTests);
 
-            // Generate trend data (last 7 days)
-            const last7Days: string[] = [];
+            // Ref Doctor Stats
+            const docStats: Record<string, number> = {};
+            reports.forEach((r: any) => {
+                const doc = r.patientRefDoctor || 'Self';
+                docStats[doc] = (docStats[doc] || 0) + 1;
+            });
+            const topDoctors = Object.entries(docStats)
+                .map(([name, count]) => ({ name, count }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 5);
+            setTopDoctorsData(topDoctors);
+
+            // Recent Activity
+            setRecentActivity(sortedReports.slice(0, 5));
+
+            // --- Process Revenue ---
+            const invoices: any[] = invoicesSnap.exists() ? Object.values(invoicesSnap.val()) : [];
+            const totalRevenue = invoices.reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0);
+            const revenueCollection = invoices
+                .filter((inv: any) => isInTimeframe(inv.createdAt))
+                .reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0);
+            const outstandingDues = invoices.reduce((sum, inv) => sum + (parseFloat(inv.due) || 0), 0);
+
+            // --- Trend Chart (Last 7 Days Fixed for visual consistence or dynamic for timeframe?) ---
+            // Let's stick to a dynamic trend based on the last 7 days regardless of filter, or match filter? 
+            // Matching filter is better. If month -> daily breakdown. If week -> daily. If today -> hourly (too complex).
+            // Let's do Last 7 Days always for the chart for simplicity and consistency.
+            const chartLabels: string[] = [];
+            const chartData: number[] = [];
             for (let i = 6; i >= 0; i--) {
-                const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-                last7Days.push(date.toISOString().split('T')[0]);
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const dStr = d.toISOString().split('T')[0];
+                chartLabels.push(d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }));
+                chartData.push(reports.filter((r: any) => r.createdAt?.startsWith(dStr)).length);
             }
 
-            const opdTrend = last7Days.map(date =>
-                opdRecords.filter((o: any) =>
-                    (o.visitDate || o.createdAt)?.startsWith(date)
-                ).length
-            );
-
-            const reportsTrend = last7Days.map(date =>
-                reports.filter((r: any) =>
-                    r.createdAt?.startsWith(date)
-                ).length
-            );
-
-            setOpdTrendData({
-                labels: last7Days.map(d => new Date(d).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })),
-                datasets: [
-                    {
-                        label: 'OPD Visits',
-                        data: opdTrend,
-                        borderColor: 'rgb(99, 102, 241)',
-                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                        tension: 0.4,
-                        fill: true
-                    },
-                    {
-                        label: 'Lab Reports',
-                        data: reportsTrend,
-                        borderColor: 'rgb(34, 197, 94)',
-                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                        tension: 0.4,
-                        fill: true
-                    }
-                ]
-            });
-
-            setDepartmentData({
-                labels: ['OPD', 'Lab', 'Pharmacy'],
+            setReportsTrendData({
+                labels: chartLabels,
                 datasets: [{
-                    data: [opdRecords.length, reports.length, finalizedOPD],
-                    backgroundColor: [
-                        'rgba(99, 102, 241, 0.8)',
-                        'rgba(34, 197, 94, 0.8)',
-                        'rgba(251, 146, 60, 0.8)'
-                    ],
-                    borderWidth: 0
+                    label: 'Reports Generated',
+                    data: chartData,
+                    borderColor: 'rgb(99, 102, 241)', // Indigo 500
+                    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                    tension: 0.4,
+                    fill: true
                 }]
             });
 
-            setTopDoctorsData(topDoctors);
-            setTopTestsData(topTests);
-
-            // Set all metrics
             setMetrics({
                 totalPatients: patients.length,
-                newPatientsToday,
-                newPatientsThisMonth,
-                activePatients: patients.filter((p: any) => {
-                    const hasRecentVisit = opdRecords.some((o: any) =>
-                        o.patientId === p.id && (o.visitDate || o.createdAt) >= oneWeekAgo
-                    );
-                    return hasRecentVisit;
-                }).length,
-
-                totalOPDVisits: opdRecords.length,
-                opdToday,
-                opdThisWeek,
-                opdThisMonth,
-                pendingOPD,
-                finalizedOPD,
-                avgOPDPerDay: opdRecords.length > 0 ? (opdRecords.length / 30).toFixed(1) as any : 0,
-
-                tokensToday,
-                avgWaitTime: 0, // Can calculate from queue data
-                completedToday,
-                inConsultation,
-
+                newPatients,
                 totalReports: reports.length,
-                reportsToday,
-                reportsThisMonth,
-                pendingSamples: 0, // From samples node
-                completedSamples: reports.length,
-
-                totalAppointments: appointments.length,
-                upcomingAppointments,
-                completedAppointments,
-                cancelledAppointments,
-
-                totalPrescriptions: finalizedOPD,
-                prescriptionsToday: opdRecords.filter((o: any) =>
-                    o.isFinalized && (o.visitDate || o.createdAt)?.startsWith(today)
-                ).length,
-
-                totalDoctors: doctors.length,
-                activeDoctorsToday: new Set(opdRecords
-                    .filter((o: any) => (o.visitDate || o.createdAt)?.startsWith(today))
-                    .map((o: any) => o.consultingDoctorId)
-                ).size,
-
-                totalRevenue: totalRevenue as number,
-                revenueToday: revenueToday as number,
-                revenueThisMonth: revenueThisMonth as number,
-                doctorRevenue: doctorFeeRevenue as number,
-                doctorRevenueToday: doctorFeeRevenueToday as number,
-                doctorRevenueThisMonth: doctorFeeRevenueThisMonth as number
+                reportsGenerated,
+                pendingSamples,
+                totalRevenue,
+                revenueCollection,
+                outstandingDues
             });
+            setLoading(false);
 
         } catch (error) {
-            console.error('Error fetching analytics:', error);
+            console.error('Error fetching lab analytics:', error);
+            setLoading(false);
         }
     };
 
     return (
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-8 animate-in fade-in duration-500 pb-20">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="text-center md:text-left">
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-800">
-                        <i className="fas fa-chart-line text-blue-600 mr-3"></i>
-                        Comprehensive Analytics
+                    <h1 className="text-2xl md:text-3xl font-bold text-gray-800 tracking-tight">
+                        Lab Overview
                     </h1>
-                    <p className="text-gray-600 mt-1">Complete hospital performance metrics & insights</p>
+                    <p className="text-gray-500 text-sm mt-1">Real-time performance metrics</p>
                 </div>
 
-                {/* Timeframe Selector */}
-                <div className="flex gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 justify-center md:justify-end">
-                    <button
-                        onClick={handleGenerateAI}
-                        disabled={generatingAI}
-                        className="px-4 py-2 rounded-lg font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:shadow-lg transition flex items-center gap-2 whitespace-nowrap disabled:opacity-70"
-                    >
-                        {generatingAI ? (
-                            <><i className="fas fa-spinner fa-spin"></i> Analyzing...</>
-                        ) : (
-                            <><i className="fas fa-robot"></i> AI Insights</>
-                        )}
-                    </button>
-                    {['today', 'week', 'month', 'all'].map((tf) => (
+                <div className="flex bg-white p-1 rounded-xl border border-gray-200 shadow-sm">
+                    {(['today', 'week', 'month'] as const).map((tf) => (
                         <button
                             key={tf}
-                            onClick={() => setTimeframe(tf as any)}
-                            className={`px-4 py-2 rounded-lg font-semibold capitalize transition whitespace-nowrap ${timeframe === tf
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            onClick={() => setTimeframe(tf)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all capitalize ${timeframe === tf
+                                ? 'bg-indigo-600 text-white shadow-sm'
+                                : 'text-gray-500 hover:bg-gray-50'
                                 }`}
                         >
                             {tf}
@@ -474,502 +249,205 @@ export default function AnalyticsPage() {
                 </div>
             </div>
 
-
-
-
-            {/* AI Insights Card (Owner Only) */}
-            {
-                aiInsights && userProfile?.role !== 'receptionist' && (
-                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg shadow-md border border-indigo-100 p-4 animate-fadeIn">
-                        <h2 className="text-lg font-bold text-indigo-900 mb-3 flex items-center gap-2">
-                            <i className="fas fa-lightbulb text-yellow-500"></i>
-                            AI Business Insights
-                        </h2>
-
-                        <div className="text-gray-700 font-medium mb-4 italic p-3 bg-white/50 rounded-lg border border-indigo-50">
-                            "{aiInsights.summary}"
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="bg-white/60 rounded-lg p-3 border border-indigo-50">
-                                <h3 className="font-bold text-green-700 mb-2 text-sm uppercase flex items-center gap-2">
-                                    <i className="fas fa-chart-line"></i> Key Highlights
-                                </h3>
-                                <ul className="space-y-2">
-                                    {aiInsights.highlights?.map((h: string, i: number) => (
-                                        <li key={i} className="text-sm flex items-start gap-2">
-                                            <i className="fas fa-check-circle text-green-500 mt-0.5"></i>
-                                            <span className="text-gray-700">{h}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                            <div className="bg-white/60 rounded-lg p-3 border border-indigo-50">
-                                <h3 className="font-bold text-blue-700 mb-2 text-sm uppercase flex items-center gap-2">
-                                    <i className="fas fa-bullseye"></i> Recommendations
-                                </h3>
-                                <ul className="space-y-2">
-                                    {aiInsights.recommendations?.map((r: string, i: number) => (
-                                        <li key={i} className="text-sm flex items-start gap-2">
-                                            <i className="fas fa-arrow-circle-right text-blue-500 mt-0.5"></i>
-                                            <span className="text-gray-700">{r}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        </div>
+            {/* Core Metrics Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                {/* Revenue Card */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition pointer-events-none">
+                        <i className="fas fa-rupee-sign text-6xl text-indigo-600"></i>
                     </div>
-                )
-            }
-
-            {/* Quick Stats Overview - COMPACT */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-4 rounded-lg shadow text-center">
-                    <i className="fas fa-users text-2xl opacity-80 mb-1"></i>
-                    <h3 className="text-3xl font-bold">{metrics.totalPatients}</h3>
-                    <p className="text-blue-100 text-xs">Patients</p>
-                    <p className="text-white/80 text-xs mt-1">+{metrics.newPatientsToday} today</p>
-                </div>
-
-                <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-4 rounded-lg shadow text-center">
-                    <i className="fas fa-stethoscope text-2xl opacity-80 mb-1"></i>
-                    <h3 className="text-3xl font-bold">{metrics.totalOPDVisits}</h3>
-                    <p className="text-purple-100 text-xs">Consultations</p>
-                    <p className="text-white/80 text-xs mt-1">{metrics.opdToday} today</p>
-                </div>
-
-                <div className="bg-gradient-to-br from-green-500 to-green-600 text-white p-4 rounded-lg shadow text-center">
-                    <i className="fas fa-flask text-2xl opacity-80 mb-1"></i>
-                    <h3 className="text-3xl font-bold">{metrics.totalReports}</h3>
-                    <p className="text-green-100 text-xs">Lab Reports</p>
-                    <p className="text-white/80 text-xs mt-1">{metrics.reportsToday} today</p>
-                </div>
-
-                <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white p-4 rounded-lg shadow text-center">
-                    <i className="fas fa-calendar-check text-2xl opacity-80 mb-1"></i>
-                    <h3 className="text-3xl font-bold">{metrics.totalAppointments}</h3>
-                    <p className="text-orange-100 text-xs">Appointments</p>
-                    <p className="text-white/80 text-xs mt-1">{metrics.upcomingAppointments} upcoming</p>
-                </div>
-            </div>
-
-            {/* Revenue Stats Card - Lab + Doctors (Single Line) */}
-            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white rounded-lg shadow-lg p-6">
-                <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-                    <i className="fas fa-rupee-sign"></i>
-                    Revenue Analytics
-                </h2>
-
-                <div className="grid grid-cols-6 gap-3">
-                    {/* Lab Revenue - 3 cards */}
-                    <div className="text-center p-3 bg-white/20 rounded-lg backdrop-blur-sm">
-                        <p className="text-xs opacity-80 mb-1">💊 Lab Total</p>
-                        <p className="text-lg font-bold">₹{metrics.totalRevenue.toLocaleString('en-IN')}</p>
-                    </div>
-                    <div className="text-center p-3 bg-white/20 rounded-lg backdrop-blur-sm">
-                        <p className="text-xs opacity-80 mb-1">💊 Today</p>
-                        <p className="text-lg font-bold">₹{metrics.revenueToday.toLocaleString('en-IN')}</p>
-                    </div>
-                    <div className="text-center p-3 bg-white/20 rounded-lg backdrop-blur-sm">
-                        <p className="text-xs opacity-80 mb-1">💊 Month</p>
-                        <p className="text-lg font-bold">₹{metrics.revenueThisMonth.toLocaleString('en-IN')}</p>
-                    </div>
-
-                    {/* Doctor Revenue - 3 cards */}
-                    <div className="text-center p-3 bg-white/20 rounded-lg backdrop-blur-sm">
-                        <p className="text-xs opacity-80 mb-1">👨‍⚕️ Dr Total</p>
-                        <p className="text-lg font-bold">₹{metrics.doctorRevenue.toLocaleString('en-IN')}</p>
-                    </div>
-                    <div className="text-center p-3 bg-white/20 rounded-lg backdrop-blur-sm">
-                        <p className="text-xs opacity-80 mb-1">👨‍⚕️ Today</p>
-                        <p className="text-lg font-bold">₹{metrics.doctorRevenueToday.toLocaleString('en-IN')}</p>
-                    </div>
-                    <div className="text-center p-3 bg-white/20 rounded-lg backdrop-blur-sm">
-                        <p className="text-xs opacity-80 mb-1">👨‍⚕️ Month</p>
-                        <p className="text-lg font-bold">₹{metrics.doctorRevenueThisMonth.toLocaleString('en-IN')}</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* OPD Metrics Grid - COMPACT */}
-            <div className="bg-white rounded-lg shadow p-4">
-                <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <i className="fas fa-hospital text-purple-600"></i>
-                    OPD Performance
-                </h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="text-center p-3 bg-purple-50 rounded-lg">
-                        <p className="text-xs text-gray-600 font-semibold mb-1">Today</p>
-                        <p className="text-2xl font-bold text-purple-600">{metrics.opdToday}</p>
-                    </div>
-                    <div className="text-center p-3 bg-blue-50 rounded-lg">
-                        <p className="text-xs text-gray-600 font-semibold mb-1">Week</p>
-                        <p className="text-2xl font-bold text-blue-600">{metrics.opdThisWeek}</p>
-                    </div>
-                    <div className="text-center p-3 bg-green-50 rounded-lg">
-                        <p className="text-xs text-gray-600 font-semibold mb-1">Finalized</p>
-                        <p className="text-3xl font-bold text-green-600">{metrics.finalizedOPD}</p>
-                    </div>
-                    <div className="text-center p-4 bg-yellow-50 rounded-lg">
-                        <p className="text-sm text-gray-600 font-semibold mb-1">Pending</p>
-                        <p className="text-3xl font-bold text-yellow-600">{metrics.pendingOPD}</p>
-                    </div>
-                    <div className="text-center p-4 bg-indigo-50 rounded-lg">
-                        <p className="text-sm text-gray-600 font-semibold mb-1">Avg/Day</p>
-                        <p className="text-3xl font-bold text-indigo-600">{metrics.avgOPDPerDay}</p>
-                    </div>
-                    <div className="text-center p-4 bg-pink-50 rounded-lg">
-                        <p className="text-sm text-gray-600 font-semibold mb-1">In Consultation</p>
-                        <p className="text-3xl font-bold text-pink-600">{metrics.inConsultation}</p>
-                    </div>
-                    <div className="text-center p-4 bg-teal-50 rounded-lg">
-                        <p className="text-sm text-gray-600 font-semibold mb-1">Tokens Today</p>
-                        <p className="text-3xl font-bold text-teal-600">{metrics.tokensToday}</p>
-                    </div>
-                    <div className="text-center p-4 bg-cyan-50 rounded-lg">
-                        <p className="text-sm text-gray-600 font-semibold mb-1">Completed Today</p>
-                        <p className="text-3xl font-bold text-cyan-600">{metrics.completedToday}</p>
-                    </div>
-                </div>
-            </div>
-
-
-            {/* TOP ROW: 4 Stats + Top Doctors + Top Tests - ALL INLINE */}
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-                {/* Patient Metrics */}
-                <div className="bg-white rounded-lg shadow p-3">
-                    <h3 className="text-xs font-bold text-gray-800 mb-2 flex items-center gap-1">
-                        <i className="fas fa-user-friends text-blue-600 text-sm"></i>
-                        Patients
-                    </h3>
-                    <div className="space-y-1.5">
-                        <div className="flex justify-between items-center p-1.5 bg-blue-50 rounded text-xs">
-                            <span className="text-gray-700">Total</span>
-                            <span className="font-bold text-blue-600">{metrics.totalPatients}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-green-50 rounded text-xs">
-                            <span className="text-gray-700">Today</span>
-                            <span className="font-bold text-green-600">{metrics.newPatientsToday}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-purple-50 rounded text-xs">
-                            <span className="text-gray-700">Month</span>
-                            <span className="font-bold text-purple-600">{metrics.newPatientsThisMonth}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Appointment Metrics */}
-                <div className="bg-white rounded-lg shadow p-3">
-                    <h3 className="text-xs font-bold text-gray-800 mb-2 flex items-center gap-1">
-                        <i className="fas fa-calendar-alt text-orange-600 text-sm"></i>
-                        Appointments
-                    </h3>
-                    <div className="space-y-1.5">
-                        <div className="flex justify-between items-center p-1.5 bg-gray-50 rounded text-xs">
-                            <span className="text-gray-700">Total</span>
-                            <span className="font-bold text-gray-800">{metrics.totalAppointments}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-blue-50 rounded text-xs">
-                            <span className="text-gray-700">Upcoming</span>
-                            <span className="font-bold text-blue-600">{metrics.upcomingAppointments}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-green-50 rounded text-xs">
-                            <span className="text-gray-700">Done</span>
-                            <span className="font-bold text-green-600">{metrics.completedAppointments}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Lab Metrics */}
-                <div className="bg-white rounded-lg shadow p-3">
-                    <h3 className="text-xs font-bold text-gray-800 mb-2 flex items-center gap-1">
-                        <i className="fas fa-microscope text-green-600 text-sm"></i>
-                        Laboratory
-                    </h3>
-                    <div className="space-y-1.5">
-                        <div className="flex justify-between items-center p-1.5 bg-green-50 rounded text-xs">
-                            <span className="text-gray-700">Reports</span>
-                            <span className="font-bold text-green-600">{metrics.totalReports}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-blue-50 rounded text-xs">
-                            <span className="text-gray-700">Today</span>
-                            <span className="font-bold text-blue-600">{metrics.reportsToday}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-purple-50 rounded text-xs">
-                            <span className="text-gray-700">Month</span>
-                            <span className="font-bold text-purple-600">{metrics.reportsThisMonth}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Pharmacy Metrics */}
-                <div className="bg-white rounded-lg shadow p-3">
-                    <h3 className="text-xs font-bold text-gray-800 mb-2 flex items-center gap-1">
-                        <i className="fas fa-pills text-pink-600 text-sm"></i>
-                        Pharmacy
-                    </h3>
-                    <div className="space-y-1.5">
-                        <div className="flex justify-between items-center p-1.5 bg-pink-50 rounded text-xs">
-                            <span className="text-gray-700">Rx Total</span>
-                            <span className="font-bold text-pink-600">{metrics.totalOPDVisits}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-purple-50 rounded text-xs">
-                            <span className="text-gray-700">Finalized</span>
-                            <span className="font-bold text-purple-600">{metrics.finalizedOPD}</span>
-                        </div>
-                        <div className="flex justify-between items-center p-1.5 bg-blue-50 rounded text-xs">
-                            <span className="text-gray-700">Doctors</span>
-                            <span className="font-bold text-blue-600">{metrics.totalDoctors}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Top Doctors */}
-                <div className="bg-white rounded-lg shadow p-3">
-                    <h3 className="text-xs font-bold text-gray-800 mb-2 flex items-center justify-between">
-                        <span className="flex items-center gap-1">
-                            <i className="fas fa-trophy text-yellow-500 text-sm"></i>
-                            Top Doctors
+                    <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Revenue ({timeframe})</p>
+                    <h3 className="text-3xl font-bold text-gray-900">₹{metrics.revenueCollection.toLocaleString('en-IN')}</h3>
+                    <div className="flex items-center gap-2 mt-4 text-xs font-medium">
+                        <span className="text-red-500 bg-red-50 px-2 py-1 rounded-full">
+                            Due: ₹{metrics.outstandingDues.toLocaleString('en-IN')}
                         </span>
-                        <button
-                            onClick={() => setShowDoctorStatsModal(true)}
-                            className="text-xs text-blue-600 hover:text-blue-800 font-semibold hover:underline"
-                        >
-                            View All →
-                        </button>
-                    </h3>
-                    <div className="space-y-1.5">
-                        {topDoctorsData.slice(0, 3).map((doc: any, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-1.5 bg-gray-50 rounded text-xs">
-                                <div className="flex items-center gap-2">
-                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center font-bold text-white text-xs ${idx === 0 ? 'bg-yellow-500' : idx === 1 ? 'bg-gray-400' : 'bg-orange-600'}`}>
-                                        {idx + 1}
-                                    </span>
-                                    <span className="font-semibold text-gray-800">{doc.name}</span>
-                                </div>
-                                <span className="font-bold text-blue-600">{doc.count}</span>
-                            </div>
-                        ))}
-                        {topDoctorsData.length === 0 && (
-                            <p className="text-center text-gray-500 py-2 text-xs">No data</p>
-                        )}
+                        <span className="text-gray-400">Total: ₹{metrics.totalRevenue.toLocaleString('en-IN')}</span>
                     </div>
                 </div>
 
-                {/* Top Tests */}
-                <div className="bg-white rounded-lg shadow p-3">
-                    <h3 className="text-xs font-bold text-gray-800 mb-2 flex items-center gap-1">
-                        <i className="fas fa-chart-bar text-green-500 text-sm"></i>
-                        Top Tests
-                    </h3>
-                    <div className="space-y-1.5">
-                        {topTestsData.slice(0, 3).map((test: any, idx) => (
-                            <div key={idx} className="flex items-center justify-between p-1.5 bg-gray-50 rounded text-xs">
-                                <div className="flex items-center gap-2">
-                                    <span className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center font-bold text-white text-xs">
-                                        {idx + 1}
-                                    </span>
-                                    <span className="font-semibold text-gray-800">{test.name}</span>
-                                </div>
-                                <span className="font-bold text-green-600">{test.count}</span>
-                            </div>
-                        ))}
-                        {topTestsData.length === 0 && (
-                            <p className="text-center text-gray-500 py-2 text-xs">No data</p>
-                        )}
+                {/* Reports Card */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition pointer-events-none">
+                        <i className="fas fa-file-medical-alt text-6xl text-blue-600"></i>
+                    </div>
+                    <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Reports ({timeframe})</p>
+                    <h3 className="text-3xl font-bold text-gray-900">{metrics.reportsGenerated}</h3>
+                    <div className="flex items-center gap-2 mt-4 text-xs font-medium">
+                        <span className="text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                            Total: {metrics.totalReports}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Patients Card */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition pointer-events-none">
+                        <i className="fas fa-users text-6xl text-purple-600"></i>
+                    </div>
+                    <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">New Patients ({timeframe})</p>
+                    <h3 className="text-3xl font-bold text-gray-900">{metrics.newPatients}</h3>
+                    <div className="flex items-center gap-2 mt-4 text-xs font-medium">
+                        <span className="text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
+                            Database: {metrics.totalPatients}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Pending Card */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition pointer-events-none">
+                        <i className="fas fa-clock text-6xl text-yellow-500"></i>
+                    </div>
+                    <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Pending Processing</p>
+                    <h3 className="text-3xl font-bold text-gray-900">{metrics.pendingSamples}</h3>
+                    <div className="flex items-center gap-2 mt-4 text-xs font-medium">
+                        <span className="text-yellow-600 bg-yellow-50 px-2 py-1 rounded-full animate-pulse">
+                            Action Required
+                        </span>
                     </div>
                 </div>
             </div>
 
-            {/* Analytics Summary + Charts - 3 COLUMNS INLINE */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {/* Analytics Summary as Pie Chart */}
-                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white rounded-lg shadow p-4">
-                    <h3 className="text-sm font-bold mb-3 text-center">📊 Summary</h3>
-                    <div className="grid grid-cols-2 gap-2 text-center">
-                        <div className="bg-white/20 rounded p-2">
-                            <p className="text-xs opacity-90">Patients</p>
-                            <p className="text-lg font-bold">{metrics.totalPatients}</p>
-                        </div>
-                        <div className="bg-white/20 rounded p-2">
-                            <p className="text-xs opacity-90">OPD</p>
-                            <p className="text-lg font-bold">{metrics.totalOPDVisits}</p>
-                        </div>
-                        <div className="bg-white/20 rounded p-2">
-                            <p className="text-xs opacity-90">Reports</p>
-                            <p className="text-lg font-bold">{metrics.totalReports}</p>
-                        </div>
-                        <div className="bg-white/20 rounded p-2">
-                            <p className="text-xs opacity-90">Appts</p>
-                            <p className="text-lg font-bold">{metrics.totalAppointments}</p>
-                        </div>
-                    </div>
+            {/* AI Insights Button & Display */}
+            <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-bold text-gray-800">Business Intelligence</h3>
+                    <button
+                        onClick={handleGenerateAI}
+                        disabled={generatingAI}
+                        className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-gray-900 to-gray-800 text-white hover:shadow-lg transition flex items-center gap-2 disabled:opacity-70"
+                    >
+                        {generatingAI ? <><i className="fas fa-circle-notch fa-spin"></i> Analyzing Data...</> : <><i className="fas fa-sparkles text-yellow-400"></i> Generate AI Insights</>}
+                    </button>
                 </div>
 
-                {/* 7-Day Trend Chart */}
-                <div className="bg-white rounded-lg shadow p-4">
-                    <h3 className="text-sm font-bold text-gray-800 mb-2">7-Day Trend</h3>
-                    {opdTrendData && (
-                        <Line
-                            data={opdTrendData}
-                            options={{
-                                responsive: true,
-                                maintainAspectRatio: true,
-                                aspectRatio: 2.5,
-                                plugins: {
-                                    legend: { display: false }
-                                },
-                                scales: {
-                                    y: { beginAtZero: true, ticks: { font: { size: 9 } } },
-                                    x: { ticks: { font: { size: 9 } } }
-                                }
-                            }}
-                        />
-                    )}
-                </div>
-
-                {/* Department Distribution Donut */}
-                <div className="bg-white rounded-lg shadow p-4">
-                    <h3 className="text-sm font-bold text-gray-800 mb-2">Departments</h3>
-                    {departmentData && (
-                        <Doughnut
-                            data={departmentData}
-                            options={{
-                                responsive: true,
-                                maintainAspectRatio: true,
-                                aspectRatio: 2.5,
-                                plugins: {
-                                    legend: { position: 'bottom', labels: { font: { size: 9 }, boxWidth: 10, padding: 8 } }
-                                }
-                            }}
-                        />
-                    )}
-                </div>
-            </div>
-
-            {/* Doctor Stats Modal */}
-            {
-                showDoctorStatsModal && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-lg shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-                            {/* Modal Header */}
-                            <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6">
-                                <div className="flex items-center justify-between mb-4">
-                                    <h2 className="text-2xl font-bold flex items-center gap-2">
-                                        <i className="fas fa-user-md"></i>
-                                        Doctor Revenue Stats
-                                    </h2>
-                                    <button
-                                        onClick={() => setShowDoctorStatsModal(false)}
-                                        className="text-white hover:text-gray-200 text-2xl"
-                                    >
-                                        ×
-                                    </button>
-                                </div>
-
-                                {/* Filter Buttons */}
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => setDoctorStatsFilter('weekly')}
-                                        className={`px-4 py-2 rounded-lg font-semibold transition-all ${doctorStatsFilter === 'weekly'
-                                            ? 'bg-white text-blue-600'
-                                            : 'bg-blue-500 text-white hover:bg-blue-400'
-                                            }`}
-                                    >
-                                        Weekly
-                                    </button>
-                                    <button
-                                        onClick={() => setDoctorStatsFilter('monthly')}
-                                        className={`px-4 py-2 rounded-lg font-semibold transition-all ${doctorStatsFilter === 'monthly'
-                                            ? 'bg-white text-blue-600'
-                                            : 'bg-blue-500 text-white hover:bg-blue-400'
-                                            }`}
-                                    >
-                                        Monthly
-                                    </button>
-                                </div>
+                {aiInsights && (
+                    <div className="bg-gradient-to-br from-indigo-900 to-purple-900 rounded-2xl p-6 text-white shadow-xl animate-in slide-in-from-top-4">
+                        <div className="flex items-start gap-4">
+                            <div className="bg-white/10 p-3 rounded-full backdrop-blur-sm">
+                                <i className="fas fa-robot text-2xl"></i>
                             </div>
+                            <div className="flex-1">
+                                <h4 className="font-bold text-lg mb-2">AI Analysis Report</h4>
+                                <p className="text-indigo-200 italic mb-6 text-sm leading-relaxed">"{aiInsights.summary}"</p>
 
-                            {/* Modal Body */}
-                            <div className="p-6 overflow-y-auto max-h-[calc(90vh-200px)]">
-                                {doctorRevenueData.length === 0 ? (
-                                    <p className="text-center text-gray-500 py-8">No doctor data available</p>
-                                ) : (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full">
-                                            <thead className="bg-gray-100 sticky top-0">
-                                                <tr>
-                                                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">#</th>
-                                                    <th className="px-4 py-3 text-left text-sm font-bold text-gray-700">Doctor Name</th>
-                                                    <th className="px-4 py-3 text-center text-sm font-bold text-gray-700">Consultations</th>
-                                                    <th className="px-4 py-3 text-center text-sm font-bold text-gray-700">Fee/Visit</th>
-                                                    <th className="px-4 py-3 text-right text-sm font-bold text-gray-700">
-                                                        {doctorStatsFilter === 'weekly' ? 'Weekly Revenue' : 'Monthly Revenue'}
-                                                    </th>
-                                                    <th className="px-4 py-3 text-right text-sm font-bold text-gray-700">Total Revenue</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-200">
-                                                {doctorRevenueData.map((doctor: any, idx: number) => (
-                                                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                                                        <td className="px-4 py-3 text-sm text-gray-600">{idx + 1}</td>
-                                                        <td className="px-4 py-3">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-xs ${idx === 0 ? 'bg-yellow-500' :
-                                                                    idx === 1 ? 'bg-gray-400' :
-                                                                        idx === 2 ? 'bg-orange-600' :
-                                                                            'bg-blue-500'
-                                                                    }`}>
-                                                                    {doctor.name.charAt(0).toUpperCase()}
-                                                                </span>
-                                                                <span className="font-semibold text-gray-800">{doctor.name}</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-3 text-center">
-                                                            <span className="inline-block bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
-                                                                {doctor.count}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3 text-center text-sm text-gray-600">
-                                                            ₹{doctor.consultationFee.toLocaleString('en-IN')}
-                                                        </td>
-                                                        <td className="px-4 py-3 text-right">
-                                                            <span className="font-bold text-green-600">
-                                                                ₹{(doctorStatsFilter === 'weekly'
-                                                                    ? doctor.revenueWeekly
-                                                                    : doctor.revenueMonthly
-                                                                ).toLocaleString('en-IN')}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3 text-right">
-                                                            <span className="font-bold text-blue-600 text-lg">
-                                                                ₹{doctor.revenue.toLocaleString('en-IN')}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                            <tfoot className="bg-gray-100 font-bold">
-                                                <tr>
-                                                    <td colSpan={4} className="px-4 py-3 text-right text-gray-800">Total:</td>
-                                                    <td className="px-4 py-3 text-right text-green-600">
-                                                        ₹{doctorRevenueData.reduce((sum: number, d: any) =>
-                                                            sum + (doctorStatsFilter === 'weekly' ? d.revenueWeekly : d.revenueMonthly), 0
-                                                        ).toLocaleString('en-IN')}
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right text-blue-600 text-lg">
-                                                        ₹{doctorRevenueData.reduce((sum: number, d: any) => sum + d.revenue, 0).toLocaleString('en-IN')}
-                                                    </td>
-                                                </tr>
-                                            </tfoot>
-                                        </table>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="bg-white/10 rounded-xl p-4 backdrop-blur-sm">
+                                        <h5 className="font-bold text-green-300 text-xs uppercase mb-3"><i className="fas fa-chart-line mr-2"></i>Key Highlights</h5>
+                                        <ul className="space-y-2">
+                                            {aiInsights.highlights?.map((h: string, i: number) => (
+                                                <li key={i} className="text-sm text-indigo-50 flex items-start gap-2">
+                                                    <i className="fas fa-check mt-1 text-green-400"></i> {h}
+                                                </li>
+                                            ))}
+                                        </ul>
                                     </div>
-                                )}
+                                    <div className="bg-white/10 rounded-xl p-4 backdrop-blur-sm">
+                                        <h5 className="font-bold text-blue-300 text-xs uppercase mb-3"><i className="fas fa-lightbulb mr-2"></i>Strategic Suggestions</h5>
+                                        <ul className="space-y-2">
+                                            {aiInsights.recommendations?.map((r: string, i: number) => (
+                                                <li key={i} className="text-sm text-indigo-50 flex items-start gap-2">
+                                                    <i className="fas fa-arrow-right mt-1 text-blue-400"></i> {r}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                )
-            }
-        </div >
+                )}
+            </div>
+
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Main Trend Chart */}
+                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <h3 className="font-bold text-gray-800 mb-6">Test Volume (Last 7 Days)</h3>
+                    <div className="h-[300px]">
+                        {reportsTrendData && <Line data={reportsTrendData} options={{ maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { color: '#f3f4f6' } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } }} />}
+                    </div>
+                </div>
+
+                {/* Top Tests Donut/List */}
+                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm flex flex-col">
+                    <h3 className="font-bold text-gray-800 mb-6">Popular Tests</h3>
+                    <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                        {topTestsData.map((test, i) => (
+                            <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition">
+                                <div className="flex items-center gap-3">
+                                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-200 text-gray-600'}`}>#{i + 1}</span>
+                                    <span className="font-medium text-gray-700 text-sm truncate max-w-[120px]" title={test.name}>{test.name}</span>
+                                </div>
+                                <span className="font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md text-xs">{test.count}</span>
+                            </div>
+                        ))}
+                        {topTestsData.length === 0 && <p className="text-center text-gray-400 text-sm py-10">No tests recorded yet</p>}
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Top Referring Doctors */}
+                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-bold text-gray-800">Top Referring Doctors</h3>
+                        <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-1 rounded-full">Most Referrals</span>
+                    </div>
+                    <div className="space-y-4">
+                        {topDoctorsData.map((doc, i) => (
+                            <div key={i} className="flex items-center justify-between group">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 group-hover:bg-blue-100 transition">
+                                        <i className="fas fa-user-md"></i>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-800">{doc.name}</p>
+                                        <p className="text-xs text-gray-400">Rank #{i + 1}</p>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <span className="block font-bold text-gray-900">{doc.count}</span>
+                                    <span className="text-[10px] text-gray-400 uppercase">Referrals</span>
+                                </div>
+                            </div>
+                        ))}
+                        {topDoctorsData.length === 0 && <p className="text-center text-gray-400 text-sm py-10">No doctor data available</p>}
+                    </div>
+                </div>
+
+                {/* Recent Reports Log */}
+                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <div className="flex justify-between items-center mb-6">
+                        <h3 className="font-bold text-gray-800">Recent Activity</h3>
+                        <button onClick={() => window.location.href = '/dashboard/reports'} className="text-xs font-semibold text-blue-600 hover:text-blue-700">View All</button>
+                    </div>
+                    <div className="space-y-4">
+                        {recentActivity.map((report, i) => (
+                            <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-gray-50 hover:border-gray-100 hover:bg-gray-50 transition cursor-pointer">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-2 h-10 rounded-full ${report.status === 'Completed' ? 'bg-green-500' : report.status === 'Pending' ? 'bg-yellow-500' : 'bg-gray-300'}`}></div>
+                                    <div>
+                                        <p className="text-sm font-bold text-gray-800">{report.patientName}</p>
+                                        <p className="text-xs text-gray-500 flex items-center gap-1">
+                                            <i className="fas fa-flask text-[10px]"></i> {report.testName}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${report.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                        {report.status}
+                                    </span>
+                                    <p className="text-[10px] text-gray-400 mt-1">{new Date(report.createdAt).toLocaleDateString()}</p>
+                                </div>
+                            </div>
+                        ))}
+                        {recentActivity.length === 0 && <p className="text-center text-gray-400 text-sm py-10">No recent activity</p>}
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }

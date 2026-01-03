@@ -83,17 +83,24 @@ export default function TemplatesPage() {
     const loadTemplates = async () => {
         if (!user) return;
 
+        let userTemplates: Template[] = [];
+
         try {
-            // 1. Get User Templates (Price Overrides)
+            // 1. Get User Templates (Price Overrides) from Firebase
             const userTemplatesRef = ref(database, `templates/${dataSourceId}`);
             const userSnapshot = await get(userTemplatesRef);
-            const userTemplates: Template[] = [];
+
             if (userSnapshot.exists()) {
                 userSnapshot.forEach((child) => {
                     userTemplates.push({ id: child.key!, ...child.val() });
                 });
             }
+        } catch (dbErr) {
+            console.warn("Error fetching custom templates (using defaults only):", dbErr);
+            // Continue execution to show defaults even if DB fails
+        }
 
+        try {
             // 2. Process System Templates
             const processedTemplates: Template[] = [];
 
@@ -367,7 +374,13 @@ export default function TemplatesPage() {
                                 <tr>
                                     <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
                                         <i className="fas fa-flask-vial text-4xl mb-2 opacity-20"></i>
-                                        <p>No test templates found</p>
+                                        <p className="mb-4">No test templates found</p>
+                                        <button
+                                            onClick={() => { window.location.reload(); }}
+                                            className="bg-blue-50 text-blue-600 px-4 py-2 rounded-lg hover:bg-blue-100 transition text-sm font-semibold"
+                                        >
+                                            <i className="fas fa-sync-alt mr-2"></i> Reload Templates
+                                        </button>
                                     </td>
                                 </tr>
                             ) : (

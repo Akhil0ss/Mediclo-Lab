@@ -85,8 +85,7 @@ export default function NotificationBell() {
         switch (type) {
             case 'critical_alert': return 'fa-exclamation-triangle text-red-500';
             case 'report_ready': return 'fa-file-medical text-blue-500';
-            case 'appointment': return 'fa-calendar-check text-green-500';
-            case 'prescription': return 'fa-prescription text-purple-500';
+
             case 'chat': return 'fa-comments text-blue-500';
             default: return 'fa-bell text-gray-500';
         }

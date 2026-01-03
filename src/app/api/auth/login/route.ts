@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
         let role: string;
         let path: string;
 
-        if (rolePart === 'receptionist') {
+        if (rolePart === 'receptionist' || rolePart === 'admin') {
             role = 'receptionist';
             path = 'receptionist';
         } else if (rolePart === 'lab') {

@@ -23,10 +23,11 @@ export default function PatientsPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [reports, setReports] = useState<any[]>([]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [opdVisits, setOpdVisits] = useState<any[]>([]);
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [doctors, setDoctors] = useState<any[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [visitPurpose, setVisitPurpose] = useState('lab');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 10;
 
@@ -39,6 +40,8 @@ export default function PatientsPage() {
     const [newPatientCreds, setNewPatientCreds] = useState<any>(null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [selectedPatient, setSelectedPatient] = useState<any>(null);
+    const [externalDoctors, setExternalDoctors] = useState<any[]>([]);
+    const [showExternalDoctorInput, setShowExternalDoctorInput] = useState(false);
 
     // Form states
     const [formData, setFormData] = useState({
@@ -50,7 +53,21 @@ export default function PatientsPage() {
         refDoctor: '',
         externalDoctorClinic: ''
     });
-    const [visitPurpose, setVisitPurpose] = useState<'opd' | 'lab' | 'both'>('lab');
+
+    const resetForm = () => {
+        setFormData({
+            name: '',
+            age: '',
+            gender: '',
+            mobile: '',
+            address: '',
+            refDoctor: '',
+            externalDoctorClinic: ''
+        });
+        setVisitPurpose('lab');
+        setShowExternalDoctorInput(false);
+    };
+
 
     // Billing Modal states
     const [showBillingModal, setShowBillingModal] = useState(false);
@@ -97,7 +114,7 @@ export default function PatientsPage() {
         const templatesRef = ref(database, `templates/${dataSourceId}`);
         const samplesRef = ref(database, `samples/${dataSourceId}`);
         const reportsRef = ref(database, `reports/${dataSourceId}`);
-        const opdRef = ref(database, `opd/${dataSourceId}`);
+
         const doctorsRef = ref(database, `doctors/${dataSourceId}`);
 
         const unsubPatients = onValue(patientsRef, (snapshot) => {
@@ -130,12 +147,6 @@ export default function PatientsPage() {
             setReports(data);
         });
 
-        const unsubOpd = onValue(opdRef, (snapshot) => {
-            const data: any[] = [];
-            snapshot.forEach((child) => { data.push({ id: child.key, ...child.val() }); });
-            setOpdVisits(data);
-        });
-
         const unsubDoctors = onValue(doctorsRef, (snapshot) => {
             const data: any[] = [];
             snapshot.forEach((child) => { data.push({ id: child.key, ...child.val() }); });
@@ -147,9 +158,21 @@ export default function PatientsPage() {
             unsubTemplates();
             unsubSamples();
             unsubReports();
-            unsubOpd();
             unsubDoctors();
         };
+    }, [user, userProfile]);
+
+    // Fetch External Doctors
+    useEffect(() => {
+        if (!user || !userProfile) return;
+        const dataSourceId = userProfile.ownerId || user.uid;
+        const externalDoctorsRef = ref(database, `externalDoctors/${dataSourceId}`);
+        const unsub = onValue(externalDoctorsRef, (snapshot) => {
+            const data: any[] = [];
+            snapshot.forEach((child) => { data.push({ id: child.key, ...child.val() }); });
+            setExternalDoctors(data);
+        });
+        return () => unsub();
     }, [user, userProfile]);
 
     useEffect(() => {
@@ -160,17 +183,7 @@ export default function PatientsPage() {
             const doctorId = userProfile?.doctorId || user?.uid;
             const doctorName = userProfile?.name;
 
-            // Get unique patient IDs from OPD visits where this doctor consulted
-            const assignedPatientIds = new Set(
-                opdVisits
-                    .filter(opd =>
-                        opd.doctorId === doctorId ||
-                        opd.assignedDoctorId === doctorId ||
-                        (doctorName && opd.doctorName === doctorName)
-                    )
-                    .map(opd => opd.patientId)
-            );
-            basePatients = patients.filter(p => assignedPatientIds.has(p.id));
+            basePatients = patients.filter(p => p.refDoctor === doctorName);
         }
 
         if (!searchQuery.trim()) {
@@ -186,7 +199,7 @@ export default function PatientsPage() {
             );
         }
         setCurrentPage(1);
-    }, [searchQuery, patients, opdVisits, userProfile, user]);
+    }, [searchQuery, patients, userProfile, user]);
 
     const handleAddPatient = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -194,8 +207,8 @@ export default function PatientsPage() {
 
         const dataSourceId = userProfile?.ownerId || user.uid;
 
-        // If external doctor is provided (not in internal doctors list), save it
-        if (formData.refDoctor && !doctors.some(d => d.name === formData.refDoctor)) {
+        // If external doctor is provided AND new input mode is active, save it
+        if (showExternalDoctorInput && formData.refDoctor) {
             const externalDoctorData = {
                 name: formData.refDoctor,
                 clinicInfo: formData.externalDoctorClinic || '',
@@ -232,7 +245,7 @@ export default function PatientsPage() {
             ...formData,
             patientId, // Auto-generated Patient ID
             age: parseInt(formData.age),
-            registrationType: visitPurpose,
+            registrationType: 'lab',
             token: autoToken, // Auto-generated Token
             createdAt: new Date().toISOString(),
             // Store credentials for patient portal
@@ -248,15 +261,7 @@ export default function PatientsPage() {
         setShowAddModal(false);
         resetForm();
 
-        // Show credentials details in Modal
-        setNewPatientCreds({
-            patientId,
-            token: autoToken,
-            username,
-            password
-        });
         showToast('Patient added successfully!', 'success');
-        setShowSuccessModal(true);
     };
 
     const handleUpdatePatient = async (e: React.FormEvent) => {
@@ -286,9 +291,7 @@ export default function PatientsPage() {
         // Find related records
         const relatedSamples = samples.filter(s => s.patientId === patientId);
         const relatedReports = reports.filter(r => r.patientId === patientId);
-        const relatedOpd = opdVisits.filter(o => o.patientId === patientId);
-
-        const count = relatedSamples.length + relatedReports.length + relatedOpd.length;
+        const count = relatedSamples.length + relatedReports.length;
 
         let message = `Are you sure you want to delete patient "${patientName}"?`;
 
@@ -297,7 +300,6 @@ export default function PatientsPage() {
                 `Deleting this patient will also PERMANENTLY DELETE:\n` +
                 `   - ${relatedSamples.length} Laboratory Samples\n` +
                 `   - ${relatedReports.length} Lab Reports\n` +
-                `   - ${relatedOpd.length} OPD Visits\n\n` +
                 `This action CANNOT be undone! Proceed?`;
         }
 
@@ -314,7 +316,7 @@ export default function PatientsPage() {
             // Delete related records
             relatedSamples.forEach(s => updates[`samples/${dataSourceId}/${s.id}`] = null);
             relatedReports.forEach(r => updates[`reports/${dataSourceId}/${r.id}`] = null);
-            relatedOpd.forEach(o => updates[`opd/${dataSourceId}/${o.id}`] = null);
+
 
             await update(ref(database), updates);
             alert('Patient and all related data deleted successfully.');
@@ -348,18 +350,7 @@ export default function PatientsPage() {
         setShowViewModal(true);
     };
 
-    const resetForm = () => {
-        setFormData({
-            name: '',
-            age: '',
-            gender: '',
-            mobile: '',
-            address: '',
-            refDoctor: '',
-            externalDoctorClinic: ''
-        });
-        setVisitPurpose('lab');
-    };
+
 
 
     const exportToCSV = () => {
@@ -436,7 +427,7 @@ export default function PatientsPage() {
                     <table className="w-full min-w-full">
                         <thead className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
                             <tr>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Token</th>
+                                <th className="px-4 py-3 text-left text-sm font-semibold">ID</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Name</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Age/Gender</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Contact</th>
@@ -458,29 +449,11 @@ export default function PatientsPage() {
                                 paginatedPatients.map(patient => (
                                     <tr key={patient.id} className="border-b hover:bg-gray-50 transition">
                                         <td className="px-4 py-3 text-sm">
-                                            <span className="font-mono font-bold text-purple-600">{patient.token || 'N/A'}</span>
+                                            <span className="font-mono font-bold text-purple-600 text-xs">{patient.patientId || 'N/A'}</span>
                                         </td>
                                         <td className="px-4 py-3 text-sm font-semibold text-gray-800">
                                             <div className="flex items-center gap-2 flex-wrap">
                                                 <span>{patient.name}</span>
-                                                {patient.registrationType === 'both' ? (
-                                                    <span className="text-indigo-600" title="Integrated Visit (OPD & Lab)">
-                                                        <i className="fas fa-layer-group"></i>
-                                                    </span>
-                                                ) : (
-                                                    <>
-                                                        {(patient.registrationType === 'lab' || samples.some(s => s.patientId === patient.id)) && (
-                                                            <span className="text-purple-600" title="Lab Patient">
-                                                                <i className="fas fa-flask"></i>
-                                                            </span>
-                                                        )}
-                                                        {(patient.registrationType === 'opd' || opdVisits.some(o => o.patientId === patient.id)) && (
-                                                            <span className="text-green-600" title="OPD Patient">
-                                                                <i className="fas fa-stethoscope"></i>
-                                                            </span>
-                                                        )}
-                                                    </>
-                                                )}
                                                 {patient.source === 'WEB' && (
                                                     <span className="text-blue-500" title="Booked from Web">
                                                         <i className="fas fa-globe"></i>
@@ -618,7 +591,7 @@ export default function PatientsPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 items-end">
+                    <div className="grid grid-cols-1 gap-3 items-end">
                         <div>
                             <label className="block text-sm font-semibold mb-1">Address *</label>
                             <input
@@ -630,100 +603,61 @@ export default function PatientsPage() {
                                 className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                             />
                         </div>
-                        <div className="bg-blue-50 px-3 py-2 rounded-lg border border-blue-100 h-[42px] flex items-center">
-                            <div className="flex items-center gap-4 w-full justify-between">
-                                <label className="flex items-center cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        checked={visitPurpose === 'opd'}
-                                        onChange={() => setVisitPurpose('opd')}
-                                        className="mr-1.5 text-purple-600 focus:ring-purple-500"
-                                    />
-                                    <span className="text-xs font-bold text-gray-700">OPD</span>
-                                </label>
-                                <label className="flex items-center cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        checked={visitPurpose === 'lab'}
-                                        onChange={() => setVisitPurpose('lab')}
-                                        className="mr-1.5 text-purple-600 focus:ring-purple-500"
-                                    />
-                                    <span className="text-xs font-bold text-gray-700">LAB</span>
-                                </label>
-                                <label className="flex items-center cursor-pointer">
-                                    <input
-                                        type="radio"
-                                        checked={visitPurpose === 'both'}
-                                        onChange={() => setVisitPurpose('both')}
-                                        className="mr-1.5 text-purple-600 focus:ring-purple-500"
-                                    />
-                                    <span className="text-xs font-bold text-gray-700">OL</span>
-                                </label>
-                            </div>
-                        </div>
                     </div>
-                    <div>
+                    {/* Referring Doctor Selection */}
+                    <div className="mb-4">
                         <label className="block text-sm font-semibold mb-1">Referring Doctor</label>
 
-                        {visitPurpose === 'lab' ? (
-                            // Lab: Show internal doctors + external doctor option
-                            <>
-                                <select
-                                    value={formData.refDoctor}
-                                    onChange={(e) => {
-                                        if (e.target.value === '__external__') {
-                                            setFormData({ ...formData, refDoctor: '' });
-                                        } else {
-                                            setFormData({ ...formData, refDoctor: e.target.value });
-                                        }
-                                    }}
-                                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 mb-2"
-                                >
-                                    <option value="">Select Doctor</option>
-                                    {doctors.map(d => (
-                                        <option key={d.id} value={d.name}>Dr. {d.name} ({d.specialization})</option>
-                                    ))}
-                                    <option value="__external__">➕ Add External Referring Doctor</option>
-                                </select>
+                        {/* Internal + External Doctor Logic */}
+                        <select
+                            required
+                            value={showExternalDoctorInput ? '__external__' : formData.refDoctor}
+                            onChange={(e) => {
+                                if (e.target.value === '__external__') {
+                                    setShowExternalDoctorInput(true);
+                                    setFormData({ ...formData, refDoctor: '', externalDoctorClinic: '' });
+                                } else {
+                                    setShowExternalDoctorInput(false);
+                                    setFormData({ ...formData, refDoctor: e.target.value });
+                                }
+                            }}
+                            className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 mb-2"
+                        >
+                            <option value="">Select Doctor</option>
+                            {/* Merge and display all unique doctors */}
+                            {[...doctors, ...externalDoctors]
+                                .filter((d, index, self) =>
+                                    index === self.findIndex((t) => t.name === d.name)
+                                )
+                                .map(d => (
+                                    <option key={d.id} value={d.name}>Dr. {d.name}</option>
+                                ))
+                            }
+                            <option value="__external__">➕ Add New Doctor</option>
+                        </select>
 
-                                {(formData.refDoctor === '' || !doctors.some(d => d.name === formData.refDoctor)) && (
-                                    <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200 space-y-2">
-                                        <p className="text-xs font-semibold text-yellow-800 mb-2">External Referring Doctor Details:</p>
-                                        <input
-                                            type="text"
-                                            placeholder="Doctor Name *"
-                                            value={formData.refDoctor}
-                                            onChange={(e) => setFormData({ ...formData, refDoctor: e.target.value })}
-                                            className="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500"
-                                        />
-                                        <input
-                                            type="text"
-                                            placeholder="Clinic Name / Address *"
-                                            required
-                                            value={formData.externalDoctorClinic}
-                                            onChange={(e) => setFormData({ ...formData, externalDoctorClinic: e.target.value })}
-                                            className="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500"
-                                        />
-                                    </div>
-                                )}
-                                <p className="text-xs text-gray-500 mt-1">💡 Select internal doctor or add external referring doctor</p>
-                            </>
-                        ) : (
-                            // OPD or Both: Only internal doctors
-                            <>
-                                <select
+                        {showExternalDoctorInput && (
+                            <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200 space-y-2 animate-fade-in">
+                                <p className="text-xs font-semibold text-yellow-800 mb-2">New External Doctor Details:</p>
+                                <input
+                                    type="text"
+                                    placeholder="Doctor Name *"
+                                    required
                                     value={formData.refDoctor}
                                     onChange={(e) => setFormData({ ...formData, refDoctor: e.target.value })}
-                                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                                >
-                                    <option value="">Select Doctor</option>
-                                    {doctors.map(d => (
-                                        <option key={d.id} value={d.name}>Dr. {d.name} ({d.specialization})</option>
-                                    ))}
-                                </select>
-                                <p className="text-xs text-gray-500 mt-1">💡 Select from your internal doctors</p>
-                            </>
+                                    className="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500"
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Clinic Name / Address *"
+                                    required
+                                    value={formData.externalDoctorClinic}
+                                    onChange={(e) => setFormData({ ...formData, externalDoctorClinic: e.target.value })}
+                                    className="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500"
+                                />
+                            </div>
                         )}
+                        <p className="text-xs text-gray-500 mt-1">💡 Select internal/external doctor or add a new one.</p>
                     </div>
 
                     <div className="flex gap-2">
@@ -858,7 +792,7 @@ export default function PatientsPage() {
                                 <div><strong className="text-gray-700">Name:</strong> <span className="text-gray-900">{selectedPatient.name}</span></div>
                                 <div><strong className="text-gray-700">Age/Gender:</strong> <span className="text-gray-900">{selectedPatient.age} / {selectedPatient.gender}</span></div>
                                 <div><strong className="text-gray-700">Contact:</strong> <span className="text-gray-900">{selectedPatient.mobile}</span></div>
-                                <div><strong className="text-gray-700">Token:</strong> <span className="font-mono text-purple-600">{selectedPatient.token || 'N/A'}</span></div>
+                                <div><strong className="text-gray-700">Patient ID:</strong> <span className="font-mono text-purple-600">{selectedPatient.patientId || 'N/A'}</span></div>
                                 <div><strong className="text-gray-700">Ref. Doctor:</strong> <span className="text-gray-900">{selectedPatient.refDoctor || 'N/A'}</span></div>
                                 <div><strong className="text-gray-700">Address:</strong> <span className="text-gray-900">{selectedPatient.address || 'N/A'}</span></div>
                             </div>
@@ -907,75 +841,7 @@ export default function PatientsPage() {
                             )}
                         </div>
 
-                        {/* OPD Visits History */}
-                        <div className="mb-4">
-                            <h4 className="font-bold text-lg mb-2 text-green-700 flex items-center">
-                                <i className="fas fa-stethoscope mr-2"></i>
-                                OPD Visits & Prescriptions ({opdVisits.filter(v => v.patientId === selectedPatient.id).length})
-                            </h4>
-                            {opdVisits.filter(v => v.patientId === selectedPatient.id).length === 0 ? (
-                                <p className="text-gray-500 text-sm italic pl-6">No OPD visits found</p>
-                            ) : (
-                                <div className="space-y-3 max-h-80 overflow-y-auto">
-                                    {opdVisits
-                                        .filter(v => v.patientId === selectedPatient.id)
-                                        .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
-                                        .map(visit => (
-                                            <div key={visit.id} className="bg-white border border-green-200 rounded-lg p-4 hover:shadow-md transition">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div>
-                                                        <div className="font-semibold text-green-600">RX ID: {visit.rxId}</div>
-                                                        <div className="text-sm text-gray-600">Dr. {visit.doctorName}</div>
-                                                        <div className="text-xs text-gray-500">
-                                                            {new Date(visit.visitDate).toLocaleDateString('en-IN')}
-                                                        </div>
-                                                    </div>
-                                                    <span className={`px-2 py-1 rounded text-xs font-semibold ${visit.isFinal ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                                                        }`}>
-                                                        {visit.isFinal ? 'Finalized' : 'Pending'}
-                                                    </span>
-                                                </div>
 
-                                                {/* Vitals */}
-                                                {visit.vitals && (
-                                                    <div className="bg-blue-50 p-2 rounded mb-2">
-                                                        <div className="text-xs font-semibold text-blue-700 mb-1">Vitals:</div>
-                                                        <div className="grid grid-cols-3 gap-2 text-xs">
-                                                            {visit.vitals.bp && <div><strong>BP:</strong> {visit.vitals.bp}</div>}
-                                                            {visit.vitals.pulse && <div><strong>Pulse:</strong> {visit.vitals.pulse}</div>}
-                                                            {visit.vitals.temp && <div><strong>Temp:</strong> {visit.vitals.temp}</div>}
-                                                            {visit.vitals.weight && <div><strong>Weight:</strong> {visit.vitals.weight}</div>}
-                                                            {visit.vitals.spo2 && <div><strong>SpO2:</strong> {visit.vitals.spo2}</div>}
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                {/* Complaints & Diagnosis */}
-                                                {visit.complaints && (
-                                                    <div className="mb-2">
-                                                        <div className="text-xs font-semibold text-gray-700">Complaints:</div>
-                                                        <div className="text-sm text-gray-600">{visit.complaints}</div>
-                                                    </div>
-                                                )}
-                                                {visit.diagnosis && (
-                                                    <div className="mb-2">
-                                                        <div className="text-xs font-semibold text-gray-700">Diagnosis:</div>
-                                                        <div className="text-sm text-gray-600">{visit.diagnosis}</div>
-                                                    </div>
-                                                )}
-
-                                                {/* Follow-up */}
-                                                {visit.followUpDate && (
-                                                    <div className="text-xs text-orange-600 mt-2">
-                                                        <i className="fas fa-calendar-check mr-1"></i>
-                                                        Follow-up: {new Date(visit.followUpDate).toLocaleDateString('en-IN')}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                </div>
-                            )}
-                        </div>
 
                         {/* Samples History */}
                         <div className="mb-4">

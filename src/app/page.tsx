@@ -43,21 +43,15 @@ export default function HomePage() {
             <a href="#features" className="text-sm font-semibold text-slate-600 hover:text-blue-600 transition no-underline uppercase tracking-wide">Features</a>
             <a href="#testimonials" className="text-sm font-semibold text-slate-600 hover:text-blue-600 transition no-underline uppercase tracking-wide">Reviews</a>
 
-            <div className="flex items-center gap-4">
-              <Link href="/patient" className="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-full font-bold shadow-md transition no-underline flex items-center text-sm">
-                <i className="fas fa-user-injured mr-2"></i>Patient Login
+            {user ? (
+              <Link href="/dashboard" className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full font-bold shadow-md transition no-underline flex items-center text-sm">
+                <i className="fas fa-th-large mr-2"></i>Dashboard
               </Link>
-
-              {user ? (
-                <Link href="/dashboard" className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full font-bold shadow-md transition no-underline flex items-center text-sm">
-                  <i className="fas fa-th-large mr-2"></i>Dashboard
-                </Link>
-              ) : (
-                <Link href="/login" className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-full font-bold shadow-md transition no-underline flex items-center text-sm">
-                  <i className="fas fa-user-md mr-2"></i>Dashboard Login
-                </Link>
-              )}
-            </div>
+            ) : (
+              <Link href="/login" className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-full font-bold shadow-md transition no-underline flex items-center text-sm">
+                <i className="fas fa-user-md mr-2"></i>Dashboard Login
+              </Link>
+            )}
           </div>
 
           {/* Mobile Menu Toggle */}
@@ -70,30 +64,28 @@ export default function HomePage() {
         </div>
 
         {/* Mobile Menu Dropdown */}
-        {isMobileMenuOpen && (
-          <div className="lg:hidden absolute top-full left-0 right-0 bg-white border-b border-gray-100 shadow-xl p-6 flex flex-col gap-6 animate-in slide-in-from-top-5">
-            <a href="#solutions" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-semibold text-slate-700">Solutions</a>
-            <a href="#features" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-semibold text-slate-700">Features</a>
-            <a href="#testimonials" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-semibold text-slate-700">Reviews</a>
+        {
+          isMobileMenuOpen && (
+            <div className="lg:hidden absolute top-full left-0 right-0 bg-white border-b border-gray-100 shadow-xl p-6 flex flex-col gap-6 animate-in slide-in-from-top-5">
+              <a href="#solutions" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-semibold text-slate-700">Solutions</a>
+              <a href="#features" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-semibold text-slate-700">Features</a>
+              <a href="#testimonials" onClick={() => setIsMobileMenuOpen(false)} className="text-lg font-semibold text-slate-700">Reviews</a>
 
-            <div className="h-px bg-gray-100 my-2"></div>
+              <div className="h-px bg-gray-100 my-2"></div>
 
-            <Link href="/patient" className="bg-green-600 text-white px-5 py-3 rounded-xl font-bold text-center flex items-center justify-center">
-              <i className="fas fa-user-injured mr-2"></i>Patient Login
-            </Link>
-
-            {user ? (
-              <Link href="/dashboard" className="bg-blue-600 text-white px-5 py-3 rounded-xl font-bold text-center flex items-center justify-center">
-                <i className="fas fa-th-large mr-2"></i>Dashboard
-              </Link>
-            ) : (
-              <Link href="/login" className="bg-slate-900 text-white px-5 py-3 rounded-xl font-bold text-center flex items-center justify-center">
-                <i className="fas fa-user-md mr-2"></i>Dashboard Login
-              </Link>
-            )}
-          </div>
-        )}
-      </nav>
+              {user ? (
+                <Link href="/dashboard" className="bg-blue-600 text-white px-5 py-3 rounded-xl font-bold text-center flex items-center justify-center">
+                  <i className="fas fa-th-large mr-2"></i>Dashboard
+                </Link>
+              ) : (
+                <Link href="/login" className="bg-slate-900 text-white px-5 py-3 rounded-xl font-bold text-center flex items-center justify-center">
+                  <i className="fas fa-user-md mr-2"></i>Dashboard Login
+                </Link>
+              )}
+            </div>
+          )
+        }
+      </nav >
 
       {/* Hero Section */}
       < header className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden bg-slate-50" >
@@ -107,15 +99,12 @@ export default function HomePage() {
               <span className="text-blue-600">Modern Healthcare.</span>
             </h1>
             <p className="text-xl text-slate-600 mb-10 leading-relaxed max-w-lg">
-              Streamline your hospital operations with our enterprise-grade OPD, Lab, and Patient Management System. Designed for precision and care.
+              Streamline your hospital operations with our enterprise-grade Lab and Patient Management System. Designed for precision and care.
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <Link href="/register" className="px-8 py-4 bg-blue-600 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-blue-700 hover:shadow-xl transition-all flex items-center justify-center gap-2 no-underline">
-                Start Free Trial <i className="fas fa-arrow-right text-sm"></i>
-              </Link>
-              <Link href="/login" className="px-8 py-4 bg-white text-slate-700 border border-slate-200 rounded-xl font-bold text-lg hover:bg-slate-50 hover:border-slate-300 transition-all flex items-center justify-center gap-2 no-underline">
-                View Live Demo
+              <Link href="/login" className="px-8 py-4 bg-blue-600 text-white rounded-xl font-bold text-lg shadow-lg hover:bg-blue-700 hover:shadow-xl transition-all flex items-center justify-center gap-2 no-underline">
+                Login to Dashboard <i className="fas fa-arrow-right text-sm"></i>
               </Link>
             </div>
 
@@ -168,7 +157,7 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             {/* Card 1 */}
             <div className="group p-8 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-white hover:border-blue-100 hover:shadow-xl transition-all duration-300">
               <div className="w-14 h-14 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center text-blue-600 text-2xl mb-6 group-hover:scale-110 transition-transform">
@@ -184,20 +173,7 @@ export default function HomePage() {
               </ul>
             </div>
 
-            {/* Card 2 */}
-            <div className="group p-8 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-white hover:border-blue-100 hover:shadow-xl transition-all duration-300">
-              <div className="w-14 h-14 bg-white rounded-xl shadow-sm border border-slate-100 flex items-center justify-center text-purple-600 text-2xl mb-6 group-hover:scale-110 transition-transform">
-                <i className="fas fa-user-md"></i>
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-4">Out-Patient Department</h3>
-              <p className="text-slate-600 leading-relaxed mb-6">
-                Seamless queue management, digital prescriptions, and patient history at the doctor's fingertips.
-              </p>
-              <ul className="space-y-2 mb-6 text-sm text-slate-500">
-                <li className="flex items-center gap-2"><i className="fas fa-check text-purple-500 text-xs"></i> Live Queue Display</li>
-                <li className="flex items-center gap-2"><i className="fas fa-check text-purple-500 text-xs"></i> E-Prescriptions</li>
-              </ul>
-            </div>
+
 
             {/* Card 3 */}
             <div className="group p-8 rounded-2xl border border-slate-100 bg-slate-50 hover:bg-white hover:border-blue-100 hover:shadow-xl transition-all duration-300">
@@ -255,30 +231,7 @@ export default function HomePage() {
         </div>
       </section >
 
-      {/* Feature Drilldown 2 */}
-      < section className="py-24 bg-white" >
-        <div className="max-w-7xl mx-auto px-6 grid md:grid-cols-2 gap-20 items-center">
-          <div>
-            <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center text-xl mb-6"><i className="fas fa-laptop-medical"></i></div>
-            <h2 className="text-4xl font-bold text-slate-900 mb-6">Doctor-Centric Interface</h2>
-            <p className="text-lg text-slate-600 mb-6 leading-relaxed">
-              Designed by doctors, for doctors. View patient history, vitals, and previous reports in a single, unified dashboard during consultation.
-            </p>
-            <Link href="/register" className="text-blue-600 font-bold hover:text-blue-700 flex items-center gap-2 no-underline">
-              Explore Doctor Module <i className="fas fa-arrow-right"></i>
-            </Link>
-          </div>
-          <div>
-            <Image
-              src="https://images.unsplash.com/photo-1551076805-e1869033e561?auto=format&fit=crop&q=80&w=1000"
-              alt="Doctor with Tablet"
-              width={800}
-              height={600}
-              className="rounded-2xl shadow-xl w-full h-auto"
-            />
-          </div>
-        </div>
-      </section >
+
 
       {/* Trust/CTA Area */}
       < section className="py-24 bg-slate-900 text-white relative overflow-hidden" >
@@ -333,28 +286,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Testimonial 2 */}
-              <div className="min-w-[350px] md:min-w-[400px] bg-gradient-to-br from-green-50 to-blue-50 p-8 rounded-2xl shadow-lg border border-green-100">
-                <div className="flex items-center gap-1 mb-4 text-yellow-500">
-                  <i className="fas fa-star"></i>
-                  <i className="fas fa-star"></i>
-                  <i className="fas fa-star"></i>
-                  <i className="fas fa-star"></i>
-                  <i className="fas fa-star"></i>
-                </div>
-                <p className="text-gray-700 mb-6 italic leading-relaxed">
-                  "The OPD module is incredibly intuitive. Our doctors love the patient history integration, and queue management has never been smoother. Highly recommended!"
-                </p>
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                    SM
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900">Dr. Sneha Mehta</h4>
-                    <p className="text-sm text-gray-600">Chief Medical Officer, HealthCare Plus, Delhi</p>
-                  </div>
-                </div>
-              </div>
+
 
               {/* Testimonial 3 */}
               <div className="min-w-[350px] md:min-w-[400px] bg-gradient-to-br from-purple-50 to-pink-50 p-8 rounded-2xl shadow-lg border border-purple-100">
@@ -402,27 +334,6 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="min-w-[350px] md:min-w-[400px] bg-gradient-to-br from-green-50 to-blue-50 p-8 rounded-2xl shadow-lg border border-green-100">
-                <div className="flex items-center gap-1 mb-4 text-yellow-500">
-                  <i className="fas fa-star"></i>
-                  <i className="fas fa-star"></i>
-                  <i className="fas fa-star"></i>
-                  <i className="fas fa-star"></i>
-                  <i className="fas fa-star"></i>
-                </div>
-                <p className="text-gray-700 mb-6 italic leading-relaxed">
-                  "The OPD module is incredibly intuitive. Our doctors love the patient history integration, and queue management has never been smoother. Highly recommended!"
-                </p>
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                    SM
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900">Dr. Sneha Mehta</h4>
-                    <p className="text-sm text-gray-600">Chief Medical Officer, HealthCare Plus, Delhi</p>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </div>

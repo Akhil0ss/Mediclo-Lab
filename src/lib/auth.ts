@@ -89,87 +89,37 @@ export async function isUsernameTaken(username: string): Promise<boolean> {
 }
 
 /**
- * Create initial user accounts (receptionist, lab, pharmacy)
- * Called during first-time setup
- * Now uses auto-generated unique brand prefix to avoid collisions
+ * Complete profile setup for new owner
+ * Updates profile with lab name and generates brand prefix
+ * No credentials created (Single Admin)
  */
-export async function createUserAccounts(
+export async function completeProfileSetup(
     userId: string,
-    labName: string,
-    receptionistPassword: string
-): Promise<UserCredentials[]> {
+    labName: string
+): Promise<void> {
     try {
-        const credentials: UserCredentials[] = [];
-
         // Generate unique brand prefix (e.g., "spot", "spot1", "spot2")
         const brandPrefix = await generateUniqueBrandPrefix(labName);
         console.log(`Generated unique brand prefix: ${brandPrefix} for lab: ${labName}`);
 
-        // 1. Create Receptionist
-        const receptionistUsername = generateUsername(brandPrefix, 'receptionist');
-        const receptionistData = {
-            username: receptionistUsername,
-            passwordHash: hashPassword(receptionistPassword),
-            role: 'receptionist' as UserRole,
-            name: 'Receptionist',
-            isActive: true,
-            createdAt: new Date().toISOString()
-        };
-        await set(ref(database, `users/${userId}/auth/receptionist`), receptionistData);
-        credentials.push({
-            username: receptionistUsername,
-            password: receptionistPassword,
-            role: 'receptionist'
-        });
-
-        // 2. Create Lab User
-        const labUsername = generateUsername(brandPrefix, 'lab');
-        const labPassword = generatePassword();
-        const labData = {
-            username: labUsername,
-            passwordHash: hashPassword(labPassword),
-            role: 'lab' as UserRole,
-            name: 'Lab Staff',
-            isActive: true,
-            createdAt: new Date().toISOString()
-        };
-        await set(ref(database, `users/${userId}/auth/lab`), labData);
-        credentials.push({
-            username: labUsername,
-            password: labPassword,
-            role: 'lab'
-        });
-
-        // 3. Create Pharmacy User
-        const pharmacyUsername = generateUsername(brandPrefix, 'pharmacy');
-        const pharmacyPassword = generatePassword();
-        const pharmacyData = {
-            username: pharmacyUsername,
-            passwordHash: hashPassword(pharmacyPassword),
-            role: 'pharmacy' as UserRole,
-            name: 'Pharmacy Staff',
-            isActive: true,
-            createdAt: new Date().toISOString()
-        };
-        await set(ref(database, `users/${userId}/auth/pharmacy`), pharmacyData);
-        credentials.push({
-            username: pharmacyUsername,
-            password: pharmacyPassword,
-            role: 'pharmacy'
-        });
-
-        // 4. Update user profile with unique brand prefix
+        // Update user profile with ONLY lab details
         await set(ref(database, `users/${userId}/profile`), {
             role: 'owner',
             setupCompleted: true,
             labName,
             brandPrefix, // Store the unique prefix for future reference
+            name: 'Lab Admin', // Default name
             createdAt: new Date().toISOString()
         });
 
-        return credentials;
+        // Initialize Branding with defaults
+        await set(ref(database, `branding/${userId}`), {
+            labName: labName,
+            createdAt: new Date().toISOString()
+        });
+
     } catch (error) {
-        console.error('Error creating user accounts:', error);
+        console.error('Error completing profile setup:', error);
         throw error;
     }
 }
@@ -186,22 +136,22 @@ export async function resetPassword(
         const rolePart = username.split('@')[1];
         let path: string = '';
 
-        if (rolePart === 'receptionist') {
-            path = `owners/${ownerId}/receptionist`;
+        if (rolePart === 'receptionist' || rolePart === 'admin') {
+            path = `users/${ownerId}/auth/receptionist`;
         } else if (rolePart === 'lab') {
-            path = `owners/${ownerId}/lab`;
+            path = `users/${ownerId}/auth/lab`;
         } else if (rolePart === 'pharmacy') {
-            path = `owners/${ownerId}/pharmacy`;
+            path = `users/${ownerId}/auth/pharmacy`;
         } else {
             // Doctor - find by username
-            const doctorsRef = ref(database, `owners/${ownerId}/doctors`);
+            const doctorsRef = ref(database, `users/${ownerId}/auth/doctors`);
             const snapshot = await get(doctorsRef);
             if (!snapshot.exists()) return false;
 
             const doctors = snapshot.val();
             for (const doctorId in doctors) {
                 if (doctors[doctorId].username === username) {
-                    path = `owners/${ownerId}/doctors/${doctorId}`;
+                    path = `users/${ownerId}/auth/doctors/${doctorId}`;
                     break;
                 }
             }

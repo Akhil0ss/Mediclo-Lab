@@ -7,8 +7,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { getDataOwnerId } from '@/lib/dataUtils';
 import { ToastProvider, useToast } from '@/contexts/ToastContext';
-import NotificationBell from '@/components/NotificationBell';
-import Intercom from '@/components/Intercom';
+
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { user, userProfile, loading } = useAuth();
@@ -61,6 +60,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         { id: 'reports', label: 'Reports', icon: 'fa-file-medical', path: '/dashboard/reports' },
         { id: 'templates', label: 'Templates', icon: 'fa-flask-vial', path: '/dashboard/templates' },
         { id: 'analytics', label: 'Analytics', icon: 'fa-chart-bar', path: '/dashboard/analytics' },
+        { id: 'settings', label: 'Settings', icon: 'fa-cog', path: '/dashboard/settings' },
     ];
 
     if (loading) return <div className='min-h-screen flex items-center justify-center'>Loading...</div>;
@@ -80,30 +80,28 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
-                        <NotificationBell />
                         <div className="text-right mr-2">
-                            <p className="text-sm font-semibold">{userProfile?.name}</p>
-                            <span className="text-xs bg-white/30 px-2 py-0.5 rounded-full">{userProfile?.role?.toUpperCase() || 'ADMIN'}</span>
+                            <p className="text-sm font-semibold">{user?.displayName || userProfile?.name}</p>
+                            <span className="text-xs bg-white/30 px-2 py-0.5 rounded-full">{(userProfile?.role === 'receptionist' ? 'LAB ADMIN' : userProfile?.role?.toUpperCase()) || 'LAB ADMIN'}</span>
                         </div>
-                        <Link href="/dashboard/settings" className="bg-white/20 w-10 h-10 rounded-lg flex items-center justify-center hover:bg-white/30"><i className="fas fa-cog"></i></Link>
                         <button onClick={handleSignOut} className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30"><i className="fas fa-sign-out-alt"></i> Logout</button>
                     </div>
                 </div>
             </header>
 
             <div className="container-pc w-full mx-auto p-6 lg:px-8 grid grid-cols-12 gap-6">
-                <aside className="col-span-12 lg:col-span-2 space-y-2">
+                <aside className="col-span-12 lg:col-span-2 space-y-2 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-120px)] lg:overflow-y-auto pr-2">
                     {tabs.map(tab => (
                         <Link key={tab.id} href={tab.path}
-                            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ` + (activeTab === tab.id ? 'gradient-colorful text-white shadow-lg scale-105' : 'bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 shadow-sm')}>
+                            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ` + (activeTab === tab.id ? 'gradient-colorful text-white shadow-lg' : 'bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 shadow-sm')}>
                             <i className={`fas ` + tab.icon + ` w-6`}></i> {tab.label}
                         </Link>
                     ))}
-                    <div className="mt-8 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 text-center">
+                    <a href="https://wa.me/917619948657?text=Hi%2C%20I%20need%20help%20with%20SpotNet%20MedOS" target="_blank" rel="noopener noreferrer" className="block mt-8 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 text-center hover:shadow-md transition-shadow cursor-pointer">
                         <i className="fas fa-headset text-3xl text-blue-300 mb-2"></i>
                         <p className="text-xs text-blue-800 font-bold">Need Help?</p>
                         <p className="text-[10px] text-gray-500">Contact Support</p>
-                    </div>
+                    </a>
                 </aside>
                 <main className="col-span-12 lg:col-span-10 min-h-[500px]">
                     {children}
@@ -117,7 +115,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return (
         <ToastProvider>
             <DashboardContent>{children}</DashboardContent>
-            <Intercom />
         </ToastProvider>
     );
 }

@@ -1,7 +1,7 @@
 {
     "name": "Spotnet MedOS Patient Portal",
     "short_name": "MedOS Patient",
-    "description": "Access your medical reports, prescriptions, and appointments on the go.",
+    "description": "Access your medical reports on the go.",
     "start_url": "/patient/dashboard",
     "display": "standalone",
     "background_color": "#ffffff",

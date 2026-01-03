@@ -14,7 +14,6 @@ export default function PricingPage() {
             description: "Try all features risk-free",
             features: [
                 "Full Lab Management System",
-                "Complete OPD Module",
                 "Patient Management",
                 "Report Generation",
                 "WhatsApp Integration",
@@ -45,23 +44,21 @@ export default function PricingPage() {
             color: "from-blue-600 to-indigo-600"
         },
         {
-            name: "Full Access",
+            name: "Enterprise Lab",
             price: "₹12,999",
             period: "per year",
-            description: "Complete hospital management",
+            description: "For high-volume labs",
             features: [
                 "Everything in Lab Essentials",
-                "Complete OPD Management",
-                "Queue Management System",
-                "Doctor Dashboard",
-                "E-Prescriptions",
-                "Patient History Tracking",
-                "Analytics & Reports",
-                "Pharmacy Integration",
-                "Multi-user Access",
-                "24/7 Premium Support"
+                "Multi-branch Management",
+                "Advanced Analytics & Insights",
+                "API Access",
+                "Custom Report Formats",
+                "Bulk Data Export",
+                "Multi-user Access Control",
+                "Dedicated Account Manager"
             ],
-            cta: "Get Full Access",
+            cta: "Contact Sales",
             popular: false,
             color: "from-purple-600 to-pink-600"
         }

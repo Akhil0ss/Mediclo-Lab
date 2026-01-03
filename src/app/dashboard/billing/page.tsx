@@ -91,7 +91,7 @@ export default function BillingPage() {
                                             type="text"
                                             value={item.name}
                                             onChange={(e) => updateItem(idx, 'name', e.target.value)}
-                                            placeholder="e.g. OPD Consultation, CBC Test"
+                                            placeholder="e.g. CBC Test, Lipid Profile"
                                             className="w-full px-2 py-1 border rounded"
                                         />
                                     </td>

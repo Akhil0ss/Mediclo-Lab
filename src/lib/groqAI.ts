@@ -35,6 +35,11 @@ async function callGroq(
     maxTokens: number = 500,
     temperature: number = 0.3
 ): Promise<{ response: string; tokens: number }> {
+    if (!GROQ_API_KEY) {
+        console.error('Groq AI Error: Missing API Key');
+        throw new Error('Groq API Key is missing. Please add NEXT_PUBLIC_GROQ_API_KEY to your .env file.');
+    }
+
     try {
         const response = await fetch(GROQ_API_URL, {
             method: 'POST',
@@ -52,7 +57,9 @@ async function callGroq(
         });
 
         if (!response.ok) {
-            throw new Error(`Groq API error: ${response.statusText}`);
+            const errorBody = await response.text();
+            console.error('Groq API Error Detail:', errorBody);
+            throw new Error(`Groq API error: ${response.status} ${response.statusText} - ${errorBody}`);
         }
 
         const data: GroqResponse = await response.json();
@@ -369,12 +376,11 @@ export async function generateAIAnalytics(
     highlights: string[];
     recommendations: string[];
 }> {
-    const prompt = `Analyze hospital metrics:
+    const prompt = `Analyze Lab metrics:
 Patients: ${metrics.totalPatients} (+${metrics.newPatientsToday} today)
-OPD: ${metrics.totalOPDVisits} (+${metrics.opdToday} today)
-Reports: ${metrics.totalReports}
+Reports: ${metrics.totalReports} (+${metrics.reportsToday} today)
+Pending Samples: ${metrics.pendingSamples}
 Revenue: ₹${metrics.totalRevenue} (Month: ₹${metrics.revenueThisMonth})
-Doctors: ${metrics.totalDoctors}
 
 JSON:
 {
