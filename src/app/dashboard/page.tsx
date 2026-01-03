@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { ref, onValue, query, limitToLast } from 'firebase/database';
+import { ref, onValue, query, limitToLast, orderByChild } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { getDataOwnerId } from '@/lib/dataUtils';
 import dynamic from 'next/dynamic';
@@ -27,27 +27,30 @@ export default function DashboardPage() {
         if (!user || !dataOwnerId) return;
 
         // 1. Patients
-        onValue(query(ref(database, 'patients/' + dataOwnerId), limitToLast(50)), (snap) => {
+        onValue(query(ref(database, 'patients/' + dataOwnerId), orderByChild('createdAt'), limitToLast(50)), (snap) => {
             let count = 0;
             snap.forEach(c => { if (c.val().createdAt?.includes(today)) count++; });
             setStats(p => ({ ...p, todayPatients: count }));
         });
 
         // 2. Samples
-        onValue(query(ref(database, 'samples/' + dataOwnerId), limitToLast(100)), (snap) => {
+        onValue(query(ref(database, 'samples/' + dataOwnerId), orderByChild('createdAt'), limitToLast(100)), (snap) => {
             const list = [];
             let tCount = 0;
             snap.forEach(c => {
                 const val = c.val();
                 if (val.date?.includes(today)) tCount++;
-                if (!val.reportId && val.status !== 'Completed') list.push({ id: c.key, ...val });
+                // Show samples with Pending or Processing status (even if they have reportId)
+                if (val.status === 'Pending' || val.status === 'Processing') {
+                    list.push({ id: c.key, ...val });
+                }
             });
-            setPendingSamplesList(list.reverse());
+            setPendingSamplesList(list.reverse()); // Reverse to show newest first
             setStats(p => ({ ...p, todaySamples: tCount, pendingSamples: list.length }));
         });
 
         // 3. Reports
-        onValue(query(ref(database, 'reports/' + dataOwnerId), limitToLast(100)), (snap) => {
+        onValue(query(ref(database, 'reports/' + dataOwnerId), orderByChild('createdAt'), limitToLast(100)), (snap) => {
             let rCount = 0;
             snap.forEach(c => { if (c.val().createdAt?.includes(today)) rCount++; });
             setStats(p => ({ ...p, todayReports: rCount }));

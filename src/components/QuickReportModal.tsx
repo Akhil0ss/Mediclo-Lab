@@ -270,11 +270,8 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
 
         const patientData = patients.find(p => p.id === selectedPatientId);
         const sampleData = samples.find(s => s.id === selectedSampleId);
-        const doctorData = selectedDoctorId
-            ? doctors.find(d => d.id === selectedDoctorId)
-            : selectedExternalDoctorId
-                ? externalDoctors.find(d => d.id === selectedExternalDoctorId)
-                : null;
+        const doctorData = doctors.find(d => d.id === selectedDoctorId) ||
+            externalDoctors.find(d => d.id === selectedDoctorId);
 
         if (!patientData) {
             alert('Patient not found');
@@ -470,76 +467,51 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                 )}
             </div>
 
-            {/* Referring Doctor Selection - Two Separate Dropdowns */}
+            {/* Doctor Selection & Date Row */}
             <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Internal Doctor */}
+                {/* Unified Doctor Selection */}
                 <div>
-                    <label className="block font-semibold mb-2">Internal Doctor:</label>
-                    {doctors.length === 0 ? (
-                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                            <p className="text-blue-800 text-xs">
-                                <i className="fas fa-info-circle mr-1"></i>
-                                No internal doctors found.
-                            </p>
-                        </div>
-                    ) : (
-                        <select
-                            value={selectedDoctorId}
-                            onChange={(e) => {
-                                setSelectedDoctorId(e.target.value);
-                                if (e.target.value) setSelectedExternalDoctorId(''); // Clear external if internal selected
-                            }}
-                            className="w-full p-3 border rounded-lg"
-                        >
-                            <option value="">Select Internal Doctor</option>
-                            {doctors.map(d => (
-                                <option key={d.id} value={d.id}>
-                                    Dr. {d.name} - {d.specialization || 'General'}
-                                </option>
-                            ))}
-                        </select>
-                    )}
+                    <label className="block font-semibold mb-2">Referring Doctor:</label>
+                    <select
+                        value={selectedDoctorId}
+                        onChange={(e) => {
+                            setSelectedDoctorId(e.target.value);
+                            setSelectedExternalDoctorId(''); // Reset external just in case we kept the state
+                        }}
+                        className="w-full p-3 border rounded-lg"
+                    >
+                        <option value="">Select Doctor</option>
+                        {doctors.length > 0 && (
+                            <optgroup label="Internal Doctors">
+                                {doctors.map(d => (
+                                    <option key={d.id} value={d.id}>
+                                        Dr. {d.name} {d.specialization ? `- ${d.specialization}` : ''}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        )}
+                        {externalDoctors.length > 0 && (
+                            <optgroup label="External / Referring Doctors">
+                                {externalDoctors.map(d => (
+                                    <option key={d.id} value={d.id}>
+                                        Dr. {d.name} {d.clinicInfo ? `- ${d.clinicInfo}` : ''}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        )}
+                    </select>
                 </div>
 
-                {/* External Referring Doctor */}
+                {/* Report Date */}
                 <div>
-                    <label className="block font-semibold mb-2">External Referring Doctor:</label>
-                    {externalDoctors.length === 0 ? (
-                        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                            <p className="text-yellow-800 text-xs">
-                                <i className="fas fa-info-circle mr-1"></i>
-                                No external doctors found.
-                            </p>
-                        </div>
-                    ) : (
-                        <select
-                            value={selectedExternalDoctorId}
-                            onChange={(e) => {
-                                setSelectedExternalDoctorId(e.target.value);
-                                if (e.target.value) setSelectedDoctorId(''); // Clear internal if external selected
-                            }}
-                            className="w-full p-3 border rounded-lg"
-                        >
-                            <option value="">Select External Doctor</option>
-                            {externalDoctors.map(d => (
-                                <option key={d.id} value={d.id}>
-                                    Dr. {d.name} {d.clinicInfo ? `- ${d.clinicInfo}` : ''}
-                                </option>
-                            ))}
-                        </select>
-                    )}
+                    <label className="block font-semibold mb-2">Report Date:</label>
+                    <input
+                        type="date"
+                        value={reportDate}
+                        onChange={(e) => setReportDate(e.target.value)}
+                        className="w-full p-3 border rounded-lg"
+                    />
                 </div>
-            </div>
-
-            {/* Report Date */}
-            <div className="mb-6">
-                <label className="block font-semibold mb-2">Report Date:</label>
-                <input
-                    type="date"
-                    value={reportDate}
-                    onChange={(e) => setReportDate(e.target.value)}
-                    className="w-full p-3 border rounded-lg"
-                />
             </div>
 
             {/* Test Results Entry */}

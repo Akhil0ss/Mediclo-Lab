@@ -368,7 +368,7 @@ export default function SamplesPage() {
                     <table className="w-full min-w-full">
                         <thead className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
                             <tr>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Sample No</th>
+                                <th className="px-4 py-3 text-left text-sm font-semibold">Sample ID</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Patient Name</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Sample Type</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Collection Date</th>

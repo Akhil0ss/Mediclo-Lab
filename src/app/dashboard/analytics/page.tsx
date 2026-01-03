@@ -18,7 +18,7 @@ import {
     Filler,
 } from 'chart.js';
 import { Line, Doughnut, Bar } from 'react-chartjs-2';
-import { generateAIAnalytics } from '@/lib/groqAI';
+// import { generateAIAnalytics } from '@/lib/groqAI'; // AI Removed for cost optimization
 
 ChartJS.register(
     CategoryScale,
@@ -65,20 +65,61 @@ export default function AnalyticsPage() {
     const [aiInsights, setAiInsights] = useState<any>(null);
     const [generatingAI, setGeneratingAI] = useState(false);
 
+    // Rule-based generation (No Cost)
+    const generateRuleBasedInsights = (metrics: any) => {
+        const highlights: string[] = [];
+        const recommendations: string[] = [];
+
+        // Highlights Logic
+        if (metrics.pendingSamples > 5) {
+            highlights.push(`High backlog: ${metrics.pendingSamples} samples pending processing.`);
+        } else {
+            highlights.push(`Operations efficient: Low pending sample count.`);
+        }
+
+        if (metrics.revenueCollection > 0) {
+            highlights.push(`Revenue inflow: ₹${metrics.revenueCollection.toLocaleString()} collected.`);
+        }
+
+        const dueRatio = metrics.totalRevenue ? (metrics.outstandingDues / metrics.totalRevenue) : 0;
+        if (dueRatio > 0.3) {
+            highlights.push(`High outstanding dues level (${(dueRatio * 100).toFixed(0)}% of total).`);
+        } else {
+            highlights.push(`Healthy payment collection rate.`);
+        }
+
+        // Recommendations Logic
+        if (metrics.pendingSamples > 0) {
+            recommendations.push(`Prioritize processing ${metrics.pendingSamples} pending samples to reduce turnaround time.`);
+        }
+        if (metrics.outstandingDues > 1000) {
+            recommendations.push(`Initiate follow-ups for ₹${metrics.outstandingDues.toLocaleString()} in outstanding payments.`);
+        }
+        if (metrics.newPatients === 0) {
+            recommendations.push("Consider patient outreach to increase new registrations.");
+        } else {
+            recommendations.push(`Continue current patient retention strategies.`);
+        }
+
+        return {
+            summary: `Current performance shows ${metrics.reportsGenerated} reports generated and ₹${metrics.revenueCollection.toLocaleString()} revenue collected.`,
+            highlights,
+            recommendations
+        };
+    };
+
     const handleGenerateAI = async () => {
         if (!user || !userProfile || userProfile.role === 'receptionist') return;
 
         setGeneratingAI(true);
+        // Simulate processing delay for better UX
+        await new Promise(r => setTimeout(r, 1000));
+
         try {
-            const result = await generateAIAnalytics(metrics);
+            const result = generateRuleBasedInsights(metrics);
             setAiInsights(result);
         } catch (e) {
             console.error(e);
-            setAiInsights({
-                summary: "Unable to generate AI insights at this time.",
-                highlights: [],
-                recommendations: []
-            });
         } finally {
             setGeneratingAI(false);
         }
@@ -118,13 +159,15 @@ export default function AnalyticsPage() {
         };
 
         try {
-            const [patientsSnap, reportsSnap, invoicesSnap] = await Promise.all([
+            const [patientsSnap, reportsSnap, invoicesSnap, samplesSnap] = await Promise.all([
                 get(ref(database, `patients/${dataSourceId}`)),
                 get(ref(database, `reports/${dataSourceId}`)),
-                get(ref(database, `invoices/${dataSourceId}`))
+                get(ref(database, `invoices/${dataSourceId}`)),
+                get(ref(database, `samples/${dataSourceId}`))
             ]).catch(error => {
                 console.error('Error fetching analytics data:', error);
                 return [
+                    { exists: () => false, val: () => ({}) },
                     { exists: () => false, val: () => ({}) },
                     { exists: () => false, val: () => ({}) },
                     { exists: () => false, val: () => ({}) }
@@ -135,13 +178,18 @@ export default function AnalyticsPage() {
             const patients = patientsSnap.exists() ? Object.values(patientsSnap.val()) : [];
             const newPatients = patients.filter((p: any) => isInTimeframe(p.createdAt)).length;
 
+            // --- Process Samples ---
+            const samples = samplesSnap.exists() ? Object.values(samplesSnap.val()) : [];
+            const pendingSamples = samples.filter((s: any) =>
+                s.status === 'Pending' || s.status === 'Processing' || s.status === 'processing'
+            ).length;
+
             // --- Process Reports ---
             const reports = reportsSnap.exists() ? Object.values(reportsSnap.val()) : [];
             // Sort reports by date desc for Recent Activity
             const sortedReports = reports.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
             const reportsGenerated = reports.filter((r: any) => isInTimeframe(r.createdAt)).length;
-            const pendingSamples = reports.filter((r: any) => r.status === 'Pending' || r.status === 'processing').length;
 
             // Test Stats
             const testStats: Record<string, number> = {};
@@ -222,12 +270,27 @@ export default function AnalyticsPage() {
         }
     };
 
+    // Helper function to format report ID
+    const formatReportId = (report: any) => {
+        const repId = report.reportId || report.id;
+        const parts = (repId || '').split('-');
+        if (parts.length === 3 && /^\d{6}$/.test(parts[1])) {
+            return repId;
+        }
+        const prefix = (userProfile?.labName || 'LAB').replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase().padEnd(4, 'X');
+        const d = new Date(report.createdAt);
+        const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const nums = (repId || '').replace(/\D/g, '');
+        const seq = nums.length >= 4 ? nums.slice(-4) : String(d.getTime()).slice(-4);
+        return `${prefix}-${ym}-${seq}`;
+    };
+
     return (
-        <div className="p-6 space-y-8 animate-in fade-in duration-500 pb-20">
+        <div className="p-4 space-y-6 animate-in fade-in duration-500 pb-10">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="text-center md:text-left">
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-800 tracking-tight">
+                    <h1 className="text-2xl font-bold text-gray-800 tracking-tight">
                         Lab Overview
                     </h1>
                     <p className="text-gray-500 text-sm mt-1">Real-time performance metrics</p>
@@ -250,59 +313,59 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Core Metrics Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                 {/* Revenue Card */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition pointer-events-none">
-                        <i className="fas fa-rupee-sign text-6xl text-indigo-600"></i>
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition pointer-events-none">
+                        <i className="fas fa-rupee-sign text-5xl text-indigo-600"></i>
                     </div>
                     <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Revenue ({timeframe})</p>
-                    <h3 className="text-3xl font-bold text-gray-900">₹{metrics.revenueCollection.toLocaleString('en-IN')}</h3>
-                    <div className="flex items-center gap-2 mt-4 text-xs font-medium">
-                        <span className="text-red-500 bg-red-50 px-2 py-1 rounded-full">
+                    <h3 className="text-2xl font-bold text-gray-900">₹{metrics.revenueCollection.toLocaleString('en-IN')}</h3>
+                    <div className="flex items-center gap-2 mt-3 text-xs font-medium">
+                        <span className="text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
                             Due: ₹{metrics.outstandingDues.toLocaleString('en-IN')}
                         </span>
-                        <span className="text-gray-400">Total: ₹{metrics.totalRevenue.toLocaleString('en-IN')}</span>
+                        <span className="text-gray-400 text-[10px]">Total: ₹{metrics.totalRevenue.toLocaleString('en-IN')}</span>
                     </div>
                 </div>
 
                 {/* Reports Card */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition pointer-events-none">
-                        <i className="fas fa-file-medical-alt text-6xl text-blue-600"></i>
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition pointer-events-none">
+                        <i className="fas fa-file-medical-alt text-5xl text-blue-600"></i>
                     </div>
                     <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Reports ({timeframe})</p>
-                    <h3 className="text-3xl font-bold text-gray-900">{metrics.reportsGenerated}</h3>
-                    <div className="flex items-center gap-2 mt-4 text-xs font-medium">
-                        <span className="text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+                    <h3 className="text-2xl font-bold text-gray-900">{metrics.reportsGenerated}</h3>
+                    <div className="flex items-center gap-2 mt-3 text-xs font-medium">
+                        <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
                             Total: {metrics.totalReports}
                         </span>
                     </div>
                 </div>
 
                 {/* Patients Card */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition pointer-events-none">
-                        <i className="fas fa-users text-6xl text-purple-600"></i>
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition pointer-events-none">
+                        <i className="fas fa-users text-5xl text-purple-600"></i>
                     </div>
                     <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">New Patients ({timeframe})</p>
-                    <h3 className="text-3xl font-bold text-gray-900">{metrics.newPatients}</h3>
-                    <div className="flex items-center gap-2 mt-4 text-xs font-medium">
-                        <span className="text-purple-600 bg-purple-50 px-2 py-1 rounded-full">
+                    <h3 className="text-2xl font-bold text-gray-900">{metrics.newPatients}</h3>
+                    <div className="flex items-center gap-2 mt-3 text-xs font-medium">
+                        <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
                             Database: {metrics.totalPatients}
                         </span>
                     </div>
                 </div>
 
                 {/* Pending Card */}
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition pointer-events-none">
-                        <i className="fas fa-clock text-6xl text-yellow-500"></i>
+                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:opacity-10 transition pointer-events-none">
+                        <i className="fas fa-clock text-5xl text-yellow-500"></i>
                     </div>
                     <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Pending Processing</p>
-                    <h3 className="text-3xl font-bold text-gray-900">{metrics.pendingSamples}</h3>
-                    <div className="flex items-center gap-2 mt-4 text-xs font-medium">
-                        <span className="text-yellow-600 bg-yellow-50 px-2 py-1 rounded-full animate-pulse">
+                    <h3 className="text-2xl font-bold text-gray-900">{metrics.pendingSamples}</h3>
+                    <div className="flex items-center gap-2 mt-3 text-xs font-medium">
+                        <span className="text-red-700 bg-red-100 px-2 py-0.5 rounded-full font-bold animate-blink-red">
                             Action Required
                         </span>
                     </div>
@@ -318,7 +381,7 @@ export default function AnalyticsPage() {
                         disabled={generatingAI}
                         className="px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-gray-900 to-gray-800 text-white hover:shadow-lg transition flex items-center gap-2 disabled:opacity-70"
                     >
-                        {generatingAI ? <><i className="fas fa-circle-notch fa-spin"></i> Analyzing Data...</> : <><i className="fas fa-sparkles text-yellow-400"></i> Generate AI Insights</>}
+                        {generatingAI ? <><i className="fas fa-circle-notch fa-spin"></i> Analyzing...</> : <><i className="fas fa-sparkles text-yellow-400"></i> Generate Insights</>}
                     </button>
                 </div>
 
@@ -329,7 +392,7 @@ export default function AnalyticsPage() {
                                 <i className="fas fa-robot text-2xl"></i>
                             </div>
                             <div className="flex-1">
-                                <h4 className="font-bold text-lg mb-2">AI Analysis Report</h4>
+                                <h4 className="font-bold text-lg mb-2">Smart Analysis Report</h4>
                                 <p className="text-indigo-200 italic mb-6 text-sm leading-relaxed">"{aiInsights.summary}"</p>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -431,6 +494,9 @@ export default function AnalyticsPage() {
                                     <div className={`w-2 h-10 rounded-full ${report.status === 'Completed' ? 'bg-green-500' : report.status === 'Pending' ? 'bg-yellow-500' : 'bg-gray-300'}`}></div>
                                     <div>
                                         <p className="text-sm font-bold text-gray-800">{report.patientName}</p>
+                                        <p className="text-xs text-gray-500 font-mono mb-0.5">
+                                            {formatReportId(report)}
+                                        </p>
                                         <p className="text-xs text-gray-500 flex items-center gap-1">
                                             <i className="fas fa-flask text-[10px]"></i> {report.testName}
                                         </p>

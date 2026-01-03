@@ -115,6 +115,24 @@ export default function AllReportsPage() {
         showToast('Report deleted!', 'success');
     };
 
+    // Helper function to format report ID
+    const formatReportId = (report: any) => {
+        const repId = report.reportId || report.id;
+        const parts = (repId || '').split('-');
+        // Check if valid format: 3 parts, middle is 6 digits (YYYYMM)
+        if (parts.length === 3 && /^\d{6}$/.test(parts[1])) {
+            return repId;
+        }
+        // Invalid format: regenerate with extracted sequence
+        const prefix = (userProfile?.labName || 'LAB').replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase().padEnd(4, 'X');
+        const d = new Date(report.createdAt);
+        const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+        // Extract numbers from old ID (e.g., TEST-00007 → 0007)
+        const nums = (repId || '').replace(/\D/g, '');
+        const seq = nums.length >= 4 ? nums.slice(-4) : String(d.getTime()).slice(-4);
+        return `${prefix}-${ym}-${seq}`;
+    };
+
     // Pagination
     const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -183,7 +201,7 @@ export default function AllReportsPage() {
                                 paginatedReports.map(report => (
                                     <tr key={report.id} className="border-b hover:bg-gray-50 transition">
                                         <td className="px-4 py-3 text-sm font-mono text-purple-600">
-                                            {report.reportId || report.id.substring(0, 12)}
+                                            {formatReportId(report)}
                                         </td>
                                         <td className="px-4 py-3 text-sm font-semibold text-gray-800">
                                             {report.patientName}

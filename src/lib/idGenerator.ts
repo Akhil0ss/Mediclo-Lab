@@ -12,29 +12,35 @@ import { database } from './firebase';
  * Format: {CLINIC_CODE}-{YYYYMM}-{SEQUENCE}
  * Example: SPOT-202512-0001
  */
+/**
+ * Generate Auto Patient ID
+ * Format: {CLINIC_CODE}-{YYYYMM}-{SEQUENCE}
+ * Example: TEST-202601-0001
+ */
 export async function generatePatientId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
     try {
-        // Clinic Code: First 3 letters
+        // Clinic Code: First 4 letters
         const clinicCode = clinicName
             .replace(/[^A-Za-z]/g, '')
-            .substring(0, 3)
+            .substring(0, 4)
             .toUpperCase()
-            .padEnd(3, 'X');
+            .padEnd(4, 'X');
 
-        // YYMMDD
+        // YYYYMM
         const now = new Date();
-        const yymmdd = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-        // Use daily counter instead of monthly for consistency
-        const counterRef = ref(database, `counters/${ownerId}/patientIds/${yymmdd}`);
+        // Monthly Counter
+        const counterRef = ref(database, `counters/${ownerId}/patientIds/${yyyymm}`);
 
         const newCount = await runTransaction(counterRef, (currentCount) => {
             return (currentCount || 0) + 1;
         });
 
-        const sequence = String(newCount.snapshot.val()).padStart(3, '0');
+        // Sequence: 4 digits
+        const sequence = String(newCount.snapshot.val()).padStart(4, '0');
 
-        return `${clinicCode}-P${yymmdd}-${sequence}`;
+        return `${clinicCode}-${yyyymm}-${sequence}`;
     } catch (error) {
         console.error('Error generating patient ID:', error);
         return `P-${Date.now()}`;
@@ -42,31 +48,31 @@ export async function generatePatientId(ownerId: string, clinicName: string = 'C
 }
 
 
-
 /**
  * Generate Auto Report ID
- * Format: {CLINIC}-L{YYMMDD}-{SEQUENCE}
+ * Format: {CLINIC_CODE}-{YYYYMM}-{SEQUENCE}
+ * Example: TEST-202601-0001
  */
 export async function generateReportId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
     try {
         const clinicCode = clinicName
             .replace(/[^A-Za-z]/g, '')
-            .substring(0, 3)
+            .substring(0, 4)
             .toUpperCase()
-            .padEnd(3, 'X');
+            .padEnd(4, 'X');
 
         const now = new Date();
-        const yymmdd = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-        const counterRef = ref(database, `counters/${ownerId}/reportIds/${yymmdd}`);
+        const counterRef = ref(database, `counters/${ownerId}/reportIds/${yyyymm}`);
 
         const newCount = await runTransaction(counterRef, (currentCount) => {
             return (currentCount || 0) + 1;
         });
 
-        const sequence = String(newCount.snapshot.val()).padStart(3, '0');
+        const sequence = String(newCount.snapshot.val()).padStart(4, '0');
 
-        return `${clinicCode}-L${yymmdd}-${sequence}`;
+        return `${clinicCode}-${yyyymm}-${sequence}`;
     } catch (error) {
         console.error('Error generating report ID:', error);
         return `L-${Date.now()}`;
@@ -75,28 +81,29 @@ export async function generateReportId(ownerId: string, clinicName: string = 'CL
 
 /**
  * Generate Auto Sample ID
- * Format: {CLINIC}-S{YYMMDD}-{SEQUENCE}
+ * Format: {CLINIC_CODE}-{YYYYMM}-{SEQUENCE}
+ * Example: TEST-202601-0001
  */
 export async function generateSampleId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
     try {
         const clinicCode = clinicName
             .replace(/[^A-Za-z]/g, '')
-            .substring(0, 3)
+            .substring(0, 4)
             .toUpperCase()
-            .padEnd(3, 'X');
+            .padEnd(4, 'X');
 
         const now = new Date();
-        const yymmdd = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-        const counterRef = ref(database, `counters/${ownerId}/sampleIds/${yymmdd}`);
+        const counterRef = ref(database, `counters/${ownerId}/sampleIds/${yyyymm}`);
 
         const newCount = await runTransaction(counterRef, (currentCount) => {
             return (currentCount || 0) + 1;
         });
 
-        const sequence = String(newCount.snapshot.val()).padStart(3, '0');
+        const sequence = String(newCount.snapshot.val()).padStart(4, '0');
 
-        return `${clinicCode}-S${yymmdd}-${sequence}`;
+        return `${clinicCode}-${yyyymm}-${sequence}`;
     } catch (error) {
         console.error('Error generating sample ID:', error);
         return `S-${Date.now()}`;

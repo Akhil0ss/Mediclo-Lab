@@ -13,6 +13,7 @@ import { defaultTemplates } from '@/lib/defaultTemplates';
 
 interface Patient {
     id: string;
+    patientId?: string; // Readable ID
     name: string;
     age: number;
     gender: string;
@@ -288,7 +289,8 @@ export default function CreateReportPage() {
 
         const reportData = {
             reportId,
-            patientId: patient.id,
+            patientId: patient.id, // Firebase Key
+            patientDisplayId: patient.patientId || '', // Readable ID
             patientName: patient.name,
             patientAge: patient.age,
             patientGender: patient.gender,
@@ -296,6 +298,7 @@ export default function CreateReportPage() {
             patientRefDoctor: referredBy || 'Self',
             testId: template.id,
             testName: template.name,
+            sampleId: loadedSample?.sampleNumber || '',
             sampleType: loadedSample?.sampleType || 'Blood',
             price: template.totalPrice || template.rate || '0',
             testDetails: testDetails, // NEW FORMAT

@@ -175,6 +175,24 @@ svg,
   animation: slideUp 0.3s ease-out;
 }
 
+@keyframes blink-red {
+
+  0%,
+  100% {
+    background-color: #fee2e2;
+    color: #991b1b;
+  }
+
+  50% {
+    background-color: #991b1b;
+    color: #ffffff;
+  }
+}
+
+.animate-blink-red {
+  animation: blink-red 1.5s ease-in-out infinite;
+}
+
 /* Modal styles */
 .modal-backdrop {
   @apply fixed inset-0 bg-black/70 flex items-center justify-center z-[1000] overflow-y-auto p-5;
@@ -285,10 +303,21 @@ svg,
 
 /* Blob Animation for Login Background */
 @keyframes blob {
-  0% { transform: translate(0px, 0px) scale(1); }
-  33% { transform: translate(30px, -50px) scale(1.1); }
-  66% { transform: translate(-20px, 20px) scale(0.9); }
-  100% { transform: translate(0px, 0px) scale(1); }
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
 }
 
 .animate-blob {

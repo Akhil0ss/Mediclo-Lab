@@ -11,7 +11,43 @@
 'use client';
 
 import { useState } from 'react';
-import { analyzeLabReport } from '@/lib/groqAI';
+// Rule-based Analysis Helper (Replaces AI)
+const analyzeReportRules = (results: any[]) => {
+    const abnormals: string[] = [];
+    let criticalCount = 0;
+
+    results.forEach(r => {
+        if (!r.normalRange || !r.value) return;
+        const parts = r.normalRange.split('-').map((s: string) => parseFloat(s.trim()));
+        const val = parseFloat(r.value);
+
+        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(val)) {
+            if (val < parts[0] || val > parts[1]) {
+                abnormals.push(r.test);
+                const range = parts[1] - parts[0];
+                const deviation = Math.max(parts[0] - val, val - parts[1]);
+                // 20% deviation considered critical
+                if (deviation > (range * 0.2)) criticalCount++;
+            }
+        }
+    });
+
+    let riskLevel = 'low';
+    if (abnormals.length > 0) riskLevel = 'medium';
+    if (criticalCount > 0 || abnormals.length > 3) riskLevel = 'high';
+
+    return {
+        abnormals,
+        insights: abnormals.length
+            ? `Analysis identified ${abnormals.length} parameter(s) outside standard reference ranges. This requires clinical correlation.`
+            : "All test parameters fall within the standard reference ranges.",
+        recommendations: abnormals.length
+            ? ["Consult physician for clinical correlation.", "Consider repeat testing if asymptomatic."]
+            : ["Routine follow-up as advised by your doctor."],
+        riskLevel,
+        confidenceScore: 100
+    };
+};
 
 interface AIReportAnalysisProps {
     testResults: Array<{ test: string; value: string; unit: string; normalRange?: string }>;
@@ -35,7 +71,9 @@ export default function AIReportAnalysis({
         setError('');
 
         try {
-            const result = await analyzeLabReport(testResults, patientAge, patientGender);
+            // Simulate processing delay
+            await new Promise(r => setTimeout(r, 800));
+            const result = analyzeReportRules(testResults);
             setAnalysis(result);
             onAnalysisComplete?.(result);
         } catch (err) {
@@ -60,11 +98,11 @@ export default function AIReportAnalysis({
             <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg flex items-center justify-center">
-                        <i className="fas fa-brain text-white text-sm"></i>
+                        <i className="fas fa-microscope text-white text-sm"></i>
                     </div>
-                    <h3 className="font-bold text-gray-800">AI Analysis</h3>
+                    <h3 className="font-bold text-gray-800">Smart Analysis</h3>
                     <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-semibold">
-                        Powered by Groq
+                        Auto-Generated
                     </span>
                 </div>
 

@@ -1,7 +1,9 @@
 'use client';
 import { useAuth } from '@/contexts/AuthContext';
 import { signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { auth, database } from '@/lib/firebase';
+import { ref, onValue } from 'firebase/database';
+
 import { useRouter, usePathname } from 'next/navigation';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
@@ -32,8 +34,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         if (!user || !dataOwnerId) return;
-        const { ref, onValue } = require('firebase/database');
-        const { database } = require('@/lib/firebase');
         const brandingRef = ref(database, 'branding/' + dataOwnerId);
         const unsub = onValue(brandingRef, (snapshot: any) => {
             if (snapshot.exists()) setBranding(snapshot.val());
@@ -43,13 +43,18 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     const handleSignOut = async () => {
         try {
-            const authMethod = localStorage.getItem('authMethod');
-            if (authMethod !== 'username') await signOut(auth);
+            // Always sign out from Firebase to ensure clean state
+            await signOut(auth).catch(() => { });
+
+            // Clear all local storage and session data
             localStorage.clear();
             sessionStorage.clear();
-            window.location.href = '/';
+
+            // Force redirect to login
+            window.location.href = '/login';
         } catch (e) {
-            window.location.href = '/';
+            localStorage.clear();
+            window.location.href = '/login';
         }
     };
 

@@ -104,7 +104,7 @@ Output JSON only:
     const result = await callGroq([
         {
             role: 'system',
-            content: 'You are a medical lab AI. Output only valid JSON. Be concise.'
+            content: 'You are a medical lab AI. Output raw JSON only. Do NOT use markdown code blocks or formatting.'
         },
         {
             role: 'user',
@@ -113,12 +113,19 @@ Output JSON only:
     ], 300, 0.2);
 
     try {
-        return JSON.parse(result.response);
-    } catch {
+        // Clean potential markdown formatting which breaks JSON.parse
+        const cleanResponse = result.response
+            .replace(/```json/g, '')
+            .replace(/```/g, '')
+            .trim();
+
+        return JSON.parse(cleanResponse);
+    } catch (e) {
+        console.warn('Groq JSON Parse Error:', e);
         // Fallback if JSON parsing fails
         return {
             abnormals: [],
-            insights: result.response,
+            insights: "Unable to analyze automatically. Please review manually.",
             recommendations: [],
             riskLevel: 'low',
             confidenceScore: 0

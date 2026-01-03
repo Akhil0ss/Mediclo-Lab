@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { ref, get, query, orderByChild, equalTo } from 'firebase/database';
 import { database } from '@/lib/firebase';
 
 export default function VerifyReportPage() {
     const params = useParams();
+    const searchParams = useSearchParams();
     const reportId = params.id as string;
+    const ownerId = searchParams.get('oid');
 
     const [status, setStatus] = useState<'loading' | 'valid' | 'invalid'>('loading');
     const [report, setReport] = useState<any>(null);
@@ -17,34 +19,21 @@ export default function VerifyReportPage() {
 
         const verifyReport = async () => {
             try {
-                // Since reports are nested under ownerIds in 'reports/{ownerId}/{reportId}',
-                // and we only have reportId, we ideally need a direct lookup.
-                // For this implementation, we'll try to search or assume a structure.
+                if (ownerId) {
+                    // Optimized: Direct lookup
+                    const start = Date.now();
+                    const snapshot = await get(ref(database, `reports/${ownerId}/${reportId}`));
 
-                // STRATEGY: Fetch all reports (Not efficient for prod, but working for this structure without backend changes)
-                // A better authentic way would be having a 'public_reports/{reportId}' node.
-
-                const snapshot = await get(ref(database, 'reports'));
-                if (snapshot.exists()) {
-                    let foundReport = null;
-
-                    // Iterate through owners
-                    snapshot.forEach((ownerSnap) => {
-                        if (ownerSnap.hasChild(reportId)) {
-                            foundReport = ownerSnap.child(reportId).val();
-                        }
-                        // Also check if reports are stored differently (e.g. some apps list them by date)
-                        // But per previous file view, it was reports/ownerId/reportId
-                    });
-
-                    if (foundReport) {
-                        setReport(foundReport);
+                    if (snapshot.exists()) {
+                        setReport(snapshot.val());
                         setStatus('valid');
                     } else {
-                        // Deep search if ID is unique property but not key (unlikely based on print page)
                         setStatus('invalid');
                     }
                 } else {
+                    // Fallback: This is extremely slow and dangerous for production.
+                    // For now, we will fail safe.
+                    console.warn("Missing 'oid' parameter for verification.");
                     setStatus('invalid');
                 }
             } catch (error) {
@@ -54,7 +43,7 @@ export default function VerifyReportPage() {
         };
 
         verifyReport();
-    }, [reportId]);
+    }, [reportId, ownerId]);
 
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">

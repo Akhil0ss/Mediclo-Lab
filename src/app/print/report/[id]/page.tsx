@@ -12,6 +12,7 @@ export default function PrintReportPage() {
     const [report, setReport] = useState<any>(null);
     const [branding, setBranding] = useState<any>(null);
     const [subscription, setSubscription] = useState<any>(null);
+    const [reportOwnerId, setReportOwnerId] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const printTriggeredRef = useRef(false);
 
@@ -57,6 +58,16 @@ export default function PrintReportPage() {
                     reportData = { id: reportId, ...reportData };
                 }
 
+                // Fetch Patient Details to ensure correct Display ID
+                if (reportData.patientId) {
+                    try {
+                        const pSnap = await get(ref(database, `patients/${ownerId}/${reportData.patientId}`));
+                        if (pSnap.exists()) {
+                            reportData.patientDisplayId = pSnap.val().patientId;
+                        }
+                    } catch (e) { console.log('Err fetching patient:', e); }
+                }
+
                 // Fetch Branding
                 const brandingSnapshot = await get(ref(database, `branding/${ownerId}`));
                 const brandingData = brandingSnapshot.val() || {};
@@ -68,6 +79,7 @@ export default function PrintReportPage() {
                 setReport(reportData);
                 setBranding(brandingData);
                 setSubscription(subData);
+                setReportOwnerId(ownerId);
                 setLoading(false);
 
             } catch (error) {
@@ -81,7 +93,7 @@ export default function PrintReportPage() {
 
     // Generate HTML and replace document content
     useEffect(() => {
-        if (loading || !report || !branding) return;
+        if (loading || !report || !branding || !reportOwnerId) return;
         if (printTriggeredRef.current) return;
 
         // Lock to prevent re-execution
@@ -104,27 +116,48 @@ export default function PrintReportPage() {
 
         // Identifiers
         const labName = branding.labName || 'Spotnet MedOS';
-        const labPrefix = labName.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X').padEnd(3, 'X');
+        const labPrefix = labName.replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase().padEnd(4, 'X');
 
-        // Sample ID: Fallback to new format S{YYMMDD}-{SEQ} simulation if missing
+        // Sample ID: Fallback to new format {PREFIX}-{YYYYMM}-{SEQ} if missing
         let sampleId = report.sampleId;
         if (!sampleId) {
             const dateObj = new Date(report.createdAt);
-            const yymmdd = `${String(dateObj.getFullYear()).slice(-2)}${String(dateObj.getMonth() + 1).padStart(2, '0')}${String(dateObj.getDate()).padStart(2, '0')}`;
-            const seq = String(dateObj.getTime()).slice(-3);
-            sampleId = `${labPrefix}-S${yymmdd}-${seq}`;
+            const yyyymm = `${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+            const seq = String(dateObj.getTime()).slice(-4);
+            sampleId = `${labPrefix}-${yyyymm}-${seq}`;
         }
 
-        let generatedPatientId = report.patientId;
-        // Check if ID is likely a new format (contains hyphen, reasonable length)
-        if (generatedPatientId && generatedPatientId.includes('-') && generatedPatientId.length <= 20) {
-            // Use as is
-        } else {
-            // Legacy UUID or missing: Format it
-            const patientIdNum = generatedPatientId ? generatedPatientId.substring(0, 6).toUpperCase() : String(Date.now()).slice(-6);
-            generatedPatientId = `${labPrefix}-${patientIdNum}`;
+        let generatedPatientId = report.patientDisplayId || report.patientId;
+        // Validate format: PREFIX-YYYYMM-SEQUENCE (exactly 3 parts, middle is 6 digits)
+        const patParts = (generatedPatientId || '').split('-');
+        const isValidPatId = patParts.length === 3 && /^\d{6}$/.test(patParts[1]);
+
+        if (!isValidPatId) {
+            // Firebase key or invalid: Generate standardized format
+            const dateObj = new Date(report.createdAt || Date.now());
+            const yyyymm = `${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+            // Try to extract sequence from existing ID, fallback to timestamp
+            const extractedNums = (generatedPatientId || '').replace(/\D/g, '');
+            const seq = extractedNums.length >= 4 ? extractedNums.slice(-4) : String(dateObj.getTime()).slice(-4);
+            generatedPatientId = `${labPrefix}-${yyyymm}-${seq}`;
         }
 
+
+
+        // Report ID: Validate format PREFIX-YYYYMM-SEQUENCE
+        let formattedReportId = report.reportId || report.id;
+        const repParts = (formattedReportId || '').split('-');
+        const isValidRepId = repParts.length === 3 && /^\d{6}$/.test(repParts[1]);
+
+        if (!isValidRepId) {
+            // Old format or Firebase key: Generate standardized format
+            const dateObj = new Date(report.createdAt || Date.now());
+            const yyyymm = `${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+            // Extract all numbers from old ID to preserve sequence (e.g., TEST-00007 → 0007)
+            const extractedNums = (formattedReportId || '').replace(/\D/g, '');
+            const seq = extractedNums.length >= 4 ? extractedNums.slice(-4) : String(dateObj.getTime()).slice(-4);
+            formattedReportId = `${labPrefix}-${yyyymm}-${seq}`;
+        }
 
         const testsDoneList = report.testDetails ? report.testDetails.map((t: any) => t.testName).join(', ') : '';
 
@@ -459,7 +492,7 @@ export default function PrintReportPage() {
         const fullHtml = `<!DOCTYPE html>
 <html>
 <head>
-    <title>Lab Report - ${report.id}</title>
+    <title>Lab Report - ${formattedReportId}</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -792,7 +825,6 @@ export default function PrintReportPage() {
 <body>
     <div class="watermark">CONFIDENTIAL</div>
     <div class="report-container">
-    <div class="report-container">
         <!-- Main Table Structure for Repeating Headers/Footers -->
         <table style="width: 100%; border-collapse: collapse;">
             <!-- REPEATING HEADER -->
@@ -828,14 +860,14 @@ export default function PrintReportPage() {
                             <!-- Right: QR and Info -->
                             <div class="header-right">
                                 <div class="header-meta-text">
-                                    <p style="font-weight: 700; color: white; font-size: 9px; margin-bottom: 2px;">ID: ${report.id}</p>
+                                    <p style="font-weight: 700; color: white; font-size: 9px; margin-bottom: 2px;">ID: ${formattedReportId}</p>
                                     <p style="font-weight: 700; opacity: 0.8; font-size: 8px; margin-bottom: 4px;">AUTHORISED LAB REPORT</p>
                                     <p><strong>Date:</strong> ${new Date(report.reportDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                                     <p><strong>Time:</strong> ${new Date(report.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
                                     ${isPremium ? `<span class="badge" style="display:inline-block; margin-top:2px;">NABL</span>` : ''}
                                 </div>
                                 <div class="header-qr">
-                                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${window.location.origin}/verify/${report.id}`)}" alt="QR" style="width:100%; height:100%; object-fit: contain;">
+                                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`https://medlab.spotnet.in/verify/${report.id}?oid=${reportOwnerId}`)}" alt="QR" style="width:100%; height:100%; object-fit: contain;">
                                 </div>
                             </div>
                         </div>
@@ -860,8 +892,8 @@ export default function PrintReportPage() {
                                 <p style="font-size: 8px; opacity: 0.6; margin-top: 2px;">Powered by Spotnet MedOS</p>
                             </div>
                             <div class="footer-right">
+                                <div style="font-weight: 800; font-size: 10px; margin-bottom: 2px;">${formattedReportId}</div>
                                 <p>Computer Generated Report</p>
-                                <div class="footer-barcode">|${report.id.replace(/-/g, '').substring(0, 12)}|</div>
                             </div>
                         </div>
                     </td>
@@ -981,7 +1013,7 @@ export default function PrintReportPage() {
          <!-- Running Footer for Print -->
         <div class="page-footer">
              <div><strong>${branding.labName || 'Mediclo Lab'}</strong> | Patient: ${report.patientName} (${generatedPatientId})</div>
-             <div>Repo ID: ${report.id}</div>
+             <div>Report ID: ${formattedReportId}</div>
         </div>
     </div>
 
@@ -994,7 +1026,7 @@ export default function PrintReportPage() {
         document.write(fullHtml);
         document.close();
 
-    }, [loading, report, branding, subscription]); // Runs once when data is loaded
+    }, [loading, report, branding, subscription, reportOwnerId]); // Runs once when data is loaded
 
     if (loading) {
         return (
