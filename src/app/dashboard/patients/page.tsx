@@ -84,17 +84,32 @@ export default function PatientsPage() {
     // Auto-load billing items when modal opens
     useEffect(() => {
         if (showBillingModal && billingPatient) {
-            // Get latest visit date
-            const vd = new Set<string>();
-            reports.filter(r => r.patientId === billingPatient.id).forEach(r => {
-                if (r.createdAt) vd.add(r.createdAt.split('T')[0]);
-            });
-            const dates = Array.from(vd).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-            const latestDate = dates[0];
+            // Get reports for this patient
+            const patientReports = reports.filter(r => r.patientId === billingPatient.id);
 
-            if (latestDate) {
-                // Load items for latest date
-                const rp = reports.filter(r => r.patientId === billingPatient.id && r.createdAt?.startsWith(latestDate));
+            if (patientReports.length === 0) {
+                setBillingItems([createBillingItem('No reports found', 1, 0)]);
+            } else {
+                // Robust Date Extraction
+                const getDate = (r: any) => {
+                    let d = r.createdAt || r.reportDate || r.date;
+                    if (!d) return 'Unknown Date';
+                    try {
+                        if (typeof d === 'number') d = new Date(d).toISOString();
+                        return d.split('T')[0];
+                    } catch (e) { return 'Unknown Date'; }
+                };
+
+                const uniqueDates = Array.from(new Set(patientReports.map(getDate)));
+                uniqueDates.sort((a, b) => {
+                    if (a === 'Unknown Date') return 1;
+                    if (b === 'Unknown Date') return -1;
+                    return new Date(b).getTime() - new Date(a).getTime();
+                });
+
+                const latestDate = uniqueDates[0];
+                const rp = patientReports.filter(r => getDate(r) === latestDate);
+
                 const ni: any[] = [];
                 rp.forEach(r => {
                     // Try to find template for price/name
@@ -103,7 +118,6 @@ export default function PatientsPage() {
                     // Robust Name Strategy
                     let itemName = t?.testName;
                     if (!itemName) {
-                        // Fallback to report data
                         if (r.testName) itemName = r.testName;
                         else if (r.testDetails && r.testDetails.length > 0) {
                             itemName = r.testDetails.map((td: any) => td.testName).join(', ');
@@ -126,7 +140,7 @@ export default function PatientsPage() {
                 if (ni.length > 0) {
                     setBillingItems(ni);
                 } else {
-                    setBillingItems([createBillingItem('No tests found for ' + latestDate, 1, 0)]);
+                    setBillingItems([createBillingItem('No billable items for ' + latestDate, 1, 0)]);
                 }
             }
         }
