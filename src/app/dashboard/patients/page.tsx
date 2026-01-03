@@ -42,6 +42,7 @@ export default function PatientsPage() {
     const [selectedPatient, setSelectedPatient] = useState<any>(null);
     const [externalDoctors, setExternalDoctors] = useState<any[]>([]);
     const [showExternalDoctorInput, setShowExternalDoctorInput] = useState(false);
+    const [duplicatePatient, setDuplicatePatient] = useState<any>(null);
 
     // Form states
     const [formData, setFormData] = useState({
@@ -66,6 +67,7 @@ export default function PatientsPage() {
         });
         setVisitPurpose('lab');
         setShowExternalDoctorInput(false);
+        setDuplicatePatient(null);
     };
 
 
@@ -294,7 +296,8 @@ export default function PatientsPage() {
         });
 
         if (existingPatient) {
-            alert(`Patient with mobile ${formData.mobile} already exists: ${existingPatient.name}`);
+            alert(`Patient with mobile ${formData.mobile} already exists: ${existingPatient.name}\n\nPlease use the existing patient record.`);
+            setDuplicatePatient(existingPatient);
             return;
         }
 
@@ -606,6 +609,54 @@ export default function PatientsPage() {
                     <i className="fas fa-user-plus text-purple-600"></i> Add New Patient
                 </h3>
                 <form onSubmit={handleAddPatient} className="space-y-3">
+                    {/* Mobile Number First - with duplicate detection */}
+                    <div>
+                        <label className="block text-sm font-semibold mb-1">Contact Number *</label>
+                        <input
+                            type="tel"
+                            placeholder="Mobile Number"
+                            required
+                            value={formData.mobile}
+                            onChange={(e) => {
+                                const mobile = e.target.value;
+                                setFormData({ ...formData, mobile });
+
+                                // Real-time duplicate check
+                                if (mobile.length >= 10) {
+                                    const cleanInput = mobile.replace(/\D/g, '').slice(-10);
+                                    const existing = patients.find(p => {
+                                        const cleanExisting = (p.mobile || '').replace(/\D/g, '').slice(-10);
+                                        return cleanExisting === cleanInput;
+                                    });
+                                    setDuplicatePatient(existing || null);
+                                } else {
+                                    setDuplicatePatient(null);
+                                }
+                            }}
+                            className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                            autoFocus
+                        />
+                        {duplicatePatient && (
+                            <div className="mt-2 p-3 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
+                                <p className="text-sm font-bold text-yellow-800 mb-1">⚠️ Patient Already Exists!</p>
+                                <p className="text-xs text-yellow-700"><strong>Name:</strong> {duplicatePatient.name}</p>
+                                <p className="text-xs text-yellow-700"><strong>Age:</strong> {duplicatePatient.age} | <strong>Gender:</strong> {duplicatePatient.gender}</p>
+                                <p className="text-xs text-yellow-700 mt-1"><strong>Patient ID:</strong> {duplicatePatient.patientId}</p>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowAddModal(false);
+                                        resetForm();
+                                        // You can optionally navigate to this patient or open their record
+                                    }}
+                                    className="mt-2 w-full bg-yellow-600 text-white px-3 py-1 rounded text-xs font-semibold hover:bg-yellow-700"
+                                >
+                                    Use Existing Patient
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="block text-sm font-semibold mb-1">Patient Name *</label>
@@ -615,17 +666,6 @@ export default function PatientsPage() {
                                 required
                                 value={formData.name}
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-semibold mb-1">Contact Number *</label>
-                            <input
-                                type="tel"
-                                placeholder="Mobile"
-                                required
-                                value={formData.mobile}
-                                onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
                                 className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
                             />
                         </div>
