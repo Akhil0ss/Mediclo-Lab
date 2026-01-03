@@ -115,65 +115,36 @@ export default function PatientsPage() {
 
                 const ni: any[] = [];
                 rp.forEach(r => {
-                    // Try to find template for price/name
-                    const t = templates.find(tt => tt.id === r.templateId);
+                    // Try to find template for price/name (check testId first, then templateId)
+                    const t = templates.find(tt => tt.id === (r.testId || r.templateId));
 
                     // Robust Name Strategy
-                    let itemName = t?.testName;
-                    if (!itemName) {
-                        if (r.testName) itemName = r.testName;
-                        else if (r.testDetails && r.testDetails.length > 0) {
+                    let itemName = t?.name || t?.testName || r.testName || 'Lab Report';
+                    if (!itemName || itemName === 'Lab Report') {
+                        if (r.testDetails && r.testDetails.length > 0) {
                             itemName = r.testDetails.map((td: any) => td.testName).join(', ');
-                        } else {
-                            itemName = 'Lab Report';
                         }
                     }
 
-                    // Enhanced Price Strategy - Check multiple sources
+                    // Enhanced Price Strategy
                     let itemPrice = 0;
-
-                    // 1. Try template price (templates use totalPrice, price, or rate)
                     if (t && (t.totalPrice || t.price || t.rate)) {
-                        itemPrice = parseFloat(t.totalPrice || t.price || t.rate);
-                    }
-                    // 2. Try report-level price
-                    else if (r.price) {
-                        itemPrice = parseFloat(r.price);
-                    }
-                    else if (r.amount) {
-                        itemPrice = parseFloat(r.amount);
-                    }
-                    // 3. Try summing individual test prices from testDetails
-                    else if (r.testDetails && r.testDetails.length > 0) {
+                        itemPrice = parseFloat(String(t.totalPrice || t.price || t.rate));
+                    } else if (r.price) {
+                        itemPrice = parseFloat(String(r.price));
+                    } else if (r.amount) {
+                        itemPrice = parseFloat(String(r.amount));
+                    } else if (r.testDetails && r.testDetails.length > 0) {
                         const detailsPrice = r.testDetails.reduce((sum: number, td: any) => {
-                            const tdPrice = parseFloat(td.price || td.amount || 0);
+                            const tdPrice = parseFloat(String(td.price || td.amount || 0));
                             return sum + (isNaN(tdPrice) ? 0 : tdPrice);
                         }, 0);
                         if (detailsPrice > 0) itemPrice = detailsPrice;
                     }
 
-                    if (isNaN(itemPrice)) itemPrice = 0;
-
-                    console.log('Billing item:', {
-                        name: itemName,
-                        price: itemPrice,
-                        templateFound: !!t,
-                        templateTotalPrice: t?.totalPrice,
-                        templatePrice: t?.price,
-                        templateRate: t?.rate,
-                        reportPrice: r.price,
-                        reportAmount: r.amount,
-                        hasTestDetails: !!r.testDetails
-                    });
-
-                    ni.push(createBillingItem(itemName, 1, itemPrice));
+                    ni.push(createBillingItem(itemName, 1, isNaN(itemPrice) ? 0 : itemPrice));
                 });
-
-                if (ni.length > 0) {
-                    setBillingItems(ni);
-                } else {
-                    setBillingItems([createBillingItem('No billable items for ' + latestDate, 1, 0)]);
-                }
+                setBillingItems(ni.length > 0 ? ni : [createBillingItem('No items found', 1, 0)]);
             }
         }
     }, [showBillingModal, billingPatient, reports, templates]);
@@ -1001,7 +972,45 @@ export default function PatientsPage() {
             <Modal isOpen={showBillingModal} onClose={() => setShowBillingModal(false)}>
                 <h3 className="text-xl font-bold mb-4">Generate Bill - {billingPatient?.name}</h3>
                 <div className="space-y-4">
-                    <div><label className="text-sm font-bold mb-1 block">Visit Date</label><select className="w-full px-3 py-2 border rounded" defaultValue={(() => { const vd = new Set<string>(); reports.filter(r => r.patientId === billingPatient?.id).forEach(r => { if (r.createdAt) vd.add(r.createdAt.split('T')[0]); }); const dates = Array.from(vd).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()); return dates[0] || new Date().toISOString().split('T')[0]; })()} onChange={(e) => { const d = e.target.value; const rp = reports.filter(r => r.patientId === billingPatient?.id && r.createdAt?.startsWith(d)); const ni = []; rp.forEach(r => { const t = templates.find(tt => tt.id === r.templateId); if (t) ni.push(createBillingItem(t.testName, 1, parseFloat(t.price) || 0)); }); setBillingItems(ni.length > 0 ? ni : [createBillingItem('No tests', 1, 0)]); }}>{(() => { const vd = new Set<string>(); reports.filter(r => r.patientId === billingPatient?.id).forEach(r => { if (r.createdAt) vd.add(r.createdAt.split('T')[0]); }); return Array.from(vd).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).map(dt => <option key={dt} value={dt}>{new Date(dt).toLocaleDateString('en-IN')}</option>); })()}</select><p className="text-xs text-gray-500 mt-1">{billingItems.filter(i => i.name && i.name !== 'No tests').length} lab tests</p></div>
+                    <div>
+                        <label className="text-sm font-bold mb-1 block">Visit Date</label>
+                        <select
+                            className="w-full px-3 py-2 border rounded"
+                            defaultValue={(() => {
+                                const vd = new Set<string>();
+                                reports.filter(r => r.patientId === billingPatient?.id).forEach(r => {
+                                    const d = r.createdAt || r.reportDate;
+                                    if (d) vd.add(d.split('T')[0]);
+                                });
+                                const dates = Array.from(vd).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+                                return dates[0] || new Date().toISOString().split('T')[0];
+                            })()}
+                            onChange={(e) => {
+                                const d = e.target.value;
+                                const rp = reports.filter(r => r.patientId === billingPatient?.id && (r.createdAt?.startsWith(d) || r.reportDate?.startsWith(d)));
+                                const ni = [];
+                                rp.forEach(r => {
+                                    const t = templates.find(tt => tt.id === (r.testId || r.templateId));
+                                    let itemName = t?.name || t?.testName || r.testName || 'Lab Report';
+                                    let itemPrice = parseFloat(String(t?.totalPrice || r.price || r.amount || 0));
+                                    ni.push(createBillingItem(itemName, 1, isNaN(itemPrice) ? 0 : itemPrice));
+                                });
+                                setBillingItems(ni.length > 0 ? ni : [createBillingItem('No tests', 1, 0)]);
+                            }}
+                        >
+                            {(() => {
+                                const vd = new Set<string>();
+                                reports.filter(r => r.patientId === billingPatient?.id).forEach(r => {
+                                    const d = r.createdAt || r.reportDate;
+                                    if (d) vd.add(d.split('T')[0]);
+                                });
+                                return Array.from(vd).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).map(dt => (
+                                    <option key={dt} value={dt}>{new Date(dt).toLocaleDateString('en-IN')}</option>
+                                ));
+                            })()}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">{billingItems.filter(i => i.name && i.name !== 'No tests').length} lab tests found for this date</p>
+                    </div>
                     <table className="w-full text-sm">
                         <thead className="bg-gray-100"><tr><th className="px-2 py-2 text-left">Item</th><th className="px-2 py-2 w-16">Qty</th><th className="px-2 py-2 w-24">Rate</th><th className="px-2 py-2 w-24">Amount</th><th className="w-8"></th></tr></thead>
                         <tbody>
@@ -1024,7 +1033,27 @@ export default function PatientsPage() {
                     </div>
                     <div className="flex justify-end gap-2 pt-4 border-t">
                         <button onClick={() => setShowBillingModal(false)} className="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
-                        <button onClick={async () => { if (!user || !billingPatient) return; const b = calculateBilling(billingItems.filter(i => i.name), discount, includeGST ? 18 : 0, paid); const invNum = generateInvoiceNumber('INV', Date.now()); const invData = { invoiceNumber: invNum, patientId: billingPatient.id, patientName: billingPatient.name, ...b, paymentMode, includeGST, createdAt: new Date().toISOString(), createdBy: user.uid }; await push(ref(database, `invoices/${user.uid}`), invData); window.open(`/print/invoice/${invNum}?data=${encodeURIComponent(JSON.stringify(invData))}`, '_blank'); setShowBillingModal(false); }} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"><i className="fas fa-print mr-2"></i>Save & Print</button>
+                        <button onClick={async () => {
+                            if (!user || !billingPatient) return;
+                            const dataSourceId = userProfile?.ownerId || user.uid;
+                            const b = calculateBilling(billingItems.filter(i => i.name && i.name !== 'No tests'), discount, includeGST ? 18 : 0, paid);
+                            const invNum = generateInvoiceNumber('INV', Date.now() % 100000);
+                            const invData = {
+                                invoiceNumber: invNum,
+                                patientId: billingPatient.patientId || billingPatient.id,
+                                patientName: billingPatient.name,
+                                ...b,
+                                paymentMode,
+                                includeGST,
+                                createdAt: new Date().toISOString(),
+                                createdBy: user.uid
+                            };
+                            await push(ref(database, `invoices/${dataSourceId}`), invData);
+                            window.open(`/print/invoice/${invNum}?data=${encodeURIComponent(JSON.stringify(invData))}`, '_blank');
+                            setShowBillingModal(false);
+                        }} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                            <i className="fas fa-print mr-2"></i>Save & Print
+                        </button>
                     </div>
                 </div>
             </Modal>
