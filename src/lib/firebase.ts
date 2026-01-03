@@ -21,5 +21,9 @@ const auth = getAuth(app);
 const database = getDatabase(app);
 const storage = getStorage(app);
 const googleProvider = new GoogleAuthProvider();
+// Force account selection on every login to prevent auto-login after logout
+googleProvider.setCustomParameters({
+    prompt: 'select_account'
+});
 
 export { app, auth, database, storage, googleProvider };
