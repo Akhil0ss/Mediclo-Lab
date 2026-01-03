@@ -132,9 +132,9 @@ export default function PatientsPage() {
                     // Enhanced Price Strategy - Check multiple sources
                     let itemPrice = 0;
 
-                    // 1. Try template price
-                    if (t && t.price) {
-                        itemPrice = parseFloat(t.price);
+                    // 1. Try template price (templates use totalPrice, price, or rate)
+                    if (t && (t.totalPrice || t.price || t.rate)) {
+                        itemPrice = parseFloat(t.totalPrice || t.price || t.rate);
                     }
                     // 2. Try report-level price
                     else if (r.price) {
@@ -158,7 +158,9 @@ export default function PatientsPage() {
                         name: itemName,
                         price: itemPrice,
                         templateFound: !!t,
+                        templateTotalPrice: t?.totalPrice,
                         templatePrice: t?.price,
+                        templateRate: t?.rate,
                         reportPrice: r.price,
                         reportAmount: r.amount,
                         hasTestDetails: !!r.testDetails
