@@ -20,20 +20,54 @@ export default function VerifyReportPage() {
         const verifyReport = async () => {
             try {
                 if (ownerId) {
-                    // Optimized: Direct lookup
-                    const start = Date.now();
-                    const snapshot = await get(ref(database, `reports/${ownerId}/${reportId}`));
+                    const reportRef = ref(database, `reports/${ownerId}/${reportId}`);
+                    const rSnap = await get(reportRef);
 
-                    if (snapshot.exists()) {
-                        setReport(snapshot.val());
+                    if (rSnap.exists()) {
+                        let r = rSnap.val();
+                        if (!r.id) r.id = reportId;
+
+                        const pPromise = r.patientId ? get(ref(database, `patients/${ownerId}/${r.patientId}`)) : Promise.resolve(null);
+                        const bPromise = get(ref(database, `branding/${ownerId}`));
+                        const [pSnap, bSnap] = await Promise.all([pPromise, bPromise]);
+
+                        if (pSnap && pSnap.exists()) r.patientDisplayId = pSnap.val().patientId;
+
+                        const branding = bSnap.exists() ? bSnap.val() : {};
+                        const labName = branding.labName || 'Spotnet MedOS';
+                        const labPrefix = labName.replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase().padEnd(4, 'X');
+
+                        // Format Report ID
+                        let formattedReportId = r.reportId || r.id;
+                        const repParts = (formattedReportId || '').split('-');
+                        if (repParts.length !== 3 || !/^\d{6}$/.test(repParts[1])) {
+                            const dateObj = new Date(r.createdAt || Date.now());
+                            const yyyymm = `${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+                            const extractedNums = (formattedReportId || '').replace(/\D/g, '');
+                            const seq = extractedNums.length >= 4 ? extractedNums.slice(-4) : String(dateObj.getTime()).slice(-4);
+                            formattedReportId = `${labPrefix}-${yyyymm}-${seq}`;
+                        }
+                        r.formattedReportId = formattedReportId;
+
+                        // Format Patient ID
+                        let formattedPatientId = r.patientDisplayId || r.patientId;
+                        const patParts = (formattedPatientId || '').split('-');
+                        if (patParts.length !== 3 || !/^\d{6}$/.test(patParts[1])) {
+                            const dateObj = new Date(r.createdAt || Date.now());
+                            const yyyymm = `${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+                            const extractedNums = (formattedPatientId || '').replace(/\D/g, '');
+                            const seq = extractedNums.length >= 4 ? extractedNums.slice(-4) : String(dateObj.getTime()).slice(-4);
+                            formattedPatientId = `${labPrefix}-${yyyymm}-${seq}`;
+                        }
+                        r.formattedPatientId = formattedPatientId;
+
+                        setReport(r);
                         setStatus('valid');
                     } else {
                         setStatus('invalid');
                     }
                 } else {
-                    // Fallback: This is extremely slow and dangerous for production.
-                    // For now, we will fail safe.
-                    console.warn("Missing 'oid' parameter for verification.");
+                    console.warn("Missing 'oid' parameter");
                     setStatus('invalid');
                 }
             } catch (error) {
@@ -91,7 +125,11 @@ export default function VerifyReportPage() {
                             <div className="bg-gray-50 rounded-xl p-5 border border-gray-100 text-left space-y-3">
                                 <div className="flex justify-between border-b border-gray-200 pb-2">
                                     <span className="text-gray-500 text-xs font-bold uppercase">Report ID</span>
-                                    <span className="text-gray-800 font-mono font-bold text-sm">{report.id || reportId}</span>
+                                    <span className="text-gray-800 font-mono font-bold text-sm">{report.formattedReportId || report.id}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-gray-200 pb-2">
+                                    <span className="text-gray-500 text-xs font-bold uppercase">Patient ID</span>
+                                    <span className="text-gray-800 font-mono font-bold text-sm">{report.formattedPatientId || 'N/A'}</span>
                                 </div>
                                 <div className="flex justify-between border-b border-gray-200 pb-2">
                                     <span className="text-gray-500 text-xs font-bold uppercase">Patient Name</span>
@@ -103,7 +141,7 @@ export default function VerifyReportPage() {
                                 </div>
                                 <div className="flex justify-between border-b border-gray-200 pb-2">
                                     <span className="text-gray-500 text-xs font-bold uppercase">Report Date</span>
-                                    <span className="text-gray-800 text-sm">{new Date(report.reportDate).toLocaleDateString()}</span>
+                                    <span className="text-gray-800 text-sm">{report.reportDate ? new Date(report.reportDate).toLocaleDateString() : 'N/A'}</span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-gray-500 text-xs font-bold uppercase">Referred By</span>
