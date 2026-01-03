@@ -95,12 +95,39 @@ export default function PatientsPage() {
             if (latestDate) {
                 // Load items for latest date
                 const rp = reports.filter(r => r.patientId === billingPatient.id && r.createdAt?.startsWith(latestDate));
-                const ni = [];
+                const ni: any[] = [];
                 rp.forEach(r => {
+                    // Try to find template for price/name
                     const t = templates.find(tt => tt.id === r.templateId);
-                    if (t) ni.push(createBillingItem(t.testName, 1, parseFloat(t.price) || 0));
+
+                    // Robust Name Strategy
+                    let itemName = t?.testName;
+                    if (!itemName) {
+                        // Fallback to report data
+                        if (r.testName) itemName = r.testName;
+                        else if (r.testDetails && r.testDetails.length > 0) {
+                            itemName = r.testDetails.map((td: any) => td.testName).join(', ');
+                        } else {
+                            itemName = 'Lab Report';
+                        }
+                    }
+
+                    // Robust Price Strategy
+                    let itemPrice = 0;
+                    if (t && t.price) itemPrice = parseFloat(t.price);
+                    else if (r.price) itemPrice = parseFloat(r.price);
+                    else if (r.amount) itemPrice = parseFloat(r.amount);
+
+                    if (isNaN(itemPrice)) itemPrice = 0;
+
+                    ni.push(createBillingItem(itemName, 1, itemPrice));
                 });
-                setBillingItems(ni.length > 0 ? ni : [createBillingItem('No tests', 1, 0)]);
+
+                if (ni.length > 0) {
+                    setBillingItems(ni);
+                } else {
+                    setBillingItems([createBillingItem('No tests found for ' + latestDate, 1, 0)]);
+                }
             }
         }
     }, [showBillingModal, billingPatient, reports, templates]);
