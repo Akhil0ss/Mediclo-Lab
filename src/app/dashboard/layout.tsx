@@ -87,7 +87,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                     <div className="flex items-center gap-3">
                         <div className="text-right mr-2">
                             <p className="text-sm font-semibold">{user?.displayName || userProfile?.name}</p>
-                            <span className="text-xs bg-white/30 px-2 py-0.5 rounded-full">{(userProfile?.role === 'receptionist' ? 'LAB ADMIN' : userProfile?.role?.toUpperCase()) || 'LAB ADMIN'}</span>
+                            <span className="text-xs bg-white/30 px-2 py-0.5 rounded-full">
+                                {userProfile?.role === 'receptionist' ? 'LAB ADMIN' :
+                                    userProfile?.role === 'owner' ? 'LAB OWNER' :
+                                        userProfile?.role?.toUpperCase() || 'LAB ADMIN'}
+                            </span>
                         </div>
                         <button onClick={handleSignOut} className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30"><i className="fas fa-sign-out-alt"></i> Logout</button>
                     </div>

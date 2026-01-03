@@ -8,6 +8,7 @@ import { database } from '@/lib/firebase';
 import { generatePatientId, generateTokenNumber } from '@/lib/idGenerator';
 import { calculateBilling, createBillingItem, formatCurrency, generateInvoiceNumber } from '@/lib/billingCalculator';
 import Modal from '@/components/Modal';
+import { defaultTemplates } from '@/lib/defaultTemplates';
 
 export default function PatientsPage() {
     const { user, userProfile } = useAuth();
@@ -115,34 +116,57 @@ export default function PatientsPage() {
 
                 const ni: any[] = [];
                 rp.forEach(r => {
-                    // Try to find template for price/name (check testId first, then templateId)
-                    const t = templates.find(tt => tt.id === (r.testId || r.templateId));
+                    // ROBUST MATCHING & PRICE DETECTION
+                    // 1. Identify all tests listed in this report
+                    const testNamesForThisReport = new Set<string>();
+                    if (r.testName) {
+                        r.testName.split(',').forEach((s: string) => testNamesForThisReport.add(s.trim()));
+                    }
+                    if (r.testDetails && Array.isArray(r.testDetails)) {
+                        r.testDetails.forEach((td: any) => {
+                            if (td.testName) testNamesForThisReport.add(td.testName.trim());
+                        });
+                    }
+                    if (testNamesForThisReport.size === 0) testNamesForThisReport.add('Lab Report');
 
-                    // Robust Name Strategy
-                    let itemName = t?.name || t?.testName || r.testName || 'Lab Report';
-                    if (!itemName || itemName === 'Lab Report') {
-                        if (r.testDetails && r.testDetails.length > 0) {
-                            itemName = r.testDetails.map((td: any) => td.testName).join(', ');
+                    let finalItemName = Array.from(testNamesForThisReport).join(', ');
+                    let finalItemPrice = 0;
+
+                    // Strategy 1: Trust direct price in report if it exists
+                    const reportPrice = parseFloat(String(r.price || r.amount || r.totalPrice || 0));
+
+                    if (!isNaN(reportPrice) && reportPrice > 0) {
+                        finalItemPrice = reportPrice;
+                    } else {
+                        // Strategy 2: Look up template prices for each test
+                        let calculatedPrice = 0;
+                        testNamesForThisReport.forEach(tn => {
+                            const t = templates.find(tt =>
+                                tt.name.toLowerCase().trim() === tn.toLowerCase() ||
+                                (r.testId === tt.id || r.templateId === tt.id)
+                            );
+                            if (t) {
+                                calculatedPrice += parseFloat(String(t.totalPrice || t.price || t.rate || 0));
+                            } else if (r.testDetails) {
+                                // Sub-strategy: check if testDetails has price for this specific test
+                                const detail = r.testDetails.find((td: any) => td.testName === tn);
+                                if (detail) {
+                                    calculatedPrice += parseFloat(String(detail.price || detail.amount || 0));
+                                }
+                            }
+                        });
+
+                        // Strategy 3: Absolute fallback - sum ALL details price if calculation still 0
+                        if (calculatedPrice === 0 && r.testDetails) {
+                            calculatedPrice = r.testDetails.reduce((sum: number, td: any) => {
+                                return sum + (parseFloat(String(td.price || td.amount || 0)) || 0);
+                            }, 0);
                         }
+
+                        finalItemPrice = calculatedPrice;
                     }
 
-                    // Enhanced Price Strategy
-                    let itemPrice = 0;
-                    if (t && (t.totalPrice || t.price || t.rate)) {
-                        itemPrice = parseFloat(String(t.totalPrice || t.price || t.rate));
-                    } else if (r.price) {
-                        itemPrice = parseFloat(String(r.price));
-                    } else if (r.amount) {
-                        itemPrice = parseFloat(String(r.amount));
-                    } else if (r.testDetails && r.testDetails.length > 0) {
-                        const detailsPrice = r.testDetails.reduce((sum: number, td: any) => {
-                            const tdPrice = parseFloat(String(td.price || td.amount || 0));
-                            return sum + (isNaN(tdPrice) ? 0 : tdPrice);
-                        }, 0);
-                        if (detailsPrice > 0) itemPrice = detailsPrice;
-                    }
-
-                    ni.push(createBillingItem(itemName, 1, isNaN(itemPrice) ? 0 : itemPrice));
+                    ni.push(createBillingItem(finalItemName, 1, finalItemPrice));
                 });
                 setBillingItems(ni.length > 0 ? ni : [createBillingItem('No items found', 1, 0)]);
             }
@@ -172,11 +196,20 @@ export default function PatientsPage() {
         });
 
         const unsubTemplates = onValue(templatesRef, (snapshot) => {
-            const data: any[] = [];
+            const userTemplates: any[] = [];
             snapshot.forEach((child) => {
-                data.push({ id: child.key, ...child.val() });
+                userTemplates.push({ id: child.key, ...child.val() });
             });
-            setTemplates(data);
+
+            // Merge with local defaultTemplates using consistent ID generation
+            const formattedDefaults = defaultTemplates.map((t, idx) => ({
+                ...t,
+                id: `SYS-${idx}-${t.name.replace(/\s+/g, '-')}`,
+                isSystem: true
+            }));
+
+            const combined = [...userTemplates, ...formattedDefaults];
+            setTemplates(combined);
         });
 
         const unsubSamples = onValue(samplesRef, (snapshot) => {
@@ -990,10 +1023,55 @@ export default function PatientsPage() {
                                 const rp = reports.filter(r => r.patientId === billingPatient?.id && (r.createdAt?.startsWith(d) || r.reportDate?.startsWith(d)));
                                 const ni = [];
                                 rp.forEach(r => {
-                                    const t = templates.find(tt => tt.id === (r.testId || r.templateId));
-                                    let itemName = t?.name || t?.testName || r.testName || 'Lab Report';
-                                    let itemPrice = parseFloat(String(t?.totalPrice || r.price || r.amount || 0));
-                                    ni.push(createBillingItem(itemName, 1, isNaN(itemPrice) ? 0 : itemPrice));
+                                    // ROBUST MATCHING & PRICE DETECTION
+                                    const testNamesForThisReport = new Set<string>();
+                                    if (r.testName) {
+                                        r.testName.split(',').forEach((s: string) => testNamesForThisReport.add(s.trim()));
+                                    }
+                                    if (r.testDetails && Array.isArray(r.testDetails)) {
+                                        r.testDetails.forEach((td: any) => {
+                                            if (td.testName) testNamesForThisReport.add(td.testName.trim());
+                                        });
+                                    }
+                                    if (testNamesForThisReport.size === 0) testNamesForThisReport.add('Lab Report');
+
+                                    let finalItemName = Array.from(testNamesForThisReport).join(', ');
+                                    let finalItemPrice = 0;
+
+                                    // Strategy 1: Trust direct price in report if it exists
+                                    const reportPrice = parseFloat(String(r.price || r.amount || r.totalPrice || 0));
+
+                                    if (!isNaN(reportPrice) && reportPrice > 0) {
+                                        finalItemPrice = reportPrice;
+                                    } else {
+                                        // Strategy 2: Look up template prices for each test
+                                        let calculatedPrice = 0;
+                                        testNamesForThisReport.forEach(tn => {
+                                            const t = templates.find(tt =>
+                                                tt.name.toLowerCase().trim() === tn.toLowerCase() ||
+                                                (r.testId === tt.id || r.templateId === tt.id)
+                                            );
+                                            if (t) {
+                                                calculatedPrice += parseFloat(String(t.totalPrice || t.price || t.rate || 0));
+                                            } else if (r.testDetails) {
+                                                const detail = r.testDetails.find((td: any) => td.testName === tn);
+                                                if (detail) {
+                                                    calculatedPrice += parseFloat(String(detail.price || detail.amount || 0));
+                                                }
+                                            }
+                                        });
+
+                                        // Strategy 3: Absolute fallback - sum ALL details price
+                                        if (calculatedPrice === 0 && r.testDetails) {
+                                            calculatedPrice = r.testDetails.reduce((sum: number, td: any) => {
+                                                return sum + (parseFloat(String(td.price || td.amount || 0)) || 0);
+                                            }, 0);
+                                        }
+
+                                        finalItemPrice = calculatedPrice;
+                                    }
+
+                                    ni.push(createBillingItem(finalItemName, 1, finalItemPrice));
                                 });
                                 setBillingItems(ni.length > 0 ? ni : [createBillingItem('No tests', 1, 0)]);
                             }}

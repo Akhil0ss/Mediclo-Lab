@@ -45,6 +45,7 @@ export default function AllReportsPage() {
             setFilteredReports(
                 reports.filter(r =>
                     r.patientName?.toLowerCase().includes(query) ||
+                    r.patientMobile?.toLowerCase().includes(query) ||
                     r.id?.toLowerCase().includes(query) ||
                     r.reportId?.toLowerCase().includes(query) ||
                     r.tests?.some((t: string) => t.toLowerCase().includes(query))
@@ -184,6 +185,7 @@ export default function AllReportsPage() {
                             <tr>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Report ID</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Patient Name</th>
+                                <th className="px-4 py-3 text-left text-sm font-semibold">Mobile</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Tests</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Date</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Actions</th>
@@ -192,7 +194,7 @@ export default function AllReportsPage() {
                         <tbody>
                             {paginatedReports.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
                                         <i className="fas fa-file-medical text-4xl mb-2 opacity-20"></i>
                                         <p>No reports found</p>
                                     </td>
@@ -205,6 +207,9 @@ export default function AllReportsPage() {
                                         </td>
                                         <td className="px-4 py-3 text-sm font-semibold text-gray-800">
                                             {report.patientName}
+                                        </td>
+                                        <td className="px-4 py-3 text-sm font-medium text-gray-600">
+                                            {report.patientMobile || 'N/A'}
                                         </td>
                                         <td className="px-4 py-3 text-sm">
                                             {report.tests?.join(', ') || report.testName || 'N/A'}

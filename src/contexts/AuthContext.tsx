@@ -7,7 +7,7 @@ import { ref, onValue, get } from 'firebase/database';
 import { useRouter } from 'next/navigation';
 
 interface UserProfile {
-    role: 'receptionist' | 'doctor' | 'pharmacy' | 'lab' | 'patient' | 'admin';
+    role: 'receptionist' | 'doctor' | 'pharmacy' | 'lab' | 'patient' | 'admin' | 'owner';
     name: string;
     email: string;
     doctorId?: string;

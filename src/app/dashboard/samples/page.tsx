@@ -126,9 +126,11 @@ export default function SamplesPage() {
                 samples.filter(s => {
                     const patient = patients.find(p => p.id === s.patientId);
                     const patientName = patient ? patient.name.toLowerCase() : '';
+                    const mobile = patient ? String(patient.mobile).toLowerCase() : '';
                     return (
                         s.sampleNumber.toLowerCase().includes(query) ||
                         patientName.includes(query) ||
+                        mobile.includes(query) ||
                         s.sampleType.toLowerCase().includes(query)
                     );
                 })
@@ -370,6 +372,7 @@ export default function SamplesPage() {
                             <tr>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Sample ID</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Patient Name</th>
+                                <th className="px-4 py-3 text-left text-sm font-semibold">Mobile</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Sample Type</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Collection Date</th>
                                 <th className="px-4 py-3 text-left text-sm font-semibold">Status</th>
@@ -379,7 +382,7 @@ export default function SamplesPage() {
                         <tbody>
                             {paginatedSamples.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                                         <i className="fas fa-flask text-4xl mb-2 opacity-20"></i>
                                         <p>No samples found</p>
                                     </td>
@@ -401,6 +404,7 @@ export default function SamplesPage() {
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 text-sm font-semibold">{patientName}</td>
+                                            <td className="px-4 py-3 text-sm font-medium text-gray-600">{patient?.mobile || 'N/A'}</td>
                                             <td className="px-4 py-3 text-sm">
                                                 <div className="font-medium">{sample.sampleType}</div>
                                                 <div className="text-xs text-gray-500">{sample.containerType}</div>
@@ -608,7 +612,7 @@ export default function SamplesPage() {
                             onChange={(e) => setTestSearch(e.target.value)}
                             className="w-full px-3 py-2 border rounded-lg mb-2 text-sm focus:border-blue-500 focus:outline-none"
                         />
-                        <div className="h-24 max-h-24 overflow-y-auto space-y-1 bg-white border rounded-lg p-2 text-xs">
+                        <div className="h-48 max-h-48 overflow-y-auto space-y-1 bg-white border rounded-lg p-2 text-xs">
                             {templates.length === 0 ? (
                                 <p className="text-xs text-gray-500 text-center py-2">No templates found</p>
                             ) : (
@@ -780,7 +784,7 @@ export default function SamplesPage() {
                             onChange={(e) => setTestSearch(e.target.value)}
                             className="w-full px-3 py-2 border rounded-lg mb-2 text-sm focus:border-blue-500 focus:outline-none"
                         />
-                        <div className="h-48 overflow-y-auto space-y-1 bg-white border rounded-lg p-2">
+                        <div className="h-96 max-h-96 overflow-y-auto space-y-1 bg-white border rounded-lg p-2">
                             {templates.length === 0 ? (
                                 <p className="text-xs text-gray-500 text-center py-4">No templates found</p>
                             ) : (

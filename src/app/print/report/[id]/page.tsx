@@ -496,12 +496,16 @@ export default function PrintReportPage() {
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        @page { margin: 10mm; size: A4; }
+        @page { 
+            margin: 0 0 12mm 0; /* No top/side margins, bottom margin for page number */
+            size: A4; 
+        }
         
         body { 
             font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #f1f5f9;
             padding: 0;
+            margin: 0;
             line-height: 1.3;
         }
         
@@ -567,24 +571,24 @@ export default function PrintReportPage() {
         }
 
         .report-container {
-            max-width: 210mm; /* A4 Width */
-            min-height: 297mm; /* Minimum A4 Height */
-            margin: 20px auto; /* Centered with top/bottom margin */
+            width: 210mm; /* Fixed A4 Width */
+            min-height: 297mm;
+            margin: 0 auto; 
             background: white;
-            border-radius: 0;
-            overflow: visible;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1); /* Visual shadow for paper effect */
-            padding: 0; /* Padding handled inside */
+            padding: 0;
         }
         
         @media print {
-           body { background: white; margin: 0; }
+           body { 
+               background: white; 
+               margin: 0; 
+               padding: 0;
+           }
            .report-container {
                width: 100%;
                max-width: none;
                margin: 0;
                box-shadow: none;
-               min-height: auto;
            }
         }
 
@@ -736,11 +740,6 @@ export default function PrintReportPage() {
         .footer-right p { margin: 1px 0; opacity: 0.9; }
         .footer-barcode { font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 1px; background: rgba(255,255,255,0.15); padding: 2px 6px; border-radius: 2px; margin-top: 4px; display: inline-block; }
 
-        @page { 
-            margin: 15mm; 
-            size: A4; 
-        }
-        
         /* Watermark */
         .watermark { 
             position: fixed; 
@@ -749,7 +748,7 @@ export default function PrintReportPage() {
             transform: translate(-50%, -50%) rotate(-45deg); 
             font-size: 80px; 
             font-weight: 800; 
-            color: rgba(0,0,0,0.03); 
+            color: rgba(0,0,0,0.02); 
             z-index: 0; 
             white-space: nowrap; 
             pointer-events: none; 
@@ -865,6 +864,7 @@ export default function PrintReportPage() {
                                     <p><strong>Date:</strong> ${new Date(report.reportDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                                     <p><strong>Time:</strong> ${new Date(report.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
                                     ${isPremium ? `<span class="badge" style="display:inline-block; margin-top:2px;">NABL</span>` : ''}
+                                    <p style="margin-top: 5px; color: #fbbf24; font-weight: 800; font-size: 8px;">Verify your report by QR →</p>
                                 </div>
                                 <div class="header-qr">
                                     <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`https://medlab.spotnet.in/verify/${report.id}?oid=${reportOwnerId}`)}" alt="QR" style="width:100%; height:100%; object-fit: contain;">
