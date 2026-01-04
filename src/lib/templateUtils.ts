@@ -99,5 +99,13 @@ export function mergeTemplates(userTemplates: any[], commonTemplates: any[] = []
         }
     });
 
-    return processedTemplates;
+    // Ensure uniqueness by ID to prevent React render errors
+    const uniqueMap = new Map<string, Template>();
+    processedTemplates.forEach(t => {
+        if (!uniqueMap.has(t.id)) {
+            uniqueMap.set(t.id, t);
+        }
+    });
+
+    return Array.from(uniqueMap.values());
 }

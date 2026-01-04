@@ -741,26 +741,112 @@ export const defaultTemplates = [
     },
 
     {
-        name: "AEC",
-        unit: "/cumm",
-        type: "numeric",
-        ranges: { male: { min: 40, max: 440 }, female: { min: 40, max: 440 } },
-        price: 200
+        name: "Absolute Eosinophil Count (AEC)",
+        category: "Hematology",
+        subtests: [
+            { name: "AEC", unit: "/cumm", type: "numeric", ranges: { male: { min: 40, max: 440 }, female: { min: 40, max: 440 } }, price: 200 }
+        ],
+        totalPrice: 200
     },
 
-    // ========== MICROBIOLOGY (CULTURE) ==========
     {
-        name: "Urine Culture & Sensitivity",
-        category: "Microbiology",
-        subtests: [], // Culture reports use dynamic sensitivity table
+        name: "Blood Grouping & Rh",
+        category: "Hematology",
+        subtests: [
+            { name: "Blood Group", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 100 },
+            { name: "Rh Factor", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 100 }
+        ],
+        totalPrice: 200
+    },
+
+    {
+        name: "VDRL (RPR) Test",
+        category: "Serology",
+        subtests: [
+            { name: "VDRL", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 200 },
+            { name: "Titre", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 0 }
+        ],
+        totalPrice: 200
+    },
+
+    {
+        name: "Coombs Test (Direct/Indirect)",
+        category: "Hematology",
+        subtests: [
+            { name: "Direct Coombs Test (DCT)", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 400 },
+            { name: "Indirect Coombs Test (ICT)", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 400 }
+        ],
         totalPrice: 800
     },
 
     {
+        name: "Body Fluid Analysis (Ascitic/Pleural/CSF)",
+        category: "Pathology",
+        subtests: [
+            { name: "Fluid Type", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 0 },
+            { name: "Appearance", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 0 },
+            { name: "Color", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 0 },
+            { name: "Total Cell Count", unit: "/cumm", type: "numeric", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 200 },
+            { name: "Polymorphs", unit: "%", type: "numeric", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 0 },
+            { name: "Lymphocytes", unit: "%", type: "numeric", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 0 },
+            { name: "Protein", unit: "mg/dL", type: "numeric", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 200 },
+            { name: "Sugar", unit: "mg/dL", type: "numeric", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 200 },
+            { name: "LDH", unit: "U/L", type: "numeric", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 400 }
+        ],
+        totalPrice: 1000
+    },
+
+    {
+        name: "Pap Smear (Cervical Cytology)",
+        category: "Cytology",
+        subtests: [], // Narrative or descriptive
+        totalPrice: 800
+    },
+
+    {
+        name: "FNAC Report",
+        category: "Cytology",
+        subtests: [], // Narrative
+        totalPrice: 1000
+    },
+
+    {
+        name: "Histopathology Biopsy",
+        category: "Histopathology",
+        subtests: [], // Narrative
+        totalPrice: 2000
+    },
+
+    // ========== MICROBIOLOGY (CULTURE) ==========
+    {
+
         name: "Blood Culture & Sensitivity",
         category: "Microbiology",
         subtests: [],
         totalPrice: 1200
+    },
+
+    {
+        name: "Pus Culture & Sensitivity",
+        category: "Microbiology",
+        subtests: [],
+        totalPrice: 1000
+    },
+
+    {
+        name: "Sputum Culture & Sensitivity",
+        category: "Microbiology",
+        subtests: [],
+        totalPrice: 1000
+    },
+
+    {
+        name: "Sputum for AFB (Ziehl-Neelsen Stain)",
+        category: "Microbiology",
+        subtests: [
+            { name: "Result", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 300 }
+        ],
+        totalPrice: 300
     },
 
     // ========== RADIOLOGY (NARRATIVE) ==========
@@ -783,5 +869,12 @@ export const defaultTemplates = [
         category: "Radiology",
         subtests: [],
         totalPrice: 5000
+    },
+
+    {
+        name: "CT Scan Head (Non-Contrast)",
+        category: "Radiology",
+        subtests: [],
+        totalPrice: 2500
     }
 ];

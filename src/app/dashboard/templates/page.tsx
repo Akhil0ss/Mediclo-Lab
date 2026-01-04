@@ -219,10 +219,51 @@ export default function TemplatesPage() {
 
         try {
             await remove(ref(database, `templates/${dataSourceId}`));
+            loadTemplates(); // Reload to show system (virtual) templates
             alert('Templates have been reset to system defaults.');
         } catch (error) {
             console.error(error);
             alert('Failed to reset templates.');
+        }
+    };
+
+    const importStandardLibrary = async () => {
+        if (!user) return;
+        if (!confirm('This will import all standard lab tests (100+) to your library. Existing templates with the same name will be skipped. Proceed?')) return;
+
+        try {
+            // Get current user templates to avoid duplicates
+            const templatesRef = ref(database, `templates/${dataSourceId}`);
+            const snapshot = await get(templatesRef);
+
+            const currentNames = new Set<string>();
+            if (snapshot.exists()) {
+                snapshot.forEach((child) => {
+                    const val = child.val();
+                    if (val.name) currentNames.add(val.name.toLowerCase().trim());
+                });
+            }
+
+            let count = 0;
+            // Iterate default templates and add if missing
+            for (const t of defaultTemplates) {
+                if (!currentNames.has(t.name.toLowerCase().trim())) {
+                    await push(templatesRef, {
+                        ...t,
+                        subtests: t.subtests || [], // Ensure subtests array exists
+                        createdAt: new Date().toISOString(),
+                        createdBy: user.uid,
+                        isSystem: false // Make them editable user templates
+                    });
+                    count++;
+                }
+            }
+
+            loadTemplates();
+            alert(`Success! Imported ${count} new test templates.`);
+        } catch (err) {
+            console.error(err);
+            alert('Failed to import standard library.');
         }
     };
 
@@ -299,35 +340,41 @@ export default function TemplatesPage() {
     return (
         <div>
             <div className="bg-white rounded-xl shadow-lg p-6">
-                <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
-                    <h2 className="text-xl font-bold text-gray-800">
-                        Test Templates
-                        <span className="ml-2 text-sm font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
-                            {templates.length} Tests
-                        </span>
-                    </h2>
-                    <div className="flex gap-2 flex-wrap">
-                        <input
-                            type="text"
-                            placeholder="Search templates..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="px-4 py-2 border rounded-lg"
-                        />
+                <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-800">
+                            Test Templates
+                            <span className="ml-3 text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full border border-gray-200">
+                                {templates.length} Tests Available
+                            </span>
+                        </h2>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-4">
+                        <div className="relative">
+                            <i className="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                            <input
+                                type="text"
+                                placeholder="Search templates..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg w-full sm:w-64 focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none transition-all"
+                            />
+                        </div>
                         {!isViewOnly && (
                             <>
                                 <button
-                                    onClick={resetToDefaults}
-                                    className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium"
-                                    title="Delete all custom/overridden templates and restore original system defaults"
+                                    onClick={importStandardLibrary}
+                                    className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-lg hover:bg-emerald-100 transition-colors text-sm font-bold flex items-center shadow-sm"
+                                    title="Import comprehensive standard lab library (100+ tests)"
                                 >
-                                    <i className="fas fa-undo-alt mr-2"></i>Reset to Defaults
+                                    <i className="fas fa-file-import mr-2"></i>Import Library
                                 </button>
                                 <button
                                     onClick={openAddModal}
-                                    className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-2 rounded-lg hover:shadow-lg"
+                                    className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-5 py-2.5 rounded-lg hover:shadow-lg transition-all text-sm font-bold flex items-center shadow-md border border-transparent"
                                 >
-                                    <i className="fas fa-plus mr-2"></i>Create Custom Template
+                                    <i className="fas fa-plus-circle mr-2"></i>New Template
                                 </button>
                             </>
                         )}
@@ -382,65 +429,74 @@ export default function TemplatesPage() {
                                         <td className="px-4 py-3 text-sm">{template.subtests?.length || 0}</td>
                                         <td className="px-4 py-3 text-sm font-semibold text-green-600">₹{template.totalPrice}</td>
                                         <td className="px-4 py-3 text-sm">
-                                            <button
-                                                onClick={() => openViewModal(template)}
-                                                className="text-blue-600 hover:underline mr-3"
-                                                title="View Details"
-                                            >
-                                                <i className="fas fa-eye"></i>
-                                            </button>
-                                            {!isViewOnly && (
-                                                <>
-                                                    <button
-                                                        onClick={() => openEditModal(template)}
-                                                        className="text-green-600 hover:underline mr-3"
-                                                        title="Edit Price"
-                                                    >
-                                                        <i className="fas fa-edit"></i>
-                                                    </button>
-                                                    {!template.isSystem && (
+                                            <div className="flex items-center gap-3">
+                                                <button
+                                                    onClick={() => openViewModal(template)}
+                                                    className="text-blue-600 hover:text-blue-800 transition-colors p-1.5 rounded hover:bg-blue-50"
+                                                    title="View Details"
+                                                >
+                                                    <i className="fas fa-eye"></i>
+                                                </button>
+                                                {!isViewOnly && (
+                                                    <>
+                                                        <div className="h-4 w-px bg-gray-300 mx-1"></div>
                                                         <button
-                                                            onClick={() => handleDeleteTemplate(template.id, template.name)}
-                                                            className="text-red-600 hover:underline"
-                                                            title="Delete Custom Template"
+                                                            onClick={() => openEditModal(template)}
+                                                            className="text-green-600 hover:text-green-800 transition-colors p-1.5 rounded hover:bg-green-50"
+                                                            title={template.isSystem ? "Override Price" : "Edit Template"}
                                                         >
-                                                            <i className="fas fa-trash"></i>
+                                                            <i className="fas fa-edit"></i>
                                                         </button>
-                                                    )}
-                                                </>
-                                            )}
+                                                        {!template.isSystem && (
+                                                            <>
+                                                                <div className="h-4 w-px bg-gray-300 mx-1"></div>
+                                                                <button
+                                                                    onClick={() => handleDeleteTemplate(template.id, template.name)}
+                                                                    className="text-red-600 hover:text-red-800 transition-colors p-1.5 rounded hover:bg-red-50"
+                                                                    title="Delete Template"
+                                                                >
+                                                                    <i className="fas fa-trash-alt"></i>
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
                             )}
                         </tbody>
                     </table>
-                </div>
+                </div >
 
                 {/* Pagination */}
-                {totalPages > 1 && (
-                    <div className="pagination mt-4 flex justify-center gap-2">
-                        <button
-                            disabled={currentPage === 1}
-                            onClick={() => setCurrentPage(currentPage - 1)}
-                            className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50"
-                        >
-                            <i className="fas fa-chevron-left"></i> Prev
-                        </button>
-                        <span className="px-3 py-1 bg-gray-50 rounded">Page {currentPage} of {totalPages}</span>
-                        <button
-                            disabled={currentPage === totalPages}
-                            onClick={() => setCurrentPage(currentPage + 1)}
-                            className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50"
-                        >
-                            Next <i className="fas fa-chevron-right"></i>
-                        </button>
-                    </div>
-                )}
-            </div>
+                {
+                    totalPages > 1 && (
+                        <div className="pagination mt-4 flex justify-center gap-2">
+                            <button
+                                disabled={currentPage === 1}
+                                onClick={() => setCurrentPage(currentPage - 1)}
+                                className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50"
+                            >
+                                <i className="fas fa-chevron-left"></i> Prev
+                            </button>
+                            <span className="px-3 py-1 bg-gray-50 rounded">Page {currentPage} of {totalPages}</span>
+                            <button
+                                disabled={currentPage === totalPages}
+                                onClick={() => setCurrentPage(currentPage + 1)}
+                                className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50"
+                            >
+                                Next <i className="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    )
+                }
+            </div >
 
             {/* Add Template Modal */}
-            <Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)}>
+            < Modal isOpen={showAddModal} onClose={() => setShowAddModal(false)
+            }>
                 <h3 className="text-xl font-bold mb-4">
                     <i className="fas fa-plus-circle text-indigo-600 mr-2"></i>Create Custom Template
                 </h3>
@@ -488,20 +544,22 @@ export default function TemplatesPage() {
                         <button type="button" onClick={() => setShowAddModal(false)} className="px-6 bg-gray-300 py-2 rounded-lg">Cancel</button>
                     </div>
                 </form>
-            </Modal>
+            </Modal >
 
             {/* Edit Template Modal */}
-            <Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)}>
+            < Modal isOpen={showEditModal} onClose={() => setShowEditModal(false)}>
                 <h3 className="text-xl font-bold mb-4">
                     <i className="fas fa-edit text-green-600 mr-2"></i>
                     {selectedTemplate?.isSystem ? 'Update Price' : 'Edit Template'}
                 </h3>
-                {selectedTemplate?.isSystem && (
-                    <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg mb-4 text-xs text-yellow-800">
-                        <i className="fas fa-lock mr-2"></i>
-                        Standard Template: Only <strong>Price</strong> can be updated.
-                    </div>
-                )}
+                {
+                    selectedTemplate?.isSystem && (
+                        <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-lg mb-4 text-xs text-yellow-800">
+                            <i className="fas fa-lock mr-2"></i>
+                            Standard Template: Only <strong>Price</strong> can be updated.
+                        </div>
+                    )
+                }
                 <form onSubmit={handleUpdateTemplate} className="space-y-3">
                     <input
                         type="text"
@@ -594,10 +652,10 @@ export default function TemplatesPage() {
                         <button type="button" onClick={() => setShowEditModal(false)} className="px-6 bg-gray-300 py-2 rounded-lg">Cancel</button>
                     </div>
                 </form>
-            </Modal>
+            </Modal >
 
             {/* View Modal - Read Only */}
-            <Modal isOpen={showViewModal} onClose={() => setShowViewModal(false)}>
+            < Modal isOpen={showViewModal} onClose={() => setShowViewModal(false)}>
                 <div className="p-4">
                     <h3 className="text-2xl font-bold mb-2 flex items-center">
                         {selectedTemplate?.name}
@@ -625,7 +683,7 @@ export default function TemplatesPage() {
                     </table>
                     <button onClick={() => setShowViewModal(false)} className="w-full mt-4 bg-gray-200 py-2 rounded-lg">Close</button>
                 </div>
-            </Modal>
-        </div>
+            </Modal >
+        </div >
     );
 }
