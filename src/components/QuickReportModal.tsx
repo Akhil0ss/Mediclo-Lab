@@ -35,6 +35,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
 
 
     const [aiAnalysisResult, setAiAnalysisResult] = useState<any>(null);
+    const [reportTypeStates, setReportTypeStates] = useState<Record<string, any>>({}); // For culture/narrative data
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [patients, setPatients] = useState<any[]>([]);
@@ -253,7 +254,46 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
         }
     };
 
-    const handleSubmit = async () => {
+    const handleCultureChange = (testId: string, field: string, value: any) => {
+        setReportTypeStates(prev => ({
+            ...prev,
+            [testId]: {
+                ...(prev[testId] || { organism: '', colonyCount: '', antibiotics: [] }),
+                [field]: value
+            }
+        }));
+    };
+
+    const handleNarrativeChange = (testId: string, field: string, value: string) => {
+        setReportTypeStates(prev => ({
+            ...prev,
+            [testId]: {
+                ...(prev[testId] || { findings: '', impression: '', narrativeText: '' }),
+                [field]: value
+            }
+        }));
+    };
+
+    const addAntibiotic = (testId: string) => {
+        const current = reportTypeStates[testId]?.antibiotics || [];
+        handleCultureChange(testId, 'antibiotics', [...current, { name: '', sensitivity: 'Sensitive', mic: '' }]);
+    };
+
+    const removeAntibiotic = (testId: string, index: number) => {
+        const current = [...(reportTypeStates[testId]?.antibiotics || [])];
+        current.splice(index, 1);
+        handleCultureChange(testId, 'antibiotics', current);
+    };
+
+    const updateAntibiotic = (testId: string, index: number, field: string, value: string) => {
+        const current = [...(reportTypeStates[testId]?.antibiotics || [])];
+        current[index] = { ...current[index], [field]: value };
+        handleCultureChange(testId, 'antibiotics', current);
+    };
+
+    const handleSubmit = async (e?: any, skipPrint: boolean = false) => {
+        if (e && e.preventDefault) e.preventDefault();
+
         if (!user || !ownerId) return;
 
         if (!selectedPatientId) {
@@ -311,10 +351,25 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                     const template = templates.find(t => t.id === testId);
                     if (!template) return null;
 
+                    const typeData = reportTypeStates[testId] || {};
+                    const isCulture = template.reportType === 'culture' || (template.category === 'Microbiology' && template.name.toLowerCase().includes('culture'));
+                    const isNarrative = template.reportType === 'narrative' || ['Radiology', 'Histopathology', 'Biopsy', 'Cardiology'].includes(template.category) ||
+                        template.name.toLowerCase().includes('x-ray') ||
+                        template.name.toLowerCase().includes('ultrasound');
+
                     return {
                         testId,
                         testName: template.name,
                         category: template.category,
+                        reportType: template.reportType || (isCulture ? 'culture' : isNarrative ? 'narrative' : 'numeric'),
+                        cultureData: isCulture ? {
+                            organism: typeData.organism || '',
+                            colonyCount: typeData.colonyCount || '',
+                            antibiotics: typeData.antibiotics || []
+                        } : null,
+                        narrativeText: isNarrative ? (typeData.narrativeText || '') : null,
+                        findings: isNarrative ? (typeData.findings || '') : null,
+                        impression: isNarrative ? (typeData.impression || '') : null,
                         subtests: (template.subtests || []).map((subtest: any, index: number) => {
                             const value = testResults[testId]?.[index] || '';
                             const ranges = patientData.gender === 'Male' ? subtest.ranges.male : subtest.ranges.female;
@@ -377,13 +432,15 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                 reportId: reportId
             });
 
-            alert('Report generated successfully!');
+            alert(skipPrint ? 'Test finalized successfully!' : 'Report generated successfully!');
             onClose();
 
-            // Open print view
-            setTimeout(() => {
-                window.open(`/print/report/${reportId}?ownerId=${ownerId}`, '_blank');
-            }, 500);
+            // Open print view only if not skipped
+            if (!skipPrint) {
+                setTimeout(() => {
+                    window.open(`/print/report/${reportId}?ownerId=${ownerId}`, '_blank');
+                }, 500);
+            }
 
         } catch (error) {
             console.error('Error generating report:', error);
@@ -531,59 +588,174 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                                     <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
                                         <h5 className="font-bold text-gray-800 text-md">{template.name}</h5>
                                     </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm text-left">
-                                            <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs">
-                                                <tr>
-                                                    <th className="px-4 py-2 border-r border-gray-200 w-1/3">Test Parameter</th>
-                                                    <th className="px-4 py-2 border-r border-gray-200">Result Value</th>
-                                                    <th className="px-4 py-2 text-gray-500 w-1/4">Unit</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100 bg-white">
-                                                {(template.subtests || []).map((subtest: any, index: number) => {
-                                                    const hasFormula = subtest.formula ? true : false;
-                                                    const isTextType = subtest.type === 'text' || !subtest.unit;
+                                    <div className="p-4">
+                                        {/* Dynamic UI based on Test Type */}
+                                        {/* 1. Culture & Sensitivity Type */}
+                                        {template.reportType === 'culture' || (template.category === 'Microbiology' && template.name.toLowerCase().includes('culture')) ? (
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Organism Isolated</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="e.g. E. Coli"
+                                                            value={reportTypeStates[testId]?.organism || ''}
+                                                            onChange={(e) => handleCultureChange(testId, 'organism', e.target.value)}
+                                                            className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Colony Count</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="e.g. 10^5 CFU/ml"
+                                                            value={reportTypeStates[testId]?.colonyCount || ''}
+                                                            onChange={(e) => handleCultureChange(testId, 'colonyCount', e.target.value)}
+                                                            className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                                                        />
+                                                    </div>
+                                                </div>
 
-                                                    return (
-                                                        <tr key={index} className="hover:bg-blue-50/50 transition-colors">
-                                                            <td className="px-4 py-2 font-medium text-gray-700 border-r border-gray-100">
-                                                                {subtest.name}
-                                                            </td>
-                                                            <td className="px-4 py-2 border-r border-gray-100 p-0">
-                                                                {!hasFormula ? (
-                                                                    <textarea
-                                                                        rows={1}
-                                                                        value={testResults[testId]?.[index] || ''}
-                                                                        onChange={(e) => handleResultChange(testId, index, e.target.value)}
-                                                                        placeholder=""
-                                                                        className="w-full px-4 py-2 bg-transparent focus:bg-blue-50 outline-none transition font-semibold text-blue-900 resize-none overflow-y-auto block leading-normal"
-                                                                        style={{ minHeight: '42px', maxHeight: '96px' }}
-                                                                        onInput={(e) => {
-                                                                            const target = e.target as HTMLTextAreaElement;
-                                                                            target.style.height = 'auto';
-                                                                            target.style.height = `${target.scrollHeight}px`;
-                                                                        }}
-                                                                    />
-                                                                ) : (
-                                                                    <input
-                                                                        type="text"
-                                                                        value={testResults[testId]?.[index] || ''}
-                                                                        readOnly={true}
-                                                                        title={`Auto-calculated: ${subtest.formula}`}
-                                                                        placeholder="Calculated"
-                                                                        className="w-full h-full px-4 py-2 bg-gray-50 text-gray-400 font-mono text-xs cursor-not-allowed outline-none"
-                                                                    />
+                                                <div>
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <label className="block text-xs font-bold text-gray-500 uppercase">Antibiotic Sensitivity</label>
+                                                        <button
+                                                            onClick={() => addAntibiotic(testId)}
+                                                            className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                                                        >
+                                                            <i className="fas fa-plus mr-1"></i> Add Antibiotic
+                                                        </button>
+                                                    </div>
+                                                    <div className="border rounded-lg overflow-hidden">
+                                                        <table className="w-full text-xs">
+                                                            <thead className="bg-gray-100">
+                                                                <tr>
+                                                                    <th className="p-2 text-left">Antibiotic</th>
+                                                                    <th className="p-2 text-left">Sensitivity</th>
+                                                                    <th className="p-2 text-left">MIC</th>
+                                                                    <th className="p-2"></th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y">
+                                                                {(reportTypeStates[testId]?.antibiotics || []).map((ab: any, abIndex: number) => (
+                                                                    <tr key={abIndex}>
+                                                                        <td className="p-1">
+                                                                            <input type="text" value={ab.name} onChange={(e) => updateAntibiotic(testId, abIndex, 'name', e.target.value)} className="w-full p-1 outline-none" />
+                                                                        </td>
+                                                                        <td className="p-1">
+                                                                            <select value={ab.sensitivity} onChange={(e) => updateAntibiotic(testId, abIndex, 'sensitivity', e.target.value)} className="w-full p-1 outline-none">
+                                                                                <option value="Sensitive">Sensitive</option>
+                                                                                <option value="Intermediate">Intermediate</option>
+                                                                                <option value="Resistant">Resistant</option>
+                                                                            </select>
+                                                                        </td>
+                                                                        <td className="p-1">
+                                                                            <input type="text" value={ab.mic} onChange={(e) => updateAntibiotic(testId, abIndex, 'mic', e.target.value)} className="w-full p-1 outline-none" placeholder="optional" />
+                                                                        </td>
+                                                                        <td className="p-1 text-center">
+                                                                            <button onClick={() => removeAntibiotic(testId, abIndex)} className="text-red-500"><i className="fas fa-trash"></i></button>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                                {(reportTypeStates[testId]?.antibiotics || []).length === 0 && (
+                                                                    <tr><td colSpan={4} className="p-4 text-center text-gray-400">No antibiotics added</td></tr>
                                                                 )}
-                                                            </td>
-                                                            <td className="px-4 py-2 text-gray-400 text-xs">
-                                                                {subtest.unit || '-'}
-                                                            </td>
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (template.reportType === 'narrative' || (['Radiology', 'Histopathology', 'Biopsy', 'Cardiology'].includes(template.category) ||
+                                            template.name.toLowerCase().includes('x-ray') ||
+                                            template.name.toLowerCase().includes('ultrasound'))) ? (
+                                            /* 2. Narrative Type (Radiology/MRI/Biopsy) */
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Clinical Findings</label>
+                                                    <textarea
+                                                        rows={4}
+                                                        value={reportTypeStates[testId]?.findings || ''}
+                                                        onChange={(e) => handleNarrativeChange(testId, 'findings', e.target.value)}
+                                                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                                                        placeholder="Describe clinical findings..."
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Impression</label>
+                                                    <textarea
+                                                        rows={2}
+                                                        value={reportTypeStates[testId]?.impression || ''}
+                                                        onChange={(e) => handleNarrativeChange(testId, 'impression', e.target.value)}
+                                                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm font-bold"
+                                                        placeholder="Summarize impression..."
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Full Report / Narrative Policy</label>
+                                                    <textarea
+                                                        rows={6}
+                                                        value={reportTypeStates[testId]?.narrativeText || ''}
+                                                        onChange={(e) => handleNarrativeChange(testId, 'narrativeText', e.target.value)}
+                                                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                                                        placeholder="Enter detailed report text..."
+                                                    />
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            /* 3. Default Numerical Type */
+                                            <div className="overflow-x-auto border rounded-lg">
+                                                <table className="w-full text-sm text-left">
+                                                    <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-xs">
+                                                        <tr>
+                                                            <th className="px-4 py-2 border-r border-gray-200 w-1/3">Test Parameter</th>
+                                                            <th className="px-4 py-2 border-r border-gray-200">Result Value</th>
+                                                            <th className="px-4 py-2 text-gray-500 w-1/4">Unit</th>
                                                         </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100 bg-white">
+                                                        {(template.subtests || []).map((subtest: any, index: number) => {
+                                                            const hasFormula = subtest.formula ? true : false;
+                                                            return (
+                                                                <tr key={index} className="hover:bg-blue-50/50 transition-colors">
+                                                                    <td className="px-4 py-2 font-medium text-gray-700 border-r border-gray-100">
+                                                                        {subtest.name}
+                                                                    </td>
+                                                                    <td className="px-4 py-2 border-r border-gray-100 p-0">
+                                                                        {!hasFormula ? (
+                                                                            <textarea
+                                                                                rows={1}
+                                                                                value={testResults[testId]?.[index] || ''}
+                                                                                onChange={(e) => handleResultChange(testId, index, e.target.value)}
+                                                                                placeholder=""
+                                                                                className="w-full px-4 py-1.5 bg-transparent focus:bg-blue-50 outline-none transition font-semibold text-blue-900 resize-none overflow-y-auto block leading-tight"
+                                                                                style={{ minHeight: '32px' }}
+                                                                                onInput={(e) => {
+                                                                                    const target = e.target as HTMLTextAreaElement;
+                                                                                    target.style.height = 'auto';
+                                                                                    target.style.height = `${target.scrollHeight}px`;
+                                                                                }}
+                                                                            />
+                                                                        ) : (
+                                                                            <input
+                                                                                type="text"
+                                                                                value={testResults[testId]?.[index] || ''}
+                                                                                readOnly={true}
+                                                                                title={`Auto-calculated: ${subtest.formula}`}
+                                                                                placeholder="Calculated"
+                                                                                className="w-full h-full px-4 py-2 bg-gray-50 text-gray-400 font-mono text-xs cursor-not-allowed outline-none"
+                                                                            />
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-4 py-2 text-gray-400 text-xs">
+                                                                        {subtest.unit || '-'}
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             );
@@ -615,7 +787,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             {/* Action Buttons */}
             <div className="flex gap-3 mt-8">
                 <button
-                    onClick={handleSubmit}
+                    onClick={(e) => handleSubmit(e, false)}
                     disabled={loading}
                     className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 px-4 rounded-lg hover:from-blue-700 hover:to-blue-800 font-semibold shadow-md transition-all disabled:opacity-50"
                 >
@@ -625,13 +797,20 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                         </>
                     ) : (
                         <>
-                            <i className="fas fa-check-circle mr-2"></i> Generate Report
+                            <i className="fas fa-print mr-2"></i> Generate & Print
                         </>
                     )}
                 </button>
                 <button
+                    onClick={(e) => handleSubmit(e, true)}
+                    disabled={loading}
+                    className="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 py-3 px-4 rounded-lg hover:bg-indigo-100 font-semibold transition-all shadow-sm"
+                >
+                    <i className="fas fa-check-double mr-2"></i> Complete & Close
+                </button>
+                <button
                     onClick={onClose}
-                    className="flex-1 bg-gray-300 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-400 font-semibold transition-all"
+                    className="px-6 bg-gray-200 text-gray-700 py-3 rounded-lg hover:bg-gray-300 font-semibold transition-all"
                 >
                     <i className="fas fa-times mr-2"></i> Cancel
                 </button>

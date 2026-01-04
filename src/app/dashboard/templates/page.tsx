@@ -41,7 +41,8 @@ export default function TemplatesPage() {
     const [formData, setFormData] = useState({
         name: '',
         category: '',
-        totalPrice: ''
+        totalPrice: '',
+        reportType: 'numeric' as 'numeric' | 'culture' | 'narrative'
     });
     const [subtests, setSubtests] = useState<Subtest[]>([{
         name: '',
@@ -120,6 +121,7 @@ export default function TemplatesPage() {
                 name: formData.name,
                 category: formData.category,
                 totalPrice: parseFloat(formData.totalPrice),
+                reportType: formData.reportType,
                 subtests,
                 createdAt: new Date().toISOString(),
                 createdBy: user.uid,
@@ -164,6 +166,7 @@ export default function TemplatesPage() {
                 name: formData.name, // Will be original name if system
                 category: formData.category, // Will be original category if system
                 totalPrice: parseFloat(formData.totalPrice),
+                reportType: formData.reportType,
                 subtests,
                 updatedAt: new Date().toISOString()
             };
@@ -224,8 +227,8 @@ export default function TemplatesPage() {
     };
 
     const openAddModal = () => {
-        setFormData({ name: '', category: '', totalPrice: '0' });
-        setSubtests([{ name: '', unit: '', type: 'numeric', ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 0 }]);
+        setFormData({ name: '', category: '', totalPrice: '', reportType: 'numeric' });
+        setSubtests([]);
         setShowAddModal(true);
     };
 
@@ -234,7 +237,8 @@ export default function TemplatesPage() {
         setFormData({
             name: template.name,
             category: template.category,
-            totalPrice: template.totalPrice.toString()
+            totalPrice: template.totalPrice.toString(),
+            reportType: template.reportType || 'numeric'
         });
         // Deep copy subtests to avoid mutating state directly
         setSubtests(JSON.parse(JSON.stringify(template.subtests || [])));
@@ -442,17 +446,24 @@ export default function TemplatesPage() {
                 </h3>
                 <form onSubmit={handleAddTemplate} className="space-y-3">
                     <input type="text" placeholder="Test Name" required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
-                    <select required value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} className="w-full px-4 py-2 border rounded-lg">
-                        <option value="">Category</option>
-                        <option value="Hematology">Hematology</option>
-                        <option value="Biochemistry">Biochemistry</option>
-                        <option value="Microbiology">Microbiology</option>
-                        <option value="Endocrinology">Endocrinology</option>
-                        <option value="Pathology">Pathology</option>
-                        <option value="Serology">Serology</option>
-                        <option value="Tumor Markers">Tumor Markers</option>
-                        <option value="Other">Other</option>
-                    </select>
+                    <div className="grid grid-cols-2 gap-2">
+                        <select required value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} className="w-full px-4 py-2 border rounded-lg">
+                            <option value="">Category</option>
+                            <option value="Hematology">Hematology</option>
+                            <option value="Biochemistry">Biochemistry</option>
+                            <option value="Microbiology">Microbiology</option>
+                            <option value="Endocrinology">Endocrinology</option>
+                            <option value="Pathology">Pathology</option>
+                            <option value="Serology">Serology</option>
+                            <option value="Tumor Markers">Tumor Markers</option>
+                            <option value="Other">Other</option>
+                        </select>
+                        <select required value={formData.reportType} onChange={(e) => setFormData({ ...formData, reportType: e.target.value as any })} className="w-full px-4 py-2 border rounded-lg">
+                            <option value="numeric">Numerical Table</option>
+                            <option value="culture">Culture & Sensitivity</option>
+                            <option value="narrative">Narrative Report</option>
+                        </select>
+                    </div>
                     <input type="number" placeholder="Total Price" required min="0" value={formData.totalPrice} onChange={(e) => setFormData({ ...formData, totalPrice: e.target.value })} className="w-full px-4 py-2 border rounded-lg" />
 
                     {/* Subtests Editor for Custom Templates */}
@@ -501,23 +512,36 @@ export default function TemplatesPage() {
                         disabled={selectedTemplate?.isSystem}
                         className={`w-full px-4 py-2 border rounded-lg ${selectedTemplate?.isSystem ? 'bg-gray-100 cursor-not-allowed' : ''}`}
                     />
-                    <select
-                        required
-                        value={formData.category}
-                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                        disabled={selectedTemplate?.isSystem}
-                        className={`w-full px-4 py-2 border rounded-lg ${selectedTemplate?.isSystem ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-                    >
-                        <option value="">Category</option>
-                        <option value="Hematology">Hematology</option>
-                        <option value="Biochemistry">Biochemistry</option>
-                        <option value="Microbiology">Microbiology</option>
-                        <option value="Endocrinology">Endocrinology</option>
-                        <option value="Pathology">Pathology</option>
-                        <option value="Serology">Serology</option>
-                        <option value="Tumor Markers">Tumor Markers</option>
-                        <option value="Other">Other</option>
-                    </select>
+                    <div className="grid grid-cols-2 gap-2">
+                        <select
+                            required
+                            value={formData.category}
+                            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                            disabled={selectedTemplate?.isSystem}
+                            className={`w-full px-4 py-2 border rounded-lg ${selectedTemplate?.isSystem ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        >
+                            <option value="">Category</option>
+                            <option value="Hematology">Hematology</option>
+                            <option value="Biochemistry">Biochemistry</option>
+                            <option value="Microbiology">Microbiology</option>
+                            <option value="Endocrinology">Endocrinology</option>
+                            <option value="Pathology">Pathology</option>
+                            <option value="Serology">Serology</option>
+                            <option value="Tumor Markers">Tumor Markers</option>
+                            <option value="Other">Other</option>
+                        </select>
+                        <select
+                            required
+                            value={formData.reportType}
+                            onChange={(e) => setFormData({ ...formData, reportType: e.target.value as any })}
+                            disabled={selectedTemplate?.isSystem}
+                            className={`w-full px-4 py-2 border rounded-lg ${selectedTemplate?.isSystem ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                        >
+                            <option value="numeric">Numerical Table</option>
+                            <option value="culture">Culture & Sensitivity</option>
+                            <option value="narrative">Narrative Report</option>
+                        </select>
+                    </div>
                     <div className="flex items-center gap-2 bg-green-50 p-2 rounded border border-green-200">
                         <label className="font-bold text-green-800 w-24">Total Price:</label>
                         <input

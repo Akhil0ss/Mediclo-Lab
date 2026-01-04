@@ -13,6 +13,7 @@ export default function LabDashboard() {
     const [pendingSamples, setPendingSamples] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showQuickReportModal, setShowQuickReportModal] = useState(false);
+    const [expandedTestsRow, setExpandedTestsRow] = useState<string | null>(null);
 
     useEffect(() => {
         if (userProfile && userProfile.role !== 'lab' && userProfile.role !== 'receptionist') {
@@ -159,14 +160,46 @@ export default function LabDashboard() {
                                             <h3 className="font-bold text-gray-800 text-lg">
                                                 {sample.patientName}
                                             </h3>
-                                            <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
+                                            <div className="flex items-center gap-4 text-sm text-gray-600 mt-1 flex-wrap">
                                                 <span>
                                                     <i className="fas fa-hashtag mr-1"></i>
                                                     Sample: <strong>{sample.sampleId}</strong>
                                                 </span>
                                                 <span>
                                                     <i className="fas fa-flask mr-1"></i>
-                                                    Tests: <strong>{sample.tests?.length || 0}</strong>
+                                                    Tests: {(() => {
+                                                        const tests = sample.tests || [];
+                                                        if (tests.length === 0) return <strong>0</strong>;
+
+                                                        const firstTest = tests[0];
+                                                        const remainingCount = tests.length - 1;
+                                                        const isExpanded = expandedTestsRow === sample.id;
+
+                                                        return (
+                                                            <span className="inline-flex items-center gap-1.5">
+                                                                <span className="inline-block bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-medium border border-blue-100">
+                                                                    {firstTest}
+                                                                </span>
+                                                                {remainingCount > 0 && (
+                                                                    <button
+                                                                        onClick={() => setExpandedTestsRow(isExpanded ? null : sample.id)}
+                                                                        className="inline-block bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded text-xs font-bold border border-purple-200 hover:bg-purple-100 transition-colors"
+                                                                    >
+                                                                        {isExpanded ? '−' : `+${remainingCount}`}
+                                                                    </button>
+                                                                )}
+                                                                {isExpanded && remainingCount > 0 && (
+                                                                    <span className="inline-flex flex-wrap gap-1 ml-1">
+                                                                        {tests.slice(1).map((test: string, idx: number) => (
+                                                                            <span key={idx} className="inline-block bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-medium border border-blue-100">
+                                                                                {test}
+                                                                            </span>
+                                                                        ))}
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </span>
                                                 <span>
                                                     <i className="fas fa-calendar mr-1"></i>

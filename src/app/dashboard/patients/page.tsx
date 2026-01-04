@@ -34,6 +34,7 @@ export default function PatientsPage() {
     const [visitPurpose, setVisitPurpose] = useState('lab');
     const [currentPage, setCurrentPage] = useState(1);
     const searchParams = useSearchParams();
+    const [expandedAddressRow, setExpandedAddressRow] = useState<string | null>(null);
     const itemsPerPage = 10;
 
     // Handle Quick Add from Dashboard / Patient Success Flow
@@ -598,38 +599,81 @@ export default function PatientsPage() {
                                         </td>
                                         <td className="px-4 py-3 text-sm">{patient.age} / {patient.gender ? patient.gender[0] : '?'}</td>
                                         <td className="px-4 py-3 text-sm">{patient.mobile}</td>
-                                        <td className="px-4 py-3 text-sm">{patient.address || 'N/A'}</td>
+                                        <td className="px-4 py-3 text-sm">
+                                            {(() => {
+                                                const address = patient.address || 'N/A';
+                                                if (address === 'N/A' || address.length <= 30) return address;
+
+                                                const isExpanded = expandedAddressRow === patient.id;
+
+                                                return (
+                                                    <div className="flex flex-col gap-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={isExpanded ? '' : 'truncate max-w-[200px]'}>
+                                                                {isExpanded ? address : `${address.substring(0, 30)}...`}
+                                                            </span>
+                                                            <button
+                                                                onClick={() => setExpandedAddressRow(isExpanded ? null : patient.id)}
+                                                                className="inline-block bg-gray-50 text-gray-700 px-2 py-0.5 rounded text-xs font-bold border border-gray-200 hover:bg-gray-100 transition-colors whitespace-nowrap flex-shrink-0"
+                                                            >
+                                                                {isExpanded ? '− Less' : '+ More'}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </td>
                                         <td className="px-4 py-3 text-sm">{patient.refDoctor || 'N/A'}</td>
                                         <td className="px-4 py-3 text-sm text-gray-600">
-                                            {patient.createdAt ? new Date(patient.createdAt).toLocaleString('en-IN', {
-                                                day: '2-digit',
-                                                month: 'short',
-                                                year: 'numeric',
-                                                hour: '2-digit',
-                                                minute: '2-digit'
-                                            }) : 'N/A'}
+                                            {patient.createdAt ? (
+                                                <div>
+                                                    <div>{new Date(patient.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
+                                                    <div className="text-xs text-gray-500">{new Date(patient.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
+                                                </div>
+                                            ) : 'N/A'}
                                         </td>
                                         <td className="px-4 py-3 text-sm">
-                                            <button
-                                                onClick={() => openViewModal(patient)}
-                                                className="text-blue-600 hover:underline mr-2"
-                                                title="View"
-                                            >
-                                                <i className="fas fa-eye"></i>
-                                            </button>
-                                            {!isViewOnly && (
-                                                <>
-                                                    <button
-                                                        onClick={() => openEditModal(patient)}
-                                                        className="text-green-600 hover:underline mr-2"
-                                                        title="Edit"
-                                                    >
-                                                        <i className="fas fa-edit"></i>
-                                                    </button>
-                                                    <button onClick={() => { setBillingPatient(patient); setShowBillingModal(true); setBillingItems([createBillingItem('', 1, 0)]); setDiscount(0); setPaid(0); }} className="text-blue-600 hover:underline mr-2" title="Generate Bill"><i className="fas fa-file-invoice-dollar"></i></button>
-                                                    <button onClick={() => handleDeletePatient(patient.id, patient.name)} className="text-gray-400 hover:text-red-600 transition-colors" title="Delete"><i className="fas fa-trash"></i></button>
-                                                </>
-                                            )}
+                                            <div className="flex items-center gap-3">
+                                                <button
+                                                    onClick={() => openViewModal(patient)}
+                                                    className="text-blue-600 hover:text-blue-800 transition-colors p-1"
+                                                    title="View"
+                                                >
+                                                    <i className="fas fa-eye"></i>
+                                                </button>
+                                                {!isViewOnly && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => openEditModal(patient)}
+                                                            className="text-green-600 hover:text-green-800 transition-colors p-1"
+                                                            title="Edit"
+                                                        >
+                                                            <i className="fas fa-edit"></i>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setBillingPatient(patient);
+                                                                setShowBillingModal(true);
+                                                                setBillingItems([createBillingItem('', 1, 0)]);
+                                                                setDiscount(0);
+                                                                setPaid(0);
+                                                            }}
+                                                            className="text-blue-600 hover:text-blue-800 transition-colors p-1"
+                                                            title="Generate Bill"
+                                                        >
+                                                            <i className="fas fa-file-invoice-dollar"></i>
+                                                        </button>
+                                                        <div className="border-l border-gray-300 h-5 mx-1"></div>
+                                                        <button
+                                                            onClick={() => handleDeletePatient(patient.id, patient.name)}
+                                                            className="text-gray-400 hover:text-red-600 transition-colors p-1"
+                                                            title="Delete"
+                                                        >
+                                                            <i className="fas fa-trash"></i>
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))

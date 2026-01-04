@@ -17,6 +17,7 @@ export default function AllReportsPage() {
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
+    const [expandedTestsRow, setExpandedTestsRow] = useState<string | null>(null);
     const itemsPerPage = 10;
 
     useEffect(() => {
@@ -212,10 +213,45 @@ export default function AllReportsPage() {
                                             {report.patientMobile || 'N/A'}
                                         </td>
                                         <td className="px-4 py-3 text-sm">
-                                            {report.tests?.join(', ') || report.testName || 'N/A'}
+                                            {(() => {
+                                                const tests = report.tests || (report.testName ? [report.testName] : []);
+                                                if (tests.length === 0) return <span className="text-gray-400">N/A</span>;
+
+                                                const firstTest = tests[0];
+                                                const remainingCount = tests.length - 1;
+                                                const isExpanded = expandedTestsRow === report.id;
+
+                                                return (
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="inline-block bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-medium border border-blue-100 whitespace-nowrap">
+                                                                {firstTest}
+                                                            </span>
+                                                            {remainingCount > 0 && (
+                                                                <button
+                                                                    onClick={() => setExpandedTestsRow(isExpanded ? null : report.id)}
+                                                                    className="inline-block bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-xs font-bold border border-purple-200 hover:bg-purple-100 transition-colors whitespace-nowrap"
+                                                                >
+                                                                    {isExpanded ? '− Less' : `+${remainingCount} more`}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        {isExpanded && remainingCount > 0 && (
+                                                            <div className="mt-1 p-2 bg-gray-50 rounded border border-gray-200 flex flex-wrap gap-1">
+                                                                {tests.slice(1).map((test: string, idx: number) => (
+                                                                    <span key={idx} className="inline-block bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-medium border border-blue-100">
+                                                                        {test}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
                                         </td>
                                         <td className="px-4 py-3 text-sm">
-                                            {new Date(report.createdAt).toLocaleDateString('en-IN')}
+                                            <div>{new Date(report.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
+                                            <div className="text-xs text-gray-500">{new Date(report.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                                         </td>
                                         <td className="px-4 py-3 text-sm flex items-center">
                                             <button

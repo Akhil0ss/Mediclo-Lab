@@ -10,7 +10,7 @@ import { defaultTemplates } from '@/lib/defaultTemplates';
 import { mergeTemplates } from '@/lib/templateUtils';
 
 export default function BillingPage() {
-    const { user } = useAuth();
+    const { user, userProfile } = useAuth();
     const searchParams = useSearchParams();
     const router = useRouter();
 
@@ -23,6 +23,7 @@ export default function BillingPage() {
     const [paymentMode, setPaymentMode] = useState('Cash');
     const [templates, setTemplates] = useState<any[]>([]);
     const [testSearch, setTestSearch] = useState('');
+    const [autoLabEntry, setAutoLabEntry] = useState(true);
 
     useEffect(() => {
         if (!user) return;
@@ -86,7 +87,8 @@ export default function BillingPage() {
     };
 
     const handleSave = async () => {
-        if (!user || !patientId) return;
+        const ownerId = userProfile?.ownerId || user?.uid;
+        if (!ownerId || !patientId) return;
 
         const invoiceNumber = generateInvoiceNumber('INV', Date.now());
         const invoiceData = {
@@ -99,10 +101,41 @@ export default function BillingPage() {
             createdBy: user.uid
         };
 
-        await push(ref(database, `invoices/${user.uid}`), invoiceData);
+        await push(ref(database, `invoices/${ownerId}`), invoiceData);
 
-        // Open print page
-        window.open(`/print/invoice/${invoiceNumber}?data=${encodeURIComponent(JSON.stringify(invoiceData))}`, '_blank');
+        // Auto-generate Lab Worklist Entry if enabled
+        if (autoLabEntry) {
+            try {
+                const selectedTestIds = items
+                    .map(item => templates.find(t => t.name === item.name)?.id)
+                    .filter(Boolean) as string[];
+
+                if (selectedTestIds.length > 0) {
+                    const sampleId = `LAB-${Date.now().toString().slice(-6)}`;
+                    const sampleData = {
+                        sampleId,
+                        sampleNumber: sampleId,
+                        patientId,
+                        patientName,
+                        // If it's something like ECG, we can set a generic type
+                        sampleType: 'Procedure / No Sample',
+                        date: new Date().toISOString(),
+                        status: 'Processing', // Skip 'Pending' since no sample collection needed
+                        tests: items.map(i => i.name).filter(Boolean),
+                        testIds: selectedTestIds,
+                        createdAt: new Date().toISOString(),
+                        billingId: invoiceNumber
+                    };
+                    const ownerId = userProfile?.ownerId || user?.uid;
+                    await push(ref(database, `samples/${ownerId}`), sampleData);
+                }
+            } catch (err) {
+                console.error("Failed to create lab entry:", err);
+            }
+        }
+
+        const ownerIdForPrint = userProfile?.ownerId || user?.uid || '';
+        window.open(`/print/invoice/${invoiceNumber}?ownerId=${ownerIdForPrint}&data=${encodeURIComponent(JSON.stringify(invoiceData))}`, '_blank');
         router.back();
     };
 
@@ -279,17 +312,33 @@ export default function BillingPage() {
                         </div>
                     </div>
                 </div>
+            </div>
 
-                {/* Actions */}
-                <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-                    <button onClick={() => router.back()} className="px-6 py-2 border rounded-lg hover:bg-gray-50">
-                        Cancel
-                    </button>
-                    <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                        <i className="fas fa-print mr-2"></i>
-                        Save & Print Invoice
-                    </button>
-                </div>
+            {/* Automation Options */}
+            <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        checked={autoLabEntry}
+                        onChange={(e) => setAutoLabEntry(e.target.checked)}
+                        className="w-5 h-5 text-blue-600 rounded"
+                    />
+                    <div>
+                        <span className="font-bold text-blue-800">Auto-generate Lab Worklist</span>
+                        <p className="text-xs text-blue-600">Send these tests directly to the reporting queue (skips manual sample collection for procedures like ECG/X-Ray).</p>
+                    </div>
+                </label>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
+                <button onClick={() => router.back()} className="px-6 py-2 border rounded-lg hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    <i className="fas fa-print mr-2"></i>
+                    Save & Print Invoice
+                </button>
             </div>
         </div>
     );

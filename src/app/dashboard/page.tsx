@@ -5,11 +5,12 @@ import { ref, onValue, query, limitToLast, orderByChild } from 'firebase/databas
 import { database } from '@/lib/firebase';
 import { getDataOwnerId } from '@/lib/dataUtils';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 
-import Link from 'next/link';
 const QuickReportModal = dynamic(() => import('@/components/QuickReportModal'), { ssr: false });
 
 export default function DashboardPage() {
+    const router = useRouter();
     const { user, userProfile } = useAuth();
     const [stats, setStats] = useState({ todayPatients: 0, todayReports: 0, todaySamples: 0, pendingSamples: 0 });
     const [pendingSamplesList, setPendingSamplesList] = useState([]);
@@ -69,14 +70,16 @@ export default function DashboardPage() {
                     <p className="text-gray-500 text-sm">Welcome back, {userProfile?.name}</p>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                    <Link href="/dashboard/patients?add=true"
+                    <button
+                        onClick={() => router.push('/dashboard/patients?add=true&flow=quick')}
                         className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg font-bold shadow-md transition flex items-center gap-2 text-sm">
                         <i className="fas fa-user-plus"></i> Quick Add Patient
-                    </Link>
-                    <Link href="/dashboard/samples?add=true"
+                    </button>
+                    <button
+                        onClick={() => router.push('/dashboard/samples?add=true&flow=quick')}
                         className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg font-bold shadow-md transition flex items-center gap-2 text-sm">
                         <i className="fas fa-vial"></i> Quick Sample
-                    </Link>
+                    </button>
                     <button onClick={() => { setSelectedSample(''); setShowQuickReportModal(true); }}
                         className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-bold shadow-md transition flex items-center gap-2 text-sm">
                         <i className="fas fa-plus-circle"></i> Quick Report
@@ -85,21 +88,21 @@ export default function DashboardPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                    <div><p className="text-xs font-bold text-gray-500 uppercase">Pending Samples</p><p className="text-3xl font-bold text-gray-800">{stats.pendingSamples}</p></div>
-                    <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600"><i className="fas fa-hourglass-half text-xl"></i></div>
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-4 rounded-xl shadow-sm border border-amber-100 flex items-center justify-between hover:shadow-md transition-shadow">
+                    <div><p className="text-xs font-bold text-amber-700 uppercase">Pending Samples</p><p className="text-3xl font-bold text-amber-900">{stats.pendingSamples}</p></div>
+                    <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center text-white shadow-lg"><i className="fas fa-hourglass-half text-xl"></i></div>
                 </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                    <div><p className="text-xs font-bold text-gray-500 uppercase">Collected Today</p><p className="text-3xl font-bold text-gray-800">{stats.todaySamples}</p></div>
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600"><i className="fas fa-vial text-xl"></i></div>
+                <div className="bg-gradient-to-br from-sky-50 to-blue-50 p-4 rounded-xl shadow-sm border border-sky-100 flex items-center justify-between hover:shadow-md transition-shadow">
+                    <div><p className="text-xs font-bold text-sky-700 uppercase">Collected Today</p><p className="text-3xl font-bold text-sky-900">{stats.todaySamples}</p></div>
+                    <div className="w-12 h-12 bg-gradient-to-br from-sky-400 to-blue-500 rounded-full flex items-center justify-center text-white shadow-lg"><i className="fas fa-vial text-xl"></i></div>
                 </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                    <div><p className="text-xs font-bold text-gray-500 uppercase">Reports Generated</p><p className="text-3xl font-bold text-gray-800">{stats.todayReports}</p></div>
-                    <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600"><i className="fas fa-file-medical-alt text-xl"></i></div>
+                <div className="bg-gradient-to-br from-emerald-50 to-green-50 p-4 rounded-xl shadow-sm border border-emerald-100 flex items-center justify-between hover:shadow-md transition-shadow">
+                    <div><p className="text-xs font-bold text-emerald-700 uppercase">Reports Generated</p><p className="text-3xl font-bold text-emerald-900">{stats.todayReports}</p></div>
+                    <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-green-500 rounded-full flex items-center justify-center text-white shadow-lg"><i className="fas fa-file-medical-alt text-xl"></i></div>
                 </div>
-                <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
-                    <div><p className="text-xs font-bold text-gray-500 uppercase">New Patients</p><p className="text-3xl font-bold text-gray-800">{stats.todayPatients}</p></div>
-                    <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-600"><i className="fas fa-users text-xl"></i></div>
+                <div className="bg-gradient-to-br from-purple-50 to-violet-50 p-4 rounded-xl shadow-sm border border-purple-100 flex items-center justify-between hover:shadow-md transition-shadow">
+                    <div><p className="text-xs font-bold text-purple-700 uppercase">New Patients</p><p className="text-3xl font-bold text-purple-900">{stats.todayPatients}</p></div>
+                    <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-violet-500 rounded-full flex items-center justify-center text-white shadow-lg"><i className="fas fa-user-plus text-xl"></i></div>
                 </div>
             </div>
 

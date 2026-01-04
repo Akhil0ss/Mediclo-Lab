@@ -355,138 +355,122 @@ export default function PrintReportPage() {
             `;
         };
 
-        const testResultsHTML = report.testDetails ? report.testDetails.map((test: any, testIndex: number) => {
-            if (test.cultureData) return generateCultureReport(test);
-            if (test.narrativeText || test.findings || test.impression) return generateNarrativeReport(test);
+        // Group reports by category for "Report Part" logic
+        const groupedTests: Record<string, any[]> = {};
+        if (report.testDetails) {
+            report.testDetails.forEach((test: any) => {
+                const cat = test.category || 'General';
+                if (!groupedTests[cat]) groupedTests[cat] = [];
+                groupedTests[cat].push(test);
+            });
+        }
 
-            const colors = [theme.primary, theme.secondary, '#06b6d4', '#10b981', '#f59e0b'];
-            const testColor = colors[testIndex % colors.length];
+        const testResultsHTML = Object.entries(groupedTests).map(([category, tests], catIndex) => {
+            const categoryHTML = tests.map((test: any, testIndex: number) => {
+                if (test.reportType === 'culture' || test.cultureData) return generateCultureReport(test);
+                if (test.reportType === 'narrative' || test.narrativeText || test.findings || test.impression) return generateNarrativeReport(test);
 
-            const subtestsHTML = test.subtests.map((subtest: any) => {
-                // Filter out empty values to keep report clean
-                if (!subtest.value || String(subtest.value).trim() === '') return '';
+                // Check if any subtests have real values.
+                const validSubtests = (test.subtests || []).filter((s: any) => s.value && String(s.value).trim() !== '');
+                const hasNarrative = test.narrativeText || test.findings || test.impression;
+                const hasCulture = test.cultureData && (test.cultureData.organism || (test.cultureData.antibiotics && test.cultureData.antibiotics.length > 0));
 
-                let statusIcon = '✔'; // Checkmark for Normal
-                let statusColor = '#10b981';
-                let valueColor = '#1e293b'; // Default text color
-                let rowBg = '#ffffff';
-                let valueBold = '600';
-                let indicatorBar = '';
+                if (validSubtests.length === 0 && !hasNarrative && !hasCulture) return '';
 
-                // Ranges and Indicator
-                let range = 0;
-                let extendedMin = 0;
-                let extendedMax = 0;
+                const subtestsHTML = validSubtests.map((subtest: any) => {
+                    let statusIcon = '✔';
+                    let statusColor = '#10b981';
+                    let valueColor = '#1e293b';
+                    let rowBg = '#ffffff';
+                    let valueBold = '600';
+                    let indicatorBar = '';
 
-                if (subtest.ranges && subtest.value && !isNaN(parseFloat(subtest.value))) {
-                    const val = parseFloat(subtest.value);
-                    const min = parseFloat(subtest.ranges.min);
-                    const max = parseFloat(subtest.ranges.max);
+                    // Ranges and Indicator
+                    if (subtest.ranges && subtest.value && !isNaN(parseFloat(subtest.value))) {
+                        const val = parseFloat(subtest.value);
+                        const min = parseFloat(subtest.ranges.min);
+                        const max = parseFloat(subtest.ranges.max);
 
-                    if (!isNaN(min) && !isNaN(max)) {
-                        range = max - min;
-                        if (range === 0) range = 1;
+                        if (!isNaN(min) && !isNaN(max)) {
+                            const range = (max - min) || 1;
+                            const extendedMin = min - (range * 0.4);
+                            const extendedMax = max + (range * 0.4);
+                            const extendedRange = extendedMax - extendedMin;
+                            let position = ((val - extendedMin) / extendedRange) * 100;
+                            position = Math.max(0, Math.min(100, position));
+                            const normalStart = ((min - extendedMin) / extendedRange) * 100;
+                            const normalEnd = ((max - extendedMin) / extendedRange) * 100;
 
-                        extendedMin = min - (range * 0.4);
-                        extendedMax = max + (range * 0.4);
-                        const extendedRange = extendedMax - extendedMin;
-
-                        let position = ((val - extendedMin) / extendedRange) * 100;
-                        position = Math.max(0, Math.min(100, position));
-
-                        const normalStart = ((min - extendedMin) / extendedRange) * 100;
-                        const normalEnd = ((max - extendedMin) / extendedRange) * 100;
-
-                        // Default Dot Color
-                        let dotColor = '#10b981';
-
-                        // LOGIC: Check explicit threat level first, then auto-calculate
-                        if (subtest.threatLevel === 'critical') {
-                            statusIcon = '❗'; // Exclamation for Critical
-                            statusColor = '#dc2626';
-                            valueColor = '#dc2626';
-                            rowBg = '#fef2f2';
-                            valueBold = '700';
-                            dotColor = '#dc2626';
-                        } else if (subtest.threatLevel === 'warning') {
-                            statusIcon = '⚠️'; // Warning Sign
-                            statusColor = '#f59e0b';
-                            valueColor = '#b45309';
-                            rowBg = '#fffbeb';
-                            valueBold = '700';
-                            dotColor = '#f59e0b';
-                        } else {
-                            // Auto-Calculation
-                            if (val < min || val > max) {
-                                statusIcon = '❗';
-                                statusColor = '#ef4444';
-                                valueColor = '#dc2626';
-                                rowBg = '#fef2f2';
-                                valueBold = '700';
-                                dotColor = '#dc2626';
+                            let dotColor = '#10b981';
+                            if (subtest.threatLevel === 'critical') {
+                                statusIcon = '❗'; statusColor = '#dc2626'; valueColor = '#dc2626'; rowBg = '#fef2f2'; valueBold = '700'; dotColor = '#dc2626';
+                            } else if (subtest.threatLevel === 'warning') {
+                                statusIcon = '⚠️'; statusColor = '#f59e0b'; valueColor = '#b45309'; rowBg = '#fffbeb'; valueBold = '700'; dotColor = '#f59e0b';
+                            } else if (val < min || val > max) {
+                                statusIcon = '❗'; statusColor = '#ef4444'; valueColor = '#dc2626'; rowBg = '#fef2f2'; valueBold = '700'; dotColor = '#dc2626';
                             }
+
+                            indicatorBar = `
+                                <div style="width: 50px; height: 3px; background: linear-gradient(to right, #ef4444 0%, #ef4444 ${normalStart}%, #10b981 ${normalStart}%, #10b981 ${normalEnd}%, #ef4444 ${normalEnd}%, #ef4444 100%); border-radius: 2px; position: relative; margin-top: 4px;">
+                                    <div style="position: absolute; top: -3px; left: ${position}%; transform: translateX(-50%); width: 8px; height: 8px; background: ${dotColor}; border: 1.5px solid white; border-radius: 50%;"></div>
+                                </div>
+                            `;
                         }
-
-                        indicatorBar = `
-                             <div style="width: 60px; height: 4px; background: linear-gradient(to right, #ef4444 0%, #ef4444 ${normalStart}%, #10b981 ${normalStart}%, #10b981 ${normalEnd}%, #ef4444 ${normalEnd}%, #ef4444 100%); border-radius: 2px; position: relative; margin-top: 5px;">
-                                 <div style="position: absolute; top: -3px; left: ${position}%; transform: translateX(-50%); width: 10px; height: 10px; background: ${dotColor}; border: 1.5px solid white; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.2);"></div>
-                             </div>
-                         `;
                     }
-                }
 
-                // If threat level is explicitly set in data as warning/critical, verify row styling
-                // (The block above handles turning 'normal' into 'critical' if out of range, this block ensures explicitly set warnings/criticals are respected if inside range? usually not possible but good safeguard)
-                if (subtest.threatLevel === 'warning' && statusIcon !== '✖') {
-                    statusIcon = '▲';
-                    statusColor = '#f59e0b';
-                    valueColor = '#b45309';
-                    rowBg = '#fffbeb';
-                    valueBold = '600';
-                } else if (subtest.threatLevel === 'critical') {
-                    // Already handled by auto-correction logic mostly, but ensures explicit criticals stay critical
-                    statusIcon = '✖';
-                    statusColor = '#ef4444';
-                    valueColor = '#dc2626';
-                    rowBg = '#fef2f2';
-                    valueBold = '700';
-                }
+                    return `
+                        <tr style="background: ${rowBg}; page-break-inside: avoid;">
+                            <td style="border: 1px solid #e2e8f0; padding: 6px 10px; font-size: 11px; font-weight: 600; color: #1e293b;">${subtest.name}</td>
+                            <td style="border: 1px solid #e2e8f0; padding: 6px 10px; font-weight: ${valueBold}; font-size: 12px; color: ${valueColor};">
+                                ${subtest.value || '-'}
+                                ${indicatorBar}
+                            </td>
+                            <td style="border: 1px solid #e2e8f0; padding: 6px 10px; font-size: 10px; font-weight: 500; color: #4b5563;">${subtest.unit || '-'}</td>
+                            <td style="border: 1px solid #e2e8f0; padding: 6px 10px; font-size: 10px; font-weight: 500; color: #4b5563;">${subtest.ranges ? `${subtest.ranges.min} - ${subtest.ranges.max}` : 'N/A'}</td>
+                            <td style="border: 1px solid #e2e8f0; padding: 6px 10px; text-align: center; color: ${statusColor}; font-size: 12px; font-weight: bold;">${statusIcon}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                const sectionTitle = `
+                    <div style="background: #f1f5f9; border-bottom: 1px solid #e2e8f0; padding: 5px 12px; display: flex; justify-content: space-between; align-items: center; page-break-after: avoid;">
+                        <h3 style="margin: 0; font-size: 11px; font-weight: 800; color: #0f172a; text-transform: uppercase;">${test.testName}</h3>
+                        <span style="font-size: 8px; font-weight: 900; background: ${theme.primary}15; color: ${theme.primary}; padding: 1px 6px; border-radius: 4px;">TEST ID: ${test.testId?.slice(-5) || 'NEW'}</span>
+                    </div>
+                `;
+
+                if (hasCulture) return generateCultureReport(test);
+                if (hasNarrative) return generateNarrativeReport(test);
 
                 return `
-                    <tr style="background: ${rowBg};">
-                        <td style="border: 1px solid #e5e7eb; padding: 8px 12px; font-size: 12px; font-weight: 600; color: #1e293b;">${subtest.name}</td>
-                        <td style="border: 1px solid #e5e7eb; padding: 8px 12px; font-weight: ${valueBold}; font-size: 14px; color: ${valueColor};">
-                            ${subtest.value || '-'}
-                            ${indicatorBar}
-                        </td>
-                        <td style="border: 1px solid #e5e7eb; padding: 8px 12px; font-size: 11px; font-weight: 500; color: #4b5563;">${subtest.unit || '-'}</td>
-                        <td style="border: 1px solid #e5e7eb; padding: 8px 12px; font-size: 11px; font-weight: 500; color: #4b5563;">${subtest.ranges ? `${subtest.ranges.min} - ${subtest.ranges.max}` : '-'}</td>
-                        <td style="border: 1px solid #e5e7eb; padding: 8px 12px; text-align: center; color: ${statusColor}; font-size: 16px; font-weight: bold;">${statusIcon}</td>
-                    </tr>
+                    <div style="margin-bottom: 10px; border-radius: 4px; overflow: hidden; border: 1px solid #e2e8f0; page-break-inside: avoid;">
+                        ${sectionTitle}
+                        <table style="width: 100%; border-collapse: collapse; background: white; table-layout: fixed;">
+                            <thead>
+                                <tr style="background: ${theme.gradient}08;">
+                                    <th style="width: 35%; border: 1px solid #e2e8f0; padding: 5px 10px; text-align: left; font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase;">Parameter</th>
+                                    <th style="width: 20%; border: 1px solid #e2e8f0; padding: 5px 10px; text-align: left; font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase;">Result</th>
+                                    <th style="width: 15%; border: 1px solid #e2e8f0; padding: 5px 10px; text-align: left; font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase;">Unit</th>
+                                    <th style="width: 20%; border: 1px solid #e2e8f0; padding: 5px 10px; text-align: left; font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase;">Reference Range</th>
+                                    <th style="width: 10%; border: 1px solid #e2e8f0; padding: 5px 10px; text-align: center; font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>${subtestsHTML}</tbody>
+                        </table>
+                    </div>
                 `;
             }).join('');
 
             return `
-                <div style="margin-bottom: 12px; border-radius: 6px; overflow: visible; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                    <div style="background: linear-gradient(135deg, ${testColor} 0%, ${testColor}cc 100%); color: white; padding: 8px 12px; page-break-after: avoid;">
-                        <h3 style="margin: 0; font-size: 13px; font-weight: 700;">${test.testName}</h3>
-                        <p style="margin: 2px 0 0 0; opacity: 0.85; font-size: 10px;">${test.category || 'General'}</p>
+                <div style="margin-top: ${catIndex === 0 ? '0' : '20px'}; page-break-before: ${catIndex === 0 ? 'auto' : 'avoid'};">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 4px 0; border-bottom: 2px solid #e2e8f0;">
+                         <div style="width: 4px; height: 18px; background: ${theme.primary}; border-radius: 2px;"></div>
+                         <h2 style="font-size: 14px; font-weight: 900; color: ${theme.primary}; text-transform: uppercase; letter-spacing: 1px;">DEPARTMENT: ${category}</h2>
                     </div>
-                    <table style="width: 100%; border-collapse: collapse; background: white; table-layout: fixed;">
-                        <thead>
-                            <tr style="background: #f8fafc; page-break-after: avoid;">
-                                <th style="width: 35%; border: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; font-size: 10px; font-weight: 800; color: #0f172a;">Parameter</th>
-                                <th style="width: 25%; border: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; font-size: 10px; font-weight: 800; color: #0f172a;">Result</th>
-                                <th style="width: 12%; border: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; font-size: 10px; font-weight: 800; color: #0f172a;">Unit</th>
-                                <th style="width: 18%; border: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; font-size: 10px; font-weight: 800; color: #0f172a;">Ref. Range</th>
-                                <th style="width: 10%; border: 1px solid #e5e7eb; padding: 6px 10px; text-align: center; font-size: 10px; font-weight: 800; color: #0f172a;">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>${subtestsHTML}</tbody>
-                    </table>
+                    ${categoryHTML}
                 </div>
             `;
-        }).join('') : '';
+        }).join('');
 
         // FULL HTML
         const fullHtml = `<!DOCTYPE html>
@@ -582,17 +566,60 @@ export default function PrintReportPage() {
         }
         
         @media print {
-           body { background: white; margin: 0; padding: 0; }
+           * {
+               -webkit-print-color-adjust: exact !important;
+               print-color-adjust: exact !important;
+               color-adjust: exact !important;
+           }
+           
+           body { 
+               background: white; 
+               margin: 0; 
+               padding: 0;
+               color: #000 !important;
+           }
+           
            .report-container {
                width: 100%;
                margin: 0;
                margin-top: 0;
                box-shadow: none;
-               min-height: 285mm; /* Safer than 297mm to avoid blank page overflow */
+               min-height: 285mm;
            }
+           
             .no-print { display: none !important; }
             thead { display: table-header-group; }
             tfoot { display: table-footer-group; }
+            
+            /* Darker text for print */
+            p, span, div, td, th, label {
+                color: #000 !important;
+            }
+            
+            /* Stronger borders */
+            .border, [class*="border-"], table, th, td {
+                border-color: #333 !important;
+            }
+            
+            /* Darker backgrounds */
+            .bg-gray-50, .bg-gray-100 {
+                background-color: #e5e5e5 !important;
+            }
+            
+            /* Ensure gradients print */
+            [style*="gradient"] {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            
+            /* Font weights for visibility */
+            .font-medium {
+                font-weight: 600 !important;
+            }
+            
+            .font-semibold, strong, b {
+                font-weight: 700 !important;
+            }
         }
 
         /* HEADER */

@@ -741,11 +741,47 @@ export const defaultTemplates = [
     },
 
     {
-        name: "Absolute Eosinophil Count",
-        category: "Hematology",
-        subtests: [
-            { name: "AEC", unit: "/cumm", type: "numeric", ranges: { male: { min: 40, max: 440 }, female: { min: 40, max: 440 } }, price: 200 }
-        ],
-        totalPrice: 200
+        name: "AEC",
+        unit: "/cumm",
+        type: "numeric",
+        ranges: { male: { min: 40, max: 440 }, female: { min: 40, max: 440 } },
+        price: 200
+    },
+
+    // ========== MICROBIOLOGY (CULTURE) ==========
+    {
+        name: "Urine Culture & Sensitivity",
+        category: "Microbiology",
+        subtests: [], // Culture reports use dynamic sensitivity table
+        totalPrice: 800
+    },
+
+    {
+        name: "Blood Culture & Sensitivity",
+        category: "Microbiology",
+        subtests: [],
+        totalPrice: 1200
+    },
+
+    // ========== RADIOLOGY (NARRATIVE) ==========
+    {
+        name: "Chest X-Ray PA View",
+        category: "Radiology",
+        subtests: [], // Narrative reports use text areas
+        totalPrice: 500
+    },
+
+    {
+        name: "Ultrasound Whole Abdomen",
+        category: "Radiology",
+        subtests: [],
+        totalPrice: 800
+    },
+
+    {
+        name: "MRI Brain (Contrast)",
+        category: "Radiology",
+        subtests: [],
+        totalPrice: 5000
     }
 ];

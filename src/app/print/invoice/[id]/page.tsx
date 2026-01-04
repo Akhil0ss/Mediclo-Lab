@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useState, useRef, Suspense } from 'react';
+import { useParams, useSearchParams } from 'next/navigation';
 import { ref, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
 
-export default function PrintInvoicePage() {
+function InvoiceContent() {
     const params = useParams();
+    const searchParams = useSearchParams();
     const { user, userProfile } = useAuth();
     const [invoiceData, setInvoiceData] = useState<any>(null);
     const [branding, setBranding] = useState<any>(null);
@@ -21,30 +22,59 @@ export default function PrintInvoicePage() {
 
         const fetchData = async () => {
             try {
-                // If user is logged in, use their ownerId
-                const ownerId = userProfile?.ownerId || user?.uid;
+                // 1. Check URL for instant data
+                const urlData = searchParams.get('data');
+                let initialData = null;
+                if (urlData) {
+                    try {
+                        const decoded = JSON.parse(decodeURIComponent(urlData));
+                        if (decoded.invoiceNumber === invoiceId) {
+                            initialData = decoded;
+                            setInvoiceData(decoded);
+                        }
+                    } catch (e) {
+                        console.error("Error parsing URL invoice data:", e);
+                    }
+                }
+
+                // 2. Resolve Owner
+                const queryOwnerId = searchParams.get('ownerId');
+                const sessionOwnerId = userProfile?.ownerId || user?.uid;
+                const ownerId = queryOwnerId || sessionOwnerId;
+
                 if (!ownerId) {
-                    console.error('No owner found');
+                    if (!initialData) {
+                        console.error('No owner found');
+                    }
                     setLoading(false);
                     return;
                 }
 
-                // Fetch Invoice
-                const invoiceSnapshot = await get(ref(database, `billing/${ownerId}/${invoiceId}`));
-                const data = invoiceSnapshot.val();
-
-                if (!data) {
-                    console.error('Invoice not found');
-                    setLoading(false);
-                    return;
-                }
-
-                // Fetch Branding
+                // 3. Fetch Branding
                 const brandingSnapshot = await get(ref(database, `branding/${ownerId}`));
                 const brandingData = brandingSnapshot.val() || {};
-
-                setInvoiceData(data);
                 setBranding(brandingData);
+
+                // 4. Fetch from DB if needed
+                if (!initialData) {
+                    let data = null;
+                    const paths = [`invoices/${ownerId}`, `billing/${ownerId}`];
+                    for (const path of paths) {
+                        const snap = await get(ref(database, path));
+                        if (snap.exists()) {
+                            // Invoices are pushed with auto-ID usually, so we search children
+                            snap.forEach(child => {
+                                const val = child.val();
+                                if (val.invoiceNumber === invoiceId || child.key === invoiceId) {
+                                    data = val;
+                                }
+                            });
+                        }
+                        if (data) break;
+                    }
+                    if (data) setInvoiceData(data);
+                }
+
                 setLoading(false);
             } catch (error) {
                 console.error('Error fetching invoice:', error);
@@ -53,327 +83,16 @@ export default function PrintInvoicePage() {
         };
 
         fetchData();
-    }, [invoiceId, user, userProfile]);
+    }, [invoiceId, user, userProfile, searchParams]);
 
+    // Cleanup printTriggeredRef when invoiceId changes
     useEffect(() => {
-        if (loading || !invoiceData || !branding) return;
-        if (printTriggeredRef.current) return;
-
-        printTriggeredRef.current = true;
-
-        const selectedTheme = branding.pdfTheme || 'blue';
-        const themes: any = {
-            blue: { primary: '#2563eb', secondary: '#1e40af', gradient: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)' },
-            green: { primary: '#10b981', secondary: '#059669', gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' },
-            purple: { primary: '#8b5cf6', secondary: '#7c3aed', gradient: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)' }
-        };
-        const theme = themes[selectedTheme] || themes.blue;
-
-        const fullHtml = `<!DOCTYPE html>
-<html>
-<head>
-    <title>Invoice - ${invoiceData.invoiceNumber}</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        @page { 
-            margin: 0mm 0mm 10px 0mm; 
-            size: A4; 
-        }
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: #f8fafc; 
-            padding: 0;
-            margin: 0;
-            color: #1e293b;
-        }
-        .invoice-container { 
-            width: 210mm; 
-            min-height: 296mm;
-            margin: 0 auto; 
-            background: white; 
-            padding: 0;
-            position: relative;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .header {
-            background: ${theme.gradient};
-            color: white;
-            padding: 15px 25px;
-            position: relative;
-            display: flex;
-            align-items: center;
-        }
-        .rainbow-bar {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 3px;
-            background: linear-gradient(90deg, #fbbf24, #f97316, #ef4444, #ec4899);
-        }
-        
-        /* Left Logo */
-        .header-logo-container {
-            flex: 0 0 80px;
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-        }
-        .header-logo { width: 70px; height: 70px; object-fit: contain; background: white; border-radius: 8px; padding: 4px; }
-
-        /* Center Brand */
-        .header-center {
-            flex: 1;
-            text-align: center;
-            padding: 0 20px;
-        }
-        .header-center h1 { font-size: 24px; font-weight: 800; margin-bottom: 2px; }
-        .header-center .tagline { font-size: 10px; opacity: 0.9; font-style: italic; }
-        .header-center .contact-details { font-size: 9px; opacity: 0.8; margin-top: 4px; line-height: 1.3; }
-
-        /* Right Invoice Info */
-        .header-right { flex: 0 0 160px; text-align: right; }
-        .invoice-title { font-size: 20px; font-weight: 900; letter-spacing: 2px; }
-        .invoice-number { font-size: 11px; opacity: 0.9; margin-top: 2px; }
-
-        .content { padding: 30px 40px; flex: 1; }
-
-        .info-section { display: flex; justify-content: space-between; margin-bottom: 30px; }
-        .info-box h3 { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-        .info-box p { font-size: 13px; line-height: 1.5; color: #1e293b; }
-
-        .items-table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-        .items-table th { background: #f8fafc; padding: 12px 15px; text-align: left; font-size: 11px; font-weight: 700; color: #64748b; border-bottom: 2px solid #e2e8f0; text-transform: uppercase; }
-        .items-table td { padding: 12px 15px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
-        .item-name { font-weight: 600; color: #1e293b; }
-
-        .totals-section { display: flex; justify-content: flex-end; }
-        .totals-box { width: 250px; }
-        .total-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
-        .total-row.grand-total { border-top: 2px solid #e2e8f0; margin-top: 10px; padding-top: 10px; font-size: 16px; font-weight: 800; color: ${theme.primary}; }
-        .total-row.due { color: #ef4444; font-weight: 700; }
-
-        .payment-info { margin-top: 40px; border-top: 1px solid #f1f5f9; padding-top: 20px; }
-        .payment-info h3 { font-size: 12px; font-weight: 700; color: #64748b; margin-bottom: 10px; }
-        .payment-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
-        .payment-item { font-size: 12px; }
-        .payment-item span { color: #64748b; }
-
-        .footer {
-            margin-top: auto;
-            padding: 15px 25px 25px 25px;
-        }
-        .signature-section {
-            display: flex;
-            justify-content: flex-end;
-            margin-bottom: 20px;
-        }
-        .signature-box {
-            text-align: center;
-            width: 150px;
-            padding-top: 10px;
-            border-top: 1px solid #1e293b;
-        }
-        .signature-box p { font-size: 11px; font-weight: 700; margin-top: 5px; }
-        
-        .footer-bottom { 
-            text-align: center; 
-            padding-top: 15px;
-            border-top: 1px solid #f1f5f9;
-            font-size: 11px; 
-            color: #94a3b8; 
-            display: flex; 
-            justify-content: space-between; 
-        }
-
-        /* Last Section Docking */
-        .last-section {
-            margin-top: auto; /* Push to bottom in flex container */
-            background: white;
-        }
-
-        @media print {
-            body { background: white; margin: 0; padding: 0; }
-            .invoice-container { 
-                box-shadow: none; 
-                width: 100%; 
-                border-radius: 0; 
-                min-height: 285mm; 
-                margin-top: 0; 
-            }
-            .no-print { display: none !important; }
-            thead { display: table-header-group; }
-            tfoot { display: table-footer-group; }
-        }
-
-        .print-btn { position: fixed; bottom: 20px; right: 20px; background: ${theme.gradient}; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 700; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 1000; }
-        .print-btn:hover { transform: translateY(-2px); }
-    </style>
-</head>
-<body>
-    <div class="invoice-container">
-        <table style="width: 100%; border-collapse: collapse;">
-            <thead style="display: table-header-group;">
-                <tr>
-                    <td>
-                        <div class="header">
-                            <div class="rainbow-bar"></div>
-                            <div class="header-logo-container">
-                                ${branding.logoUrl ? `<img src="${branding.logoUrl}" class="header-logo" alt="Logo">` : ''}
-                            </div>
-                            <div class="header-center">
-                                <h1>${branding.labName || 'Spotnet MedOS'}</h1>
-                                <p class="tagline">${branding.tagline || 'Professional Healthcare Services'}</p>
-                                <div class="contact-details">
-                                    ${branding.address ? `<p>${branding.address}</p>` : ''}
-                                    <p>
-                                        ${branding.contact ? `📞 ${branding.contact}` : ''}
-                                        ${branding.contact && branding.email ? ' | ' : ''}
-                                        ${branding.email ? `✉️ ${branding.email}` : ''}
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="header-right">
-                                <div class="invoice-title">INVOICE</div>
-                                <div class="invoice-number">#${invoiceData.invoiceNumber}</div>
-                            </div>
-                        </div>
-                    </td>
-                </tr>
-            </thead>
-
-            <!-- Spacer for intermediate pages -->
-            <tfoot style="display: table-footer-group;">
-                <tr><td><div style="height: 10px;"></div></td></tr>
-            </tfoot>
-
-            <tbody>
-                <tr>
-                    <td>
-                        <div class="content">
-                            <div class="info-section">
-                                <div class="info-box">
-                                    <h3>Bill To</h3>
-                                    <p><strong>${invoiceData.patientName}</strong></p>
-                                    <p>Patient ID: ${invoiceData.patientId || 'N/A'}</p>
-                                </div>
-                                <div class="info-box">
-                                    <h3>Invoice Details</h3>
-                                    <p><strong>Date:</strong> ${new Date(invoiceData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                                    <p><strong>Time:</strong> ${new Date(invoiceData.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
-                                </div>
-                            </div>
-
-                            <table class="items-table">
-                                <thead>
-                                    <tr>
-                                        <th>Description</th>
-                                        <th style="text-align: center; width: 80px;">Qty</th>
-                                        <th style="text-align: right; width: 120px;">Rate</th>
-                                        <th style="text-align: right; width: 120px;">Amount</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${invoiceData.items.map((item: any) => `
-                                        <tr>
-                                            <td class="item-name">${item.name}</td>
-                                            <td style="text-align: center;">${item.quantity}</td>
-                                            <td style="text-align: right;">₹${item.rate.toFixed(2)}</td>
-                                            <td style="text-align: right; font-weight: 600;">₹${item.amount.toFixed(2)}</td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-
-        <!-- THE LAST SECTION (Pushed to bottom by margin-top: auto) -->
-        <div class="last-section">
-            <div style="padding: 0 40px;">
-                <div class="totals-section" style="margin-top: 20px;">
-                    <div class="totals-box">
-                        <div class="total-row subtotal">
-                            <span>Subtotal</span>
-                            <span>₹${invoiceData.subtotal.toFixed(2)}</span>
-                        </div>
-                        ${invoiceData.discount > 0 ? `
-                            <div class="total-row discount">
-                                <span>Discount (${invoiceData.discountPercent}%)</span>
-                                <span>- ₹${invoiceData.discount.toFixed(2)}</span>
-                            </div>
-                        ` : ''}
-                        ${invoiceData.includeGST && invoiceData.gst > 0 ? `
-                            <div class="total-row">
-                                <span>GST (${invoiceData.gstPercent}%)</span>
-                                <span>₹${invoiceData.gst.toFixed(2)}</span>
-                            </div>
-                        ` : ''}
-                        <div class="total-row grand-total">
-                            <span>TOTAL</span>
-                            <span>₹${invoiceData.total.toFixed(2)}</span>
-                        </div>
-                        <div class="total-row paid">
-                            <span>Paid (${invoiceData.paymentMode})</span>
-                            <span>₹${invoiceData.paid.toFixed(2)}</span>
-                        </div>
-                        ${invoiceData.due > 0 ? `
-                            <div class="total-row due">
-                                <span>BALANCE DUE</span>
-                                <span>₹${invoiceData.due.toFixed(2)}</span>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-
-                <div class="payment-info" style="margin-top: 20px;">
-                    <h3>💳 Payment Information</h3>
-                    <div class="payment-grid">
-                        <div class="payment-item">
-                            <span>Payment Mode:</span>
-                            <strong>${invoiceData.paymentMode}</strong>
-                        </div>
-                        <div class="payment-item">
-                            <span>Payment Status:</span>
-                            <strong style="color: ${invoiceData.due > 0 ? '#ef4444' : '#10b981'}">
-                                ${invoiceData.due > 0 ? 'PARTIAL' : 'PAID'}
-                            </strong>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="signature-section" style="margin-top: 30px; display: flex; justify-content: flex-end; margin-bottom: 20px;">
-                    <div class="signature-box" style="text-align: center; width: 150px; border-top: 1px solid #1e293b; padding-top: 5px;">
-                        <p style="font-size: 11px; font-weight: 700;">Authorized Signatory</p>
-                        <p style="font-size: 10px; font-weight: 400; margin-top: 2px;">${branding.director || 'Lab Director'}</p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="footer-bottom" style="text-align: center; padding: 15px 25px; border-top: 1px solid #f1f5f9; font-size: 11px; color: #94a3b8; display: flex; justify-content: space-between;">
-                <p>Thank you for choosing ${branding.labName || 'Spotnet MedOS'}!</p>
-                <p>Generated on ${new Date().toLocaleDateString('en-IN')} ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
-                <p>Computer-generated invoice.</p>
-            </div>
-        </div>
-    </div>
-
-    <button onclick="window.print()" class="print-btn no-print">🖨️ Print / Save PDF</button>
-</body>
-</html>`;
-
-        document.open();
-        document.write(fullHtml);
-        document.close();
-    }, [loading, invoiceData, branding]);
+        printTriggeredRef.current = false;
+    }, [invoiceId]);
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center min-h-screen">
+            <div className="flex items-center justify-center min-h-screen no-print">
                 <div className="text-center">
                     <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                     <p className="text-gray-600 font-semibold">Generating Invoice...</p>
@@ -382,5 +101,318 @@ export default function PrintInvoicePage() {
         );
     }
 
-    return null;
+    if (!invoiceData || !branding) {
+        return (
+            <div className="flex items-center justify-center min-h-screen no-print">
+                <div className="text-center bg-white p-8 rounded-xl shadow-lg border border-red-100">
+                    <i className="fas fa-exclamation-triangle text-red-500 text-5xl mb-4"></i>
+                    <h2 className="text-2xl font-bold text-gray-800">Invoice Not Found</h2>
+                    <p className="text-gray-500 mt-2">Could not find the invoice details. Please check the URL or try again.</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Theme Configuration
+    const selectedTheme = branding.pdfTheme || 'blue';
+    const themes: any = {
+        blue: { primary: '#2563eb', secondary: '#1e40af', gradient: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)' },
+        green: { primary: '#10b981', secondary: '#059669', gradient: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' },
+        purple: { primary: '#8b5cf6', secondary: '#7c3aed', gradient: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)' }
+    };
+    const theme = themes[selectedTheme] || themes.blue;
+
+    return (
+        <>
+            {/* Print-Specific Styles for Darker Output */}
+            <style jsx global>{`
+                @media print {
+                    * {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                        color-adjust: exact !important;
+                    }
+                    
+                    @page {
+                        margin: 0;
+                        size: A4;
+                    }
+                    
+                    body {
+                        margin: 0;
+                        padding: 0;
+                        background: white !important;
+                        color: #000 !important;
+                    }
+                    
+                    .no-print {
+                        display: none !important;
+                    }
+                    
+                    .invoice-container {
+                        width: 100% !important;
+                        height: 297mm !important;
+                        margin: 0 !important;
+                        box-shadow: none !important;
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                    }
+                    
+                    header {
+                        print-color-adjust: exact;
+                        -webkit-print-color-adjust: exact;
+                    }
+                    
+                    /* Darker text */
+                    p, span, div, td, th {
+                        color: #000 !important;
+                    }
+                    
+                    /* Stronger borders */
+                    .border, [class*="border-"] {
+                        border-color: #333 !important;
+                        border-width: 1px !important;
+                    }
+                    
+                    /* Table borders darker */
+                    table, th, td {
+                        border-color: #333 !important;
+                    }
+                    
+                    /* Darker backgrounds */
+                    .bg-gray-50, .bg-gray-100 {
+                        background-color: #e5e5e5 !important;
+                    }
+                    
+                    /* Ensure gradients print */
+                    [style*="gradient"] {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    
+                    /* Darker text colors */
+                    .text-gray-600 {
+                        color: #333 !important;
+                    }
+                    
+                    .text-gray-700 {
+                        color: #222 !important;
+                    }
+                    
+                    .text-gray-800, .text-gray-900 {
+                        color: #000 !important;
+                    }
+                    
+                    /* Font weight for better visibility */
+                    .font-medium {
+                        font-weight: 600 !important;
+                    }
+                    
+                    .font-semibold {
+                        font-weight: 700 !important;
+                    }
+                }
+            `}</style>
+
+            <div className="min-h-screen bg-gray-100 py-0 sm:py-10 print:bg-white print:py-0">
+                {/* Action Bar (Hidden when printing) */}
+                <div className="max-w-[210mm] mx-auto mb-4 flex justify-between items-center no-print px-4 sm:px-0">
+                    <button
+                        onClick={() => window.close()}
+                        className="bg-white text-gray-700 px-4 py-2 rounded-lg shadow-sm border font-bold hover:bg-gray-50 transition"
+                    >
+                        <i className="fas fa-arrow-left mr-2"></i> Back
+                    </button>
+                    <button
+                        onClick={() => window.print()}
+                        className="bg-blue-600 text-white px-6 py-2 rounded-lg shadow-md font-bold hover:bg-blue-700 transition"
+                    >
+                        <i className="fas fa-print mr-2"></i> Print Invoice
+                    </button>
+                </div>
+
+                {/* Invoice Container - Forced A4 Size */}
+                <div className="invoice-container bg-white mx-auto shadow-2xl relative flex flex-col overflow-hidden w-[210mm] min-h-[297mm] print:shadow-none print:w-full print:min-h-screen">
+
+                    {/* Header Section */}
+                    <header className="relative bg-white text-white overflow-hidden" style={{ background: theme.gradient }}>
+                        {/* Rainbow Strip */}
+                        <div className="h-1 w-full bg-gradient-to-r from-yellow-400 via-orange-500 to-red-500" />
+
+                        <div className="px-8 py-6 flex items-center justify-between gap-6">
+                            {/* 1. Logo */}
+                            <div className="flex-shrink-0 w-24 h-24 bg-white rounded-xl p-2 flex items-center justify-center shadow-inner">
+                                {branding.logoUrl ? (
+                                    <img src={branding.logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
+                                ) : (
+                                    <i className="fas fa-microscope text-blue-600 text-4xl"></i>
+                                )}
+                            </div>
+
+                            {/* 2. Brand Identity */}
+                            <div className="flex-1 text-center">
+                                <h1 className="text-2xl font-extrabold uppercase tracking-tight">{branding.labName || 'Mediclo Lab'}</h1>
+                                <p className="text-xs font-medium italic opacity-90 mt-0.5">{branding.tagline || 'Leading Excellence in Diagnostics'}</p>
+                                <div className="mt-3 text-[10px] space-y-0.5 opacity-80 font-medium">
+                                    {branding.address && <p>{branding.address}</p>}
+                                    <p>
+                                        {branding.contact && <span>📞 {branding.contact}</span>}
+                                        {branding.contact && branding.email && <span className="mx-2">|</span>}
+                                        {branding.email && <span>✉️ {branding.email}</span>}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* 3. Invoice Badge */}
+                            <div className="text-right flex-shrink-0">
+                                <div className="inline-block bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2 border border-white/30">
+                                    <p className="text-[10px] font-black tracking-[0.2em] uppercase opacity-80 mb-0.5">Tax Invoice</p>
+                                    <p className="text-xl font-black">#{invoiceData.invoiceNumber}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 p-10 flex flex-col">
+                        {/* Patient & Invoice Metadata */}
+                        <section className="flex justify-between items-start mb-10 pb-6 border-b border-gray-100">
+                            <div>
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Billed To</p>
+                                <h2 className="text-lg font-bold text-gray-800">{invoiceData.patientName}</h2>
+                                <p className="text-xs text-gray-500 mt-1 font-semibold">Patient ID: <span className="text-blue-600">#{invoiceData.patientId?.slice(-6) || 'N/A'}</span></p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Invoice Info</p>
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-gray-700">Date: <span className="font-normal">{new Date(invoiceData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></p>
+                                    <p className="text-xs font-bold text-gray-700">Time: <span className="font-normal">{new Date(invoiceData.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span></p>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Items Table */}
+                        <section className="flex-1">
+                            <table className="w-full border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-50 text-gray-500 text-[10px] font-black uppercase tracking-widest border-y border-gray-200">
+                                        <th className="px-4 py-3 text-left">Description of Services</th>
+                                        <th className="px-4 py-3 text-center w-24">Quantity</th>
+                                        <th className="px-4 py-3 text-right w-32">Rate (₹)</th>
+                                        <th className="px-4 py-3 text-right w-32">Amount (₹)</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="text-sm">
+                                    {(invoiceData.items || []).map((item: any, idx: number) => (
+                                        <tr key={idx} className="border-b border-gray-50 hover:bg-blue-50/30 transition-colors">
+                                            <td className="px-4 py-4 font-bold text-gray-800">{item.name}</td>
+                                            <td className="px-4 py-4 text-center text-gray-600">{item.quantity}</td>
+                                            <td className="px-4 py-4 text-right text-gray-600">{item.rate.toFixed(2)}</td>
+                                            <td className="px-4 py-4 text-right font-black text-gray-900">{item.amount.toFixed(2)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </section>
+
+                        {/* Totals & Payments Section */}
+                        <section className="mt-10 pt-6 border-t-2 border-gray-100 flex justify-between items-start gap-10">
+                            {/* Payment Details */}
+                            <div className="bg-gray-50 rounded-xl p-6 flex-1 max-w-sm">
+                                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Payment Summary</h3>
+                                <div className="grid grid-cols-2 gap-y-3 text-xs">
+                                    <span className="text-gray-500 font-semibold">Mode:</span>
+                                    <span className="font-black text-right text-gray-800">{invoiceData.paymentMode}</span>
+
+                                    <span className="text-gray-500 font-semibold">Status:</span>
+                                    <span className={`font-black text-right uppercase ${invoiceData.due > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                                        {invoiceData.due > 0 ? 'Partial Payment' : 'Fully Paid'}
+                                    </span>
+                                </div>
+                                {invoiceData.due > 0 && (
+                                    <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg">
+                                        <p className="text-[10px] text-red-600 font-bold text-center">Balance of ₹{invoiceData.due.toFixed(2)} is pending.</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Calculation Box */}
+                            <div className="w-72 space-y-2">
+                                <div className="flex justify-between text-sm text-gray-600 font-semibold">
+                                    <span>Subtotal:</span>
+                                    <span>₹{invoiceData.subtotal.toFixed(2)}</span>
+                                </div>
+                                {invoiceData.discount > 0 && (
+                                    <div className="flex justify-between text-sm text-green-600 font-semibold">
+                                        <span>Discount ({invoiceData.discountPercent}%):</span>
+                                        <span>- ₹{invoiceData.discount.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                {invoiceData.gst > 0 && (
+                                    <div className="flex justify-between text-sm text-gray-600 font-semibold">
+                                        <span>GST ({invoiceData.gstPercent}%):</span>
+                                        <span>₹{invoiceData.gst.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between items-center pt-3 border-t-2 border-gray-200 mt-2">
+                                    <span className="text-base font-black text-gray-800">Grand Total:</span>
+                                    <span className="text-2xl font-black" style={{ color: theme.primary }}>₹{invoiceData.total.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm font-bold pt-2 text-blue-600">
+                                    <span>Amount Paid:</span>
+                                    <span>₹{invoiceData.paid.toFixed(2)}</span>
+                                </div>
+                                {invoiceData.due > 0 && (
+                                    <div className="flex justify-between text-sm font-bold text-red-500">
+                                        <span>Balance Due:</span>
+                                        <span>₹{invoiceData.due.toFixed(2)}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    </main>
+
+                    {/* Footer Section */}
+                    <footer className="mt-auto border-t border-gray-100 bg-white">
+                        <div className="px-10 py-8 flex items-end justify-between">
+                            {/* Thank You Note */}
+                            <div className="max-w-xs">
+                                <p className="text-xs text-gray-400 italic font-medium leading-relaxed">
+                                    * Thank you for choosing {branding.labName}. This is a computer-generated invoice and doesn't require a physical signature.
+                                </p>
+                            </div>
+
+                            {/* Signature */}
+                            <div className="text-center w-48">
+                                <div className="h-14 flex items-center justify-center italic text-gray-400 opacity-50 text-xs">
+                                    {branding.director ? `Seal of ${branding.director}` : 'Authorized Signatory'}
+                                </div>
+                                <div className="pt-2 border-t border-gray-300 font-black text-[11px] uppercase tracking-wider text-gray-700">
+                                    Authorized Signatory
+                                </div>
+                                <p className="text-[9px] text-gray-500 mt-1 font-bold">{branding.director || 'Lab Director'}</p>
+                            </div>
+                        </div>
+
+                        {/* Bottom Identity Bar */}
+                        <div className="py-3 px-8 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-t border-gray-50 bg-gray-50/50">
+                            Generated via Mediclo MedOS • {new Date().toLocaleDateString('en-IN')} {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                    </footer>
+                </div>
+            </div>
+        </>
+    );
+}
+
+export default function PrintInvoicePage() {
+    return (
+        <Suspense fallback={
+            <div className="flex items-center justify-center min-h-screen">
+                <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+        }>
+            <InvoiceContent />
+        </Suspense>
+    );
 }

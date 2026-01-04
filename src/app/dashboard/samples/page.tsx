@@ -31,6 +31,7 @@ export default function SamplesPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [testSearch, setTestSearch] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
+    const [expandedTestsRow, setExpandedTestsRow] = useState<string | null>(null);
     const itemsPerPage = 10;
 
     // Handle Quick Add from Dashboard / Patient Success Flow
@@ -444,14 +445,53 @@ export default function SamplesPage() {
                                             <td className="px-4 py-3 text-sm font-semibold">{patientName}</td>
                                             <td className="px-4 py-3 text-sm font-medium text-gray-600">{patient?.mobile || 'N/A'}</td>
                                             <td className="px-4 py-3 text-sm">
-                                                <div className="font-medium">{sample.sampleType}</div>
-                                                <div className="text-xs text-gray-500">{sample.containerType}</div>
-                                                <div className="text-xs text-blue-500">{sample.collectionCondition}</div>
+                                                {(() => {
+                                                    const sampleTypes = sample.sampleType ? sample.sampleType.split(', ') : [];
+                                                    if (sampleTypes.length === 0) return <span className="text-gray-400">N/A</span>;
+
+                                                    const firstType = sampleTypes[0];
+                                                    const remainingCount = sampleTypes.length - 1;
+                                                    const isExpanded = expandedTestsRow === sample.id;
+
+                                                    return (
+                                                        <div className="flex flex-col gap-1">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className="inline-block bg-green-50 text-green-700 px-2 py-0.5 rounded text-xs font-medium border border-green-100 whitespace-nowrap">
+                                                                    {firstType}
+                                                                </span>
+                                                                {remainingCount > 0 && (
+                                                                    <button
+                                                                        onClick={() => setExpandedTestsRow(isExpanded ? null : sample.id)}
+                                                                        className="inline-block bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded text-xs font-bold border border-purple-200 hover:bg-purple-100 transition-colors whitespace-nowrap"
+                                                                    >
+                                                                        {isExpanded ? '−' : `+${remainingCount}`}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                            {isExpanded && remainingCount > 0 && (
+                                                                <div className="flex flex-wrap gap-1">
+                                                                    {sampleTypes.slice(1).map((type: string, idx: number) => (
+                                                                        <span key={idx} className="inline-block bg-green-50 text-green-700 px-2 py-0.5 rounded text-xs font-medium border border-green-100">
+                                                                            {type}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            {sample.containerType && (
+                                                                <div className="text-xs text-gray-500">{sample.containerType}</div>
+                                                            )}
+                                                            {sample.collectionCondition && (
+                                                                <div className="text-xs text-blue-500">{sample.collectionCondition}</div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </td>
                                             <td className="px-4 py-3 text-sm">
-                                                {new Date(sample.date).toLocaleString('en-IN')}
+                                                <div>{new Date(sample.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
+                                                <div className="text-xs text-gray-500">{new Date(sample.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
                                                 {sample.collectedBy && (
-                                                    <div className="text-xs text-gray-500 mt-1">
+                                                    <div className="text-xs text-gray-500 mt-0.5">
                                                         <i className="fas fa-user-nurse mr-1"></i>{sample.collectedBy}
                                                     </div>
                                                 )}
@@ -461,28 +501,49 @@ export default function SamplesPage() {
                                                     {sample.status}
                                                 </span>
                                             </td>
-                                            <td className="px-4 py-3 text-sm flex items-center">
-                                                <button
-                                                    onClick={() => openEditModal(sample)}
-                                                    className="text-green-600 hover:text-green-800 transition-colors mr-3"
-                                                    title="Edit"
-                                                >
-                                                    <i className="fas fa-edit"></i>
-                                                </button>
-                                                <button
-                                                    onClick={() => openStatusModal(sample)}
-                                                    className="text-blue-600 hover:text-blue-800 transition-colors mr-3"
-                                                    title="Update Status"
-                                                >
-                                                    <i className="fas fa-sync"></i>
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDeleteSample(sample.id)}
-                                                    className="text-gray-400 hover:text-red-600 transition-colors"
-                                                    title="Delete"
-                                                >
-                                                    <i className="fas fa-trash"></i>
-                                                </button>
+                                            <td className="px-4 py-3 text-sm">
+                                                <div className="flex items-center gap-3">
+                                                    {sample.status !== 'Completed' && (
+                                                        <button
+                                                            onClick={async () => {
+                                                                if (confirm('Mark this sample as Completed?')) {
+                                                                    await update(ref(database, `samples/${userProfile?.ownerId || user.uid}/${sample.id}`), {
+                                                                        status: 'Completed',
+                                                                        completedAt: new Date().toISOString(),
+                                                                        remarks: (sample.remarks || '') + '\n[Marked Completed manually]'
+                                                                    });
+                                                                    showToast('Sample marked as Completed!', 'success');
+                                                                }
+                                                            }}
+                                                            className="text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 px-2 py-1 rounded border border-indigo-200 text-xs font-bold"
+                                                            title="Quick Complete"
+                                                        >
+                                                            <i className="fas fa-check-double mr-1"></i> Done
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => openEditModal(sample)}
+                                                        className="text-green-600 hover:text-green-800 transition-colors p-1"
+                                                        title="Edit"
+                                                    >
+                                                        <i className="fas fa-edit"></i>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => openStatusModal(sample)}
+                                                        className="text-blue-600 hover:text-blue-800 transition-colors p-1"
+                                                        title="Update Status"
+                                                    >
+                                                        <i className="fas fa-sync"></i>
+                                                    </button>
+                                                    <div className="border-l border-gray-300 h-5 mx-1"></div>
+                                                    <button
+                                                        onClick={() => handleDeleteSample(sample.id)}
+                                                        className="text-gray-400 hover:text-red-600 transition-colors p-1"
+                                                        title="Delete"
+                                                    >
+                                                        <i className="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );

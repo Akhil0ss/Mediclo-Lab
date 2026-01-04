@@ -12,6 +12,7 @@ export interface Template {
     isSystem?: boolean;
     isVirtual?: boolean;
     isCommunity?: boolean;
+    reportType?: 'numeric' | 'culture' | 'narrative';
 }
 
 /**
