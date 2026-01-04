@@ -159,7 +159,19 @@ export default function PrintReportPage() {
             formattedReportId = `${labPrefix}-${yyyymm}-${seq}`;
         }
 
-        const testsDoneList = report.testDetails ? report.testDetails.map((t: any) => t.testName).join(', ') : '';
+
+        // Create compact test list - truncate if too long
+        let testsDoneList = '';
+        if (report.testDetails) {
+            const testNames = report.testDetails.map((t: any) => t.testName);
+            const fullList = testNames.join(', ');
+            // If too long (>80 chars), truncate
+            if (fullList.length > 80) {
+                testsDoneList = fullList.substring(0, 77) + '...';
+            } else {
+                testsDoneList = fullList;
+            }
+        }
 
         // Details
         const sampleCollectionTime = report.sampleCollectionTime || new Date(report.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
@@ -725,6 +737,13 @@ export default function PrintReportPage() {
         .patient-item.span-2 { grid-column: span 2; }
         .patient-item label { display: block; font-size: 8px; color: ${theme.primary}; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 1px; }
         .patient-item span { font-size: 11px; font-weight: 600; color: #1e293b; }
+        .patient-item.span-2 span { 
+            font-size: 9px; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            display: block;
+        }
         
         /* SAMPLE INFO BAR */
         .sample-bar { padding: 8px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; gap: 20px; align-items: center; }
