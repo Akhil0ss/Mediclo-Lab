@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { calculateBilling, createBillingItem, formatCurrency, generateInvoiceNumber } from '@/lib/billingCalculator';
-import { ref, push } from 'firebase/database';
+import { ref, push, onValue, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import { defaultTemplates } from '@/lib/defaultTemplates';
+import { mergeTemplates } from '@/lib/templateUtils';
 
 export default function BillingPage() {
     const { user } = useAuth();
@@ -19,6 +21,52 @@ export default function BillingPage() {
     const [discount, setDiscount] = useState(0);
     const [paid, setPaid] = useState(0);
     const [paymentMode, setPaymentMode] = useState('Cash');
+    const [templates, setTemplates] = useState<any[]>([]);
+    const [testSearch, setTestSearch] = useState('');
+
+    useEffect(() => {
+        if (!user) return;
+        const dataSourceId = user.uid; // Simple owner fallback
+        const templatesRef = ref(database, `templates/${dataSourceId}`);
+        const commonTemplatesRef = ref(database, 'common_templates');
+
+        const fetchTemplates = () => {
+            get(templatesRef).then(userSnapshot => {
+                get(commonTemplatesRef).then(commonSnapshot => {
+                    const userTemplates: any[] = [];
+                    userSnapshot.forEach(child => {
+                        userTemplates.push({ id: child.key, ...child.val() });
+                    });
+
+                    const commonTemplates: any[] = [];
+                    commonSnapshot.forEach(child => {
+                        commonTemplates.push({ id: child.key, ...child.val() });
+                    });
+
+                    const combined = mergeTemplates(userTemplates, commonTemplates);
+                    setTemplates(combined.sort((a, b) => a.name.localeCompare(b.name)));
+                });
+            });
+        };
+
+        fetchTemplates();
+        const unsubTemplates = onValue(templatesRef, fetchTemplates);
+        const unsubCommon = onValue(commonTemplatesRef, fetchTemplates);
+        return () => {
+            unsubTemplates();
+            unsubCommon();
+        };
+    }, [user]);
+
+    const addTemplateToBilling = (template: any) => {
+        const rate = parseFloat(template.totalPrice || template.price || 0);
+        const newItem = createBillingItem(template.name, 1, rate);
+        setItems(prev => {
+            const filtered = prev.filter(i => i.name && !['', 'CBC Test, Lipid Profile'].includes(i.name.trim()));
+            return [...filtered, newItem];
+        });
+        setTestSearch('');
+    };
 
     const billing = calculateBilling(items.filter(i => i.name), discount, 18, paid);
 
@@ -71,55 +119,88 @@ export default function BillingPage() {
                     </button>
                 </div>
 
+                {/* Template Search */}
+                <div className="mb-6 relative">
+                    <label className="block text-sm font-medium mb-1">Quick Add Test (Template)</label>
+                    <div className="relative">
+                        <i className="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                        <input
+                            type="text"
+                            placeholder="Search test templates..."
+                            value={testSearch}
+                            onChange={(e) => setTestSearch(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                    </div>
+                    {testSearch && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                            {templates
+                                .filter(t => t.name.toLowerCase().includes(testSearch.toLowerCase()))
+                                .slice(0, 10)
+                                .map(t => (
+                                    <button
+                                        key={t.id}
+                                        onClick={() => addTemplateToBilling(t)}
+                                        className="w-full text-left px-4 py-2 hover:bg-blue-50 flex justify-between border-b last:border-0"
+                                    >
+                                        <span className="font-medium text-gray-800">{t.name}</span>
+                                        <span className="text-blue-600 font-bold text-sm">₹{t.totalPrice || t.price || 0}</span>
+                                    </button>
+                                ))
+                            }
+                        </div>
+                    )}
+                </div>
+
                 {/* Items Table */}
                 <div className="mb-6">
                     <table className="w-full">
-                        <thead className="bg-gray-50">
+                        <thead className="bg-gray-50 uppercase text-xs text-gray-500 font-bold">
                             <tr>
                                 <th className="px-4 py-2 text-left">Service/Item</th>
                                 <th className="px-4 py-2 text-center w-24">Qty</th>
                                 <th className="px-4 py-2 text-right w-32">Rate</th>
                                 <th className="px-4 py-2 text-right w-32">Amount</th>
-                                <th className="px-4 py-2 w-12"></th>
+                                <th className="px-4 py-2 w-12 text-center"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {items.map((item, idx) => (
-                                <tr key={idx} className="border-b">
-                                    <td className="px-4 py-2">
+                                <tr key={idx} className="border-b hover:bg-gray-50 transition-colors">
+                                    <td className="px-4 py-3 text-sm">
                                         <input
                                             type="text"
                                             value={item.name}
                                             onChange={(e) => updateItem(idx, 'name', e.target.value)}
                                             placeholder="e.g. CBC Test, Lipid Profile"
-                                            className="w-full px-2 py-1 border rounded"
+                                            className="w-full px-2 py-1 border border-transparent focus:border-blue-300 focus:bg-white rounded transition-all outline-none"
                                         />
                                     </td>
-                                    <td className="px-4 py-2">
+                                    <td className="px-4 py-3">
                                         <input
                                             type="number"
                                             value={item.quantity}
                                             onChange={(e) => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
-                                            className="w-full px-2 py-1 border rounded text-center"
+                                            className="w-full px-2 py-1 border border-transparent focus:border-blue-300 focus:bg-white rounded text-center transition-all outline-none"
                                             min="1"
                                         />
                                     </td>
-                                    <td className="px-4 py-2">
+                                    <td className="px-4 py-3">
                                         <input
                                             type="number"
                                             value={item.rate}
                                             onChange={(e) => updateItem(idx, 'rate', parseFloat(e.target.value) || 0)}
-                                            className="w-full px-2 py-1 border rounded text-right"
+                                            className="w-full px-2 py-1 border border-transparent focus:border-blue-300 focus:bg-white rounded text-right transition-all outline-none"
                                             min="0"
                                         />
                                     </td>
-                                    <td className="px-4 py-2 text-right font-medium">
+                                    <td className="px-4 py-3 text-right font-bold text-gray-700">
                                         {formatCurrency(item.amount)}
                                     </td>
-                                    <td className="px-4 py-2 text-center">
+                                    <td className="px-4 py-3 text-center">
                                         {items.length > 1 && (
-                                            <button onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700">
-                                                <i className="fas fa-trash"></i>
+                                            <button onClick={() => removeItem(idx)} className="text-gray-300 hover:text-red-500 transition-colors">
+                                                <i className="fas fa-trash-alt"></i>
                                             </button>
                                         )}
                                     </td>
@@ -127,8 +208,8 @@ export default function BillingPage() {
                             ))}
                         </tbody>
                     </table>
-                    <button onClick={addItem} className="mt-2 text-blue-600 hover:text-blue-700 text-sm">
-                        <i className="fas fa-plus mr-1"></i> Add Item
+                    <button onClick={addItem} className="mt-4 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition font-semibold text-sm">
+                        <i className="fas fa-plus mr-1"></i> Add Manual Row
                     </button>
                 </div>
 

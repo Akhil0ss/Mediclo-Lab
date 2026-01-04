@@ -3,12 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { ref, onValue, push, update, remove } from 'firebase/database';
+import { ref, onValue, push, update, remove, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { generateSampleId } from '@/lib/idGenerator';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Modal from '@/components/Modal';
 import { defaultTemplates } from '@/lib/defaultTemplates';
+import { mergeTemplates } from '@/lib/templateUtils';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 
 export default function SamplesPage() {
@@ -31,6 +32,35 @@ export default function SamplesPage() {
     const [testSearch, setTestSearch] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 10;
+
+    // Handle Quick Add from Dashboard / Patient Success Flow
+    useEffect(() => {
+        const triggerQuickAdd = async () => {
+            if (searchParams.get('add') === 'true' && user) {
+                const dataSourceId = userProfile?.ownerId || user.uid;
+                // Generate Auto Sample ID
+                const sampleId = await generateSampleId(dataSourceId, userProfile?.labName || 'CLINIC');
+
+                const pId = searchParams.get('patientId') || '';
+
+                setFormData({
+                    sampleNumber: sampleId,
+                    patientId: pId,
+                    sampleType: '',
+                    containerType: 'Plain Vial',
+                    priority: 'Routine',
+                    collectedBy: '',
+                    remarks: '',
+                    date: new Date().toISOString().slice(0, 16),
+                    status: 'Pending',
+                    collectionCondition: 'Random',
+                    selectedTests: []
+                });
+                setShowAddModal(true);
+            }
+        };
+        triggerQuickAdd();
+    }, [searchParams, user, userProfile]);
 
     // Modal states
     const [showAddModal, setShowAddModal] = useState(false);
@@ -84,26 +114,33 @@ export default function SamplesPage() {
             snapshot.forEach((child) => {
                 data.push({ id: child.key, ...child.val() });
             });
+            data.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setPatients(data);
         });
 
-        const unsubTemplates = onValue(templatesRef, (snapshot) => {
-            const userTemplates: any[] = [];
-            snapshot.forEach((child) => {
-                userTemplates.push({ id: child.key, ...child.val() });
+        const fetchTemplates = () => {
+            get(templatesRef).then(userSnapshot => {
+                get(commonTemplatesRef).then(commonSnapshot => {
+                    const userTemplates: any[] = [];
+                    userSnapshot.forEach(child => {
+                        userTemplates.push({ id: child.key, ...child.val() });
+                    });
+
+                    const commonTemplates: any[] = [];
+                    commonSnapshot.forEach(child => {
+                        commonTemplates.push({ id: child.key, ...child.val() });
+                    });
+
+                    const combined = mergeTemplates(userTemplates, commonTemplates);
+                    setTemplates(combined.sort((a, b) => a.name.localeCompare(b.name)));
+                });
             });
+        };
 
-            // Merge with local default templates
-            const formattedDefaults = defaultTemplates.map((t, idx) => ({
-                ...t,
-                id: `SYS-${idx}-${t.name.replace(/\s+/g, '-')}`,
-                isSystem: true
-            }));
-
-            // Combine: User templates first (could override system ones if we had name collision logic, but for now just appending)
-            const combined = [...userTemplates, ...formattedDefaults];
-            setTemplates(combined);
-        });
+        // Fetch once or set up multiple listeners
+        fetchTemplates();
+        const unsubTemplates = onValue(templatesRef, fetchTemplates);
+        const unsubCommon = onValue(commonTemplatesRef, fetchTemplates);
 
         const unsubBranding = onValue(brandingRef, (snapshot) => {
             setBranding(snapshot.val());
@@ -113,6 +150,7 @@ export default function SamplesPage() {
             unsubSamples();
             unsubPatients();
             unsubTemplates();
+            unsubCommon();
             unsubBranding();
         };
     }, [user, userProfile]);

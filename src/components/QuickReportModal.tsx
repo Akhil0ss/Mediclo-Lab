@@ -65,6 +65,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             onValue(patientsRef, (snapshot) => {
                 const data: any[] = [];
                 snapshot.forEach(child => { data.push({ id: child.key, ...child.val() }); });
+                data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
                 setPatients(data);
             }),
             onValue(templatesRef, (snapshot) => {
@@ -79,7 +80,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                 }));
 
                 const combined = [...userTemplates, ...formattedDefaults];
-                setTemplates(combined);
+                setTemplates(combined.sort((a, b) => a.name.localeCompare(b.name)));
             }),
             onValue(samplesRef, (snapshot) => {
                 const data: any[] = [];
@@ -89,6 +90,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             onValue(doctorsRef, (snapshot) => {
                 const data: any[] = [];
                 snapshot.forEach(child => { data.push({ id: child.key, ...child.val() }); });
+                data.sort((a, b) => a.name.localeCompare(b.name));
                 setDoctors(data);
                 const defaultDoctor = data.find(d => d.isDefault);
                 if (defaultDoctor) setSelectedDoctorId(defaultDoctor.id);
@@ -96,6 +98,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             onValue(externalDoctorsRef, (snapshot) => {
                 const data: any[] = [];
                 snapshot.forEach(child => { data.push({ id: child.key, ...child.val() }); });
+                data.sort((a, b) => a.name.localeCompare(b.name));
                 setExternalDoctors(data);
             }),
             onValue(brandingRef, (snapshot) => {
@@ -191,7 +194,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
 
             // Build a map of parameter names to values for this test
             const values: Record<string, number> = {};
-            template.subtests.forEach((subtest: any, index: number) => {
+            (template.subtests || []).forEach((subtest: any, index: number) => {
                 const value = parseFloat(updatedResults[testId]?.[index]);
                 if (!isNaN(value)) {
                     values[subtest.name] = value;
@@ -199,7 +202,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             });
 
             // Process inputs with formulas
-            template.subtests.forEach((subtest: any, index: number) => {
+            (template.subtests || []).forEach((subtest: any, index: number) => {
                 const formula = subtest.formula;
                 if (!formula) return; // Skip if no formula
 
@@ -312,7 +315,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                         testId,
                         testName: template.name,
                         category: template.category,
-                        subtests: template.subtests.map((subtest: any, index: number) => {
+                        subtests: (template.subtests || []).map((subtest: any, index: number) => {
                             const value = testResults[testId]?.[index] || '';
                             const ranges = patientData.gender === 'Male' ? subtest.ranges.male : subtest.ranges.female;
 
@@ -538,7 +541,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100 bg-white">
-                                                {template.subtests.map((subtest: any, index: number) => {
+                                                {(template.subtests || []).map((subtest: any, index: number) => {
                                                     const hasFormula = subtest.formula ? true : false;
                                                     const isTextType = subtest.type === 'text' || !subtest.unit;
 
@@ -595,7 +598,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                     testResults={selectedTests.flatMap(testId => {
                         const template = templates.find(t => t.id === testId);
                         if (!template) return [];
-                        return template.subtests.map((subtest: any, index: number) => ({
+                        return (template.subtests || []).map((subtest: any, index: number) => ({
                             test: subtest.name,
                             value: testResults[testId]?.[index] || '',
                             unit: subtest.unit || '',

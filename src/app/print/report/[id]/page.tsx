@@ -322,7 +322,7 @@ export default function PrintReportPage() {
                         ${aiAnalysis.insights ? `
                         <div>
                              <h4 style="font-size: 11px; font-weight: 700; color: #0369a1; margin-bottom: 4px;">
-                                🩺 Clinical Insights
+                                 🩺 Clinical Insights
                             </h4>
                             <div style="background: #f0f9ff; border: 1px solid #bfdbfe; padding: 10px; border-radius: 6px;">
                                 <p style="font-size: 10px; color: #334155; line-height: 1.6; margin: 0;">${aiAnalysis.insights}</p>
@@ -497,7 +497,7 @@ export default function PrintReportPage() {
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         @page { 
-            margin: 0 0 12mm 0; /* No top/side margins, bottom margin for page number */
+            margin: 0mm 0mm 10px 0mm; /* Top 0, Right 0, Bottom 10px, Left 0 */
             size: A4; 
         }
         
@@ -571,25 +571,28 @@ export default function PrintReportPage() {
         }
 
         .report-container {
-            width: 210mm; /* Fixed A4 Width */
-            min-height: 297mm;
+            width: 210mm; 
+            min-height: 296mm; 
             margin: 0 auto; 
             background: white;
             padding: 0;
+            position: relative; 
+            display: flex;
+            flex-direction: column;
         }
         
         @media print {
-           body { 
-               background: white; 
-               margin: 0; 
-               padding: 0;
-           }
+           body { background: white; margin: 0; padding: 0; }
            .report-container {
                width: 100%;
-               max-width: none;
                margin: 0;
+               margin-top: 0;
                box-shadow: none;
+               min-height: 285mm; /* Safer than 297mm to avoid blank page overflow */
            }
+            .no-print { display: none !important; }
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
         }
 
         /* HEADER */
@@ -732,13 +735,19 @@ export default function PrintReportPage() {
         .auth-sign strong { display: inline; font-size: 10px; color: #1e293b; }
         .auth-sign span { font-size: 9px; color: ${theme.primary}; font-weight: 600; margin-left: 4px; }
 
-        /* Footer */
+        /* Last Page Footer System */
+        .last-section {
+            margin-top: auto; /* Push to bottom in flex container */
+            background: white;
+            z-index: 10;
+            break-inside: avoid;
+        }
+
         .footer { background: ${theme.gradient}; color: white; padding: 12px 20px; display: flex; justify-content: space-between; font-size: 9px; }
         .footer-left p { margin: 1px 0; }
         .footer-left strong { font-size: 10px; }
         .footer-right { text-align: right; }
         .footer-right p { margin: 1px 0; opacity: 0.9; }
-        .footer-barcode { font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 1px; background: rgba(255,255,255,0.15); padding: 2px 6px; border-radius: 2px; margin-top: 4px; display: inline-block; }
 
         /* Watermark */
         .watermark { 
@@ -795,26 +804,11 @@ export default function PrintReportPage() {
         
         /* Ensure content doesn't overlap fixed elements if used, but table method handles this naturally */
 
-        /* Running Footer for Browser Print (Fallback/Addition) */
-        .page-footer {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: white;
-            padding: 10px 20px;
-            border-top: 1px solid #e2e8f0;
-            font-size: 9px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
 
         @media print {
-            body { padding: 0; background: white; margin-bottom: 50px; }
+            body { padding: 0; background: white; }
             .report-container { box-shadow: none; border: none; }
             .no-print { display: none !important; }
-            .page-footer { position: fixed; bottom: 0; }
         }
 
         .print-btn { position: fixed; bottom: 20px; right: 20px; background: ${theme.gradient}; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 700; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 1000; }
@@ -877,25 +871,12 @@ export default function PrintReportPage() {
                 </tr>
             </thead>
 
-            <!-- REPEATING FOOTER -->
+            <!-- FOOTER SPACER -->
             <tfoot style="display: table-footer-group;">
                  <tr>
                     <td>
+                        <!-- This spacer is important for intermediate pages -->
                         <div style="height: 10px;"></div>
-                        <div class="footer">
-                            <div class="footer-left">
-                                <strong>${branding.labName || 'Spotnet MedOS'}</strong>
-                                <p>Report Generated: ${new Date().toLocaleString()}</p>
-                            </div>
-                            <div style="flex: 1; text-align: center;">
-                                <p style="font-size: 9px; opacity: 0.9; font-weight: 700;">Sample ID: ${sampleId}</p>
-                                <p style="font-size: 8px; opacity: 0.6; margin-top: 2px;">Powered by Spotnet MedOS</p>
-                            </div>
-                            <div class="footer-right">
-                                <div style="font-weight: 800; font-size: 10px; margin-bottom: 2px;">${formattedReportId}</div>
-                                <p>Computer Generated Report</p>
-                            </div>
-                        </div>
                     </td>
                 </tr>
             </tfoot>
@@ -962,38 +943,41 @@ export default function PrintReportPage() {
                 <span class="legend-abnormal">❗ ABNORMAL</span>
             </div>
         </div>
+                <!-- CONTENT (Flowing Part) -->
+                <div class="content">
+                    <!-- Combined Critical Findings & AI Analysis -->
+                    ${generateCombinedAnalysisSection(criticalFindings, report.aiAnalysis)}
 
-        <!-- CONTENT -->
-        <div class="content">
+                    <!-- Test Results -->
+                    ${testResultsHTML}
+                </div>
+            </td>
+        </tr>
+    </tbody>
+</table>
 
-            <!-- Combined Critical Findings & AI Analysis -->
-            ${generateCombinedAnalysisSection(criticalFindings, report.aiAnalysis)}
-
-            <!-- Test Results -->
-            ${testResultsHTML}
-
-            <!-- Clinical Notes -->
-            <div class="notes-section">
-                <h4>📋 CLINICAL NOTES & IMPRESSION</h4>
-                <p>${branding.footerNotes || 'These results should be clinically correlated with the patient\'s history and examination findings. The reported values depend on the sample quality and testing methodology. Isolated abnormal results may require repeat testing or further evaluation. Please consult your physician for interpretation and management.'}</p>
-            </div>
-
-            <!-- Disclaimer -->
-            <div class="disclaimer-box">
-                <strong>DISCLAIMER:</strong> This report is for diagnostic reference only and not a final diagnosis. Methodological limitations exist for all laboratory tests. In case of unexpected results, a fresh sample repeat is recommended. This digitally generated document acts as a preliminary report; the final authorized version requires a physical or valid digital signature.
-            </div>
+<!-- THE LAST SECTION (Pushed to bottom by margin-top: auto) -->
+<div class="last-section">
+    <div style="padding: 0 20px;">
+        <!-- Clinical Notes -->
+        <div class="notes-section" style="margin-top: 20px;">
+            <h4>📋 CLINICAL NOTES & IMPRESSION</h4>
+            <p>${branding.footerNotes || 'These results should be clinically correlated with the patient\'s history and examination findings. The reported values depend on the sample quality and testing methodology. Isolated abnormal results may require repeat testing or further evaluation. Please consult your physician for interpretation and management.'}</p>
         </div>
 
-        <!-- SIGNATURE -->
-        <!-- SIGNATURE -->
-        <div class="signature-section">
+        <!-- Disclaimer -->
+        <div class="disclaimer-box">
+            <strong>DISCLAIMER:</strong> This report is for diagnostic reference only and not a final diagnosis. Methodological limitations exist for all laboratory tests. In case of unexpected results, a fresh sample repeat is recommended. This digitally generated document acts as a preliminary report; the final authorized version requires a physical or valid digital signature.
+        </div>
+
+        <!-- Signature -->
+        <div class="signature-section" style="margin-bottom: 20px;">
             <div class="digital-sign">
                 <p><span style="color: #10b981; font-size: 10px;">✔</span> 🔐 Digital Signature</p>
                 <div class="hash">SHA256: ${report.id.replace(/-/g, '').substring(0, 24)}...</div>
                 <p style="margin-top: 3px;">Electronically Verified</p>
             </div>
             
-            <!-- End of Report Marker (Centered) -->
             <div class="end-of-report">~ END OF REPORT ~</div>
 
             <div class="auth-sign">
@@ -1005,16 +989,30 @@ export default function PrintReportPage() {
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- The Purple Bar -->
+    <div class="footer">
+        <div class="footer-left">
+            <strong>${branding.labName || 'Spotnet MedOS'}</strong>
+            <p>Report Generated: ${new Date().toLocaleString()}</p>
+        </div>
+        <div style="flex: 1; text-align: center;">
+            <p style="font-size: 9px; opacity: 0.9; font-weight: 700;">Sample ID: ${sampleId}</p>
+            <p style="font-size: 8px; opacity: 0.6; margin-top: 2px;">Powered by Spotnet MedOS</p>
+        </div>
+        <div class="footer-right">
+            <div style="font-weight: 800; font-size: 10px; margin-bottom: 2px;">${formattedReportId}</div>
+            <p>Computer Generated Report</p>
+        </div>
+    </div>
+</div>
+</div>
                     </td>
                 </tr>
             </tbody>
         </table>
 
-         <!-- Running Footer for Print -->
-        <div class="page-footer">
-             <div><strong>${branding.labName || 'Mediclo Lab'}</strong> | Patient: ${report.patientName} (${generatedPatientId})</div>
-             <div>Report ID: ${formattedReportId}</div>
-        </div>
     </div>
 
     <button onclick="window.print()" class="print-btn no-print">🖨️ Print / Save PDF</button>

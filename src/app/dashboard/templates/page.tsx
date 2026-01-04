@@ -6,6 +6,7 @@ import { ref, update, remove, get, push } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import Modal from '@/components/Modal';
 import { defaultTemplates } from '@/lib/defaultTemplates';
+import { mergeTemplates, Template as TemplateType } from '@/lib/templateUtils';
 
 interface Subtest {
     name: string;
@@ -19,18 +20,7 @@ interface Subtest {
     formula?: string;
 }
 
-interface Template {
-    id: string;
-    name: string;
-    category: string;
-    totalPrice: number;
-    subtests: Subtest[];
-    createdAt: string;
-    createdBy?: string;
-    authorName?: string;
-    isSystem?: boolean;
-    isVirtual?: boolean;
-}
+type Template = TemplateType;
 
 export default function TemplatesPage() {
     const { user, userProfile } = useAuth();
@@ -83,67 +73,30 @@ export default function TemplatesPage() {
     const loadTemplates = async () => {
         if (!user) return;
 
-        let userTemplates: Template[] = [];
-
         try {
-            // 1. Get User Templates (Price Overrides) from Firebase
+            // 1. Get User Templates (Private/Overrides)
             const userTemplatesRef = ref(database, `templates/${dataSourceId}`);
             const userSnapshot = await get(userTemplatesRef);
-
+            const userTemplates: any[] = [];
             if (userSnapshot.exists()) {
                 userSnapshot.forEach((child) => {
-                    userTemplates.push({ id: child.key!, ...child.val() });
+                    userTemplates.push({ id: child.key, ...child.val() });
                 });
             }
-        } catch (dbErr) {
-            console.warn("Error fetching custom templates (using defaults only):", dbErr);
-            // Continue execution to show defaults even if DB fails
-        }
 
-        try {
-            // 2. Process System Templates
-            const processedTemplates: Template[] = [];
+            // 2. Get Common/Community Templates
+            const commonTemplatesRef = ref(database, 'common_templates');
+            const commonSnapshot = await get(commonTemplatesRef);
+            const commonTemplates: any[] = [];
+            if (commonSnapshot.exists()) {
+                commonSnapshot.forEach((child) => {
+                    commonTemplates.push({ id: child.key!, ...child.val() });
+                });
+            }
 
-            defaultTemplates.forEach((defTemp, index) => {
-                // Find user override by Name
-                const userOverride = userTemplates.find(ut => ut.name === defTemp.name);
-
-                if (userOverride) {
-                    // Merge Default Structure with User Price
-                    processedTemplates.push({
-                        ...userOverride, // Keeps ID, totalPrice
-                        // Enforce system structure but use user's subtest prices if matched by name
-                        subtests: defTemp.subtests.map((defSub) => {
-                            const userSub = userOverride.subtests?.find(s => s.name === defSub.name);
-                            return {
-                                ...defSub, // Use default Name, Units, Ranges, Formula
-                                price: userSub ? userSub.price : defSub.price // Use user price override
-                            } as Subtest;
-                        }),
-                        category: defTemp.category, // Enforce default category
-                        // Enforce default name (already matched)
-                        isSystem: true,
-                        isVirtual: false
-                    });
-                } else {
-                    // Use Pure Default
-                    processedTemplates.push({
-                        ...defTemp,
-                        id: `sys_${index}`, // Virtual ID
-                        createdAt: new Date().toISOString(),
-                        isSystem: true,
-                        isVirtual: true
-                    } as Template);
-                }
-            });
-
-            // 3. Add Custom User Templates (Not in default list)
-            const systemNames = defaultTemplates.map(t => t.name);
-            userTemplates.forEach(ut => {
-                if (!systemNames.includes(ut.name)) {
-                    processedTemplates.push({ ...ut, isSystem: false, isVirtual: false });
-                }
-            });
+            // 3. Merge using central utility
+            const processedTemplates = mergeTemplates(userTemplates, commonTemplates);
+            processedTemplates.sort((a, b) => a.name.localeCompare(b.name));
 
             setTemplates(processedTemplates);
             setFilteredTemplates(processedTemplates);
@@ -169,13 +122,32 @@ export default function TemplatesPage() {
                 totalPrice: parseFloat(formData.totalPrice),
                 subtests,
                 createdAt: new Date().toISOString(),
-                createdBy: user.uid
+                createdBy: user.uid,
+                authorName: userProfile?.name || 'Anonymous'
             };
 
+            // 1. Save to User Private Collection
             await push(ref(database, `templates/${dataSourceId}`), newTemplate);
+
+            // 2. Contribute to Community Collection (if not already there by name)
+            const commonRef = ref(database, 'common_templates');
+            const commonSnapshot = await get(commonRef);
+            let existsInCommon = false;
+            if (commonSnapshot.exists()) {
+                commonSnapshot.forEach((child) => {
+                    if (child.val().name === newTemplate.name) existsInCommon = true;
+                });
+            }
+            // Also check defaults
+            const existsInDefaults = defaultTemplates.some(t => t.name === newTemplate.name);
+
+            if (!existsInCommon && !existsInDefaults) {
+                await push(commonRef, { ...newTemplate, isCommunity: true });
+            }
+
             setShowAddModal(false);
-            loadTemplates(); // Reload to refresh list
-            alert('Template created successfully!');
+            loadTemplates();
+            alert('Template created and shared with the community!');
         } catch (err) {
             console.error(err);
             alert('Failed to create template');
@@ -388,9 +360,17 @@ export default function TemplatesPage() {
                                     <tr key={template.id} className="border-b hover:bg-gray-50 transition">
                                         <td className="px-4 py-3 text-sm font-semibold text-gray-800">
                                             {template.name}
-                                            {template.isSystem && (
+                                            {template.isSystem ? (
                                                 <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-200" title="System Template (Standard)">
                                                     <i className="fas fa-lock mr-1 text-xs"></i> Standard
+                                                </span>
+                                            ) : template.isCommunity ? (
+                                                <span className="ml-2 text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100" title="Community Contributed Template">
+                                                    <i className="fas fa-globe mr-1 text-xs"></i> Community
+                                                </span>
+                                            ) : (
+                                                <span className="ml-2 text-xs bg-purple-50 text-purple-600 px-2 py-1 rounded border border-purple-100" title="Your Private Template">
+                                                    <i className="fas fa-user-lock mr-1 text-xs"></i> Private
                                                 </span>
                                             )}
                                         </td>

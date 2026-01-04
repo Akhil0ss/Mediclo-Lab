@@ -3,12 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { ref, onValue, push, update, remove } from 'firebase/database';
+import { ref, onValue, push, update, remove, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { generatePatientId, generateTokenNumber } from '@/lib/idGenerator';
 import { calculateBilling, createBillingItem, formatCurrency, generateInvoiceNumber } from '@/lib/billingCalculator';
-import Modal from '@/components/Modal';
 import { defaultTemplates } from '@/lib/defaultTemplates';
+import { mergeTemplates } from '@/lib/templateUtils';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import Modal from '@/components/Modal';
 
 export default function PatientsPage() {
     const { user, userProfile } = useAuth();
@@ -30,7 +33,19 @@ export default function PatientsPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [visitPurpose, setVisitPurpose] = useState('lab');
     const [currentPage, setCurrentPage] = useState(1);
+    const searchParams = useSearchParams();
     const itemsPerPage = 10;
+
+    // Handle Quick Add from Dashboard / Patient Success Flow
+    useEffect(() => {
+        if (searchParams.get('add') === 'true') {
+            const pId = searchParams.get('patientId');
+            if (pId) {
+                setFormData(prev => ({ ...prev, patientId: pId }));
+            }
+            setShowAddModal(true);
+        }
+    }, [searchParams]);
 
     // Modal states
     const [showAddModal, setShowAddModal] = useState(false);
@@ -45,8 +60,9 @@ export default function PatientsPage() {
     const [showExternalDoctorInput, setShowExternalDoctorInput] = useState(false);
     const [duplicatePatient, setDuplicatePatient] = useState<any>(null);
 
-    // Form states
     const [formData, setFormData] = useState({
+        patientId: '', // Added patientId for potential pre-fills
+        title: 'Mr.', // Added title
         name: '',
         age: '',
         gender: '',
@@ -58,6 +74,8 @@ export default function PatientsPage() {
 
     const resetForm = () => {
         setFormData({
+            patientId: '',
+            title: 'Mr.', // Reset title
             name: '',
             age: '',
             gender: '',
@@ -83,7 +101,38 @@ export default function PatientsPage() {
     const [selectedTests, setSelectedTests] = useState<string[]>([]);
     const [selectedDoctor, setSelectedDoctor] = useState('');
     const [testSearch, setTestSearch] = useState('');
+    const [customPrice, setCustomPrice] = useState('');
     const [doctorSearch, setDoctorSearch] = useState('');
+
+    const updateBillingItem = (index: number, field: string, value: any) => {
+        const newItems = [...billingItems];
+        newItems[index] = { ...newItems[index], [field]: value };
+        if (field === 'quantity' || field === 'rate') {
+            newItems[index].amount = Math.round((newItems[index].quantity * newItems[index].rate) * 100) / 100;
+        }
+        setBillingItems(newItems);
+    };
+
+    const addTemplateToBilling = (template: any) => {
+        const rate = parseFloat(template.totalPrice || template.price || 0);
+        const newItem = createBillingItem(template.name, 1, rate);
+        setBillingItems(prev => {
+            const filtered = prev.filter(i => i.name && !['No tests', 'No reports found', 'No items found', ''].includes(i.name.trim()));
+            return [...filtered, newItem];
+        });
+        setTestSearch('');
+    };
+
+    const addCustomBillingItem = () => {
+        setBillingItems(prev => {
+            const filtered = prev.filter(i => i.name && !['No tests', 'No reports found', 'No items found', ''].includes(i.name.trim()));
+            const name = testSearch.trim() || '';
+            const price = parseFloat(customPrice) || 0;
+            return [...filtered, createBillingItem(name, 1, price)];
+        });
+        setTestSearch('');
+        setCustomPrice('');
+    };
 
     // Auto-load billing items when modal opens
     useEffect(() => {
@@ -179,11 +228,11 @@ export default function PatientsPage() {
         const dataSourceId = userProfile.ownerId || user.uid;
 
         const patientsRef = ref(database, `patients/${dataSourceId}`);
-        const templatesRef = ref(database, `templates/${dataSourceId}`);
-        const samplesRef = ref(database, `samples/${dataSourceId}`);
         const reportsRef = ref(database, `reports/${dataSourceId}`);
-
+        const commonTemplatesRef = ref(database, 'common_templates');
         const doctorsRef = ref(database, `doctors/${dataSourceId}`);
+        const templatesRef = ref(database, `templates/${dataSourceId}`); // Added templatesRef
+        const samplesRef = ref(database, `samples/${dataSourceId}`); // Added samplesRef
 
         const unsubPatients = onValue(patientsRef, (snapshot) => {
             const data: any[] = [];
@@ -195,44 +244,54 @@ export default function PatientsPage() {
             setFilteredPatients(data);
         });
 
-        const unsubTemplates = onValue(templatesRef, (snapshot) => {
-            const userTemplates: any[] = [];
-            snapshot.forEach((child) => {
-                userTemplates.push({ id: child.key, ...child.val() });
+        const fetchTemplates = () => {
+            get(templatesRef).then(userSnapshot => {
+                get(commonTemplatesRef).then(commonSnapshot => {
+                    const userTemplates: any[] = [];
+                    userSnapshot.forEach(child => {
+                        userTemplates.push({ id: child.key, ...child.val() });
+                    });
+
+                    const commonTemplates: any[] = [];
+                    commonSnapshot.forEach(child => {
+                        commonTemplates.push({ id: child.key, ...child.val() });
+                    });
+
+                    const combined = mergeTemplates(userTemplates, commonTemplates);
+                    setTemplates(combined.sort((a, b) => a.name.localeCompare(b.name)));
+                });
             });
+        };
 
-            // Merge with local defaultTemplates using consistent ID generation
-            const formattedDefaults = defaultTemplates.map((t, idx) => ({
-                ...t,
-                id: `SYS-${idx}-${t.name.replace(/\s+/g, '-')}`,
-                isSystem: true
-            }));
-
-            const combined = [...userTemplates, ...formattedDefaults];
-            setTemplates(combined);
-        });
+        fetchTemplates();
+        const unsubTemplates = onValue(templatesRef, fetchTemplates);
+        const unsubCommon = onValue(commonTemplatesRef, fetchTemplates);
 
         const unsubSamples = onValue(samplesRef, (snapshot) => {
             const data: any[] = [];
             snapshot.forEach((child) => { data.push({ id: child.key, ...child.val() }); });
+            data.sort((a: any, b: any) => new Date(b.date || b.createdAt).getTime() - new Date(a.date || a.createdAt).getTime());
             setSamples(data);
         });
 
         const unsubReports = onValue(reportsRef, (snapshot) => {
             const data: any[] = [];
             snapshot.forEach((child) => { data.push({ id: child.key, ...child.val() }); });
+            data.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setReports(data);
         });
 
         const unsubDoctors = onValue(doctorsRef, (snapshot) => {
             const data: any[] = [];
             snapshot.forEach((child) => { data.push({ id: child.key, ...child.val() }); });
+            data.sort((a: any, b: any) => a.name.localeCompare(b.name));
             setDoctors(data);
         });
 
         return () => {
             unsubPatients();
             unsubTemplates();
+            unsubCommon();
             unsubSamples();
             unsubReports();
             unsubDoctors();
@@ -247,6 +306,7 @@ export default function PatientsPage() {
         const unsub = onValue(externalDoctorsRef, (snapshot) => {
             const data: any[] = [];
             snapshot.forEach((child) => { data.push({ id: child.key, ...child.val() }); });
+            data.sort((a: any, b: any) => a.name.localeCompare(b.name));
             setExternalDoctors(data);
         });
         return () => unsub();
@@ -307,17 +367,10 @@ export default function PatientsPage() {
             return;
         }
 
-        // Generate patient portal credentials
-        const { generatePatientUsername } = await import('@/lib/userUtils');
-        // Generate auto Patient ID and Token (using dataSourceId from line 155)
+        // Generate auto Patient ID and Token (using dataSourceId)
         const clinicName = userProfile?.labName || 'CLINIC';
         const patientId = await generatePatientId(dataSourceId, clinicName);
         const autoToken = await generateTokenNumber(dataSourceId);
-
-        const brandName = userProfile?.labName || 'spot';
-        const cleanMobile = formData.mobile.replace(/\D/g, '').slice(-10);
-        const username = generatePatientUsername(cleanMobile, brandName);
-        const password = cleanMobile; // Password is Mobile Number
 
         const patientData = {
             ...formData,
@@ -325,20 +378,21 @@ export default function PatientsPage() {
             age: parseInt(formData.age),
             registrationType: 'lab',
             token: autoToken, // Auto-generated Token
-            createdAt: new Date().toISOString(),
-            // Store credentials for patient portal
-            credentials: {
-                username,
-                password, // In production, this should be hashed
-                createdAt: new Date().toISOString()
-            }
+            createdAt: new Date().toISOString()
         };
 
-        await push(ref(database, `patients/${dataSourceId}`), patientData);
+        const newPatientRef = await push(ref(database, `patients/${dataSourceId}`), patientData);
 
         setShowAddModal(false);
         resetForm();
 
+        // Show Success Modal with ID and flow option
+        setNewPatientCreds({
+            id: newPatientRef.key,
+            patientId,
+            token: autoToken
+        });
+        setShowSuccessModal(true);
         showToast('Patient added successfully!', 'success');
     };
 
@@ -349,6 +403,7 @@ export default function PatientsPage() {
         const dataSourceId = userProfile?.ownerId || user.uid;
 
         await update(ref(database, `patients/${dataSourceId}/${selectedPatient.id}`), {
+            title: formData.title,
             name: formData.name,
             age: parseInt(formData.age),
             gender: formData.gender,
@@ -412,6 +467,8 @@ export default function PatientsPage() {
     const openEditModal = (patient: any) => {
         setSelectedPatient(patient);
         setFormData({
+            patientId: patient.patientId || '',
+            title: patient.title || 'Mr.',
             name: patient.name || '',
             age: patient.age?.toString() || '',
             gender: patient.gender || '',
@@ -440,7 +497,7 @@ export default function PatientsPage() {
         const csv = [
             ['Name', 'Age', 'Gender', 'Contact', 'Address', 'Ref. Doctor', 'Created Date'],
             ...patients.map(p => [
-                p.name,
+                `${p.title || ''} ${p.name}`,
                 p.age,
                 p.gender,
                 p.mobile,
@@ -531,7 +588,7 @@ export default function PatientsPage() {
                                         </td>
                                         <td className="px-4 py-3 text-sm font-semibold text-gray-800">
                                             <div className="flex items-center gap-2 flex-wrap">
-                                                <span>{patient.name}</span>
+                                                <span>{patient.title} {patient.name}</span>
                                                 {patient.source === 'WEB' && (
                                                     <span className="text-blue-500" title="Booked from Web">
                                                         <i className="fas fa-globe"></i>
@@ -615,67 +672,90 @@ export default function PatientsPage() {
                     <i className="fas fa-user-plus text-purple-600"></i> Add New Patient
                 </h3>
                 <form onSubmit={handleAddPatient} className="space-y-3">
-                    {/* Mobile Number First - with duplicate detection */}
-                    <div>
-                        <label className="block text-sm font-semibold mb-1">Contact Number *</label>
-                        <input
-                            type="tel"
-                            placeholder="Mobile Number"
-                            required
-                            value={formData.mobile}
-                            onChange={(e) => {
-                                const mobile = e.target.value;
-                                setFormData({ ...formData, mobile });
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-semibold mb-1">Patient Name *</label>
+                            <div className="flex gap-2">
+                                <select
+                                    value={formData.title}
+                                    onChange={(e) => {
+                                        const title = e.target.value;
+                                        let gender = formData.gender;
+                                        // Auto-set gender based on title
+                                        if (['Mr.', 'Master'].includes(title)) gender = 'Male';
+                                        if (['Mrs.', 'Ms.', 'Miss'].includes(title)) gender = 'Female';
+                                        setFormData({ ...formData, title, gender });
+                                    }}
+                                    className="w-24 px-2 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 shadow-sm"
+                                >
+                                    <option value="Mr.">Mr.</option>
+                                    <option value="Mrs.">Mrs.</option>
+                                    <option value="Ms.">Ms.</option>
+                                    <option value="Miss">Miss</option>
+                                    <option value="Master">Master</option>
+                                    <option value="Baby">Baby</option>
+                                    <option value="Dr.">Dr.</option>
+                                </select>
+                                <input
+                                    type="text"
+                                    placeholder="Patient Name"
+                                    required
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 shadow-sm"
+                                />
+                            </div>
+                        </div>
+                        {/* Mobile Number - with duplicate detection */}
+                        <div>
+                            <label className="block text-sm font-semibold mb-1">Contact Number *</label>
+                            <input
+                                type="tel"
+                                placeholder="Mobile Number"
+                                required
+                                value={formData.mobile}
+                                onChange={(e) => {
+                                    const mobile = e.target.value;
+                                    setFormData({ ...formData, mobile });
 
-                                // Real-time duplicate check
-                                if (mobile.length >= 10) {
-                                    const cleanInput = mobile.replace(/\D/g, '').slice(-10);
-                                    const existing = patients.find(p => {
-                                        const cleanExisting = (p.mobile || '').replace(/\D/g, '').slice(-10);
-                                        return cleanExisting === cleanInput;
-                                    });
-                                    setDuplicatePatient(existing || null);
-                                } else {
-                                    setDuplicatePatient(null);
-                                }
-                            }}
-                            className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                            autoFocus
-                        />
-                        {duplicatePatient && (
-                            <div className="mt-2 p-3 bg-yellow-50 border-2 border-yellow-400 rounded-lg">
-                                <p className="text-sm font-bold text-yellow-800 mb-1">⚠️ Patient Already Exists!</p>
-                                <p className="text-xs text-yellow-700"><strong>Name:</strong> {duplicatePatient.name}</p>
-                                <p className="text-xs text-yellow-700"><strong>Age:</strong> {duplicatePatient.age} | <strong>Gender:</strong> {duplicatePatient.gender}</p>
-                                <p className="text-xs text-yellow-700 mt-1"><strong>Patient ID:</strong> {duplicatePatient.patientId}</p>
+                                    // Real-time duplicate check
+                                    if (mobile.length >= 10) {
+                                        const cleanInput = mobile.replace(/\D/g, '').slice(-10);
+                                        const existing = patients.find(p => {
+                                            const cleanExisting = (p.mobile || '').replace(/\D/g, '').slice(-10);
+                                            return cleanExisting === cleanInput;
+                                        });
+                                        setDuplicatePatient(existing || null);
+                                    } else {
+                                        setDuplicatePatient(null);
+                                    }
+                                }}
+                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 shadow-sm"
+                            />
+                        </div>
+                    </div>
+
+                    {duplicatePatient && (
+                        <div className="p-3 bg-yellow-50 border-2 border-yellow-400 rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <p className="text-sm font-bold text-yellow-800 mb-1">⚠️ Patient Already Exists!</p>
+                                    <p className="text-xs text-yellow-700"><strong>Name:</strong> {duplicatePatient.name} | <strong>ID:</strong> {duplicatePatient.patientId}</p>
+                                    <p className="text-xs text-yellow-700"><strong>Age:</strong> {duplicatePatient.age} | <strong>Gender:</strong> {duplicatePatient.gender}</p>
+                                </div>
                                 <button
                                     type="button"
                                     onClick={() => {
                                         setShowAddModal(false);
                                         resetForm();
-                                        // You can optionally navigate to this patient or open their record
                                     }}
-                                    className="mt-2 w-full bg-yellow-600 text-white px-3 py-1 rounded text-xs font-semibold hover:bg-yellow-700"
+                                    className="bg-yellow-600 text-white px-3 py-1.5 rounded-lg text-xs font-black uppercase hover:bg-yellow-700 shadow-sm"
                                 >
-                                    Use Existing Patient
+                                    Use Existing
                                 </button>
                             </div>
-                        )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-sm font-semibold mb-1">Patient Name *</label>
-                            <input
-                                type="text"
-                                placeholder="Patient Name"
-                                required
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                            />
                         </div>
-                    </div>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                         <div>
                             <label className="block text-sm font-semibold mb-1">Age *</label>
@@ -706,74 +786,74 @@ export default function PatientsPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 items-end">
+                    <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-semibold mb-1">Address *</label>
+                            <label className="block text-sm font-semibold mb-1">Patient Address *</label>
                             <input
                                 type="text"
-                                placeholder="Patient Address"
+                                placeholder="Locality, City"
                                 required
                                 value={formData.address}
                                 onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 shadow-sm"
                             />
                         </div>
-                    </div>
-                    {/* Referring Doctor Selection */}
-                    <div className="mb-4">
-                        <label className="block text-sm font-semibold mb-1">Referring Doctor</label>
+                        {/* Referring Doctor Selection */}
+                        <div className="flex flex-col">
+                            <label className="block text-sm font-semibold mb-1">Referring Doctor</label>
 
-                        {/* Internal + External Doctor Logic */}
-                        <select
-                            required
-                            value={showExternalDoctorInput ? '__external__' : formData.refDoctor}
-                            onChange={(e) => {
-                                if (e.target.value === '__external__') {
-                                    setShowExternalDoctorInput(true);
-                                    setFormData({ ...formData, refDoctor: '', externalDoctorClinic: '' });
-                                } else {
-                                    setShowExternalDoctorInput(false);
-                                    setFormData({ ...formData, refDoctor: e.target.value });
+                            {/* Internal + External Doctor Logic */}
+                            <select
+                                required
+                                value={showExternalDoctorInput ? '__external__' : formData.refDoctor}
+                                onChange={(e) => {
+                                    if (e.target.value === '__external__') {
+                                        setShowExternalDoctorInput(true);
+                                        setFormData({ ...formData, refDoctor: '', externalDoctorClinic: '' });
+                                    } else {
+                                        setShowExternalDoctorInput(false);
+                                        setFormData({ ...formData, refDoctor: e.target.value });
+                                    }
+                                }}
+                                className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 shadow-sm"
+                            >
+                                <option value="">Select Doctor</option>
+                                {/* Merge and display all unique doctors alphabetically */}
+                                {[...doctors, ...externalDoctors]
+                                    .filter((d, index, self) =>
+                                        index === self.findIndex((t) => t.name === d.name)
+                                    )
+                                    .sort((a, b) => a.name.localeCompare(b.name)) // Added explicit sort here too
+                                    .map(d => (
+                                        <option key={d.id} value={d.name}>Dr. {d.name}</option>
+                                    ))
                                 }
-                            }}
-                            className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 mb-2"
-                        >
-                            <option value="">Select Doctor</option>
-                            {/* Merge and display all unique doctors */}
-                            {[...doctors, ...externalDoctors]
-                                .filter((d, index, self) =>
-                                    index === self.findIndex((t) => t.name === d.name)
-                                )
-                                .map(d => (
-                                    <option key={d.id} value={d.name}>Dr. {d.name}</option>
-                                ))
-                            }
-                            <option value="__external__">➕ Add New Doctor</option>
-                        </select>
-
-                        {showExternalDoctorInput && (
-                            <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200 space-y-2 animate-fade-in">
-                                <p className="text-xs font-semibold text-yellow-800 mb-2">New External Doctor Details:</p>
-                                <input
-                                    type="text"
-                                    placeholder="Doctor Name *"
-                                    required
-                                    value={formData.refDoctor}
-                                    onChange={(e) => setFormData({ ...formData, refDoctor: e.target.value })}
-                                    className="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500"
-                                />
-                                <input
-                                    type="text"
-                                    placeholder="Clinic Name / Address *"
-                                    required
-                                    value={formData.externalDoctorClinic}
-                                    onChange={(e) => setFormData({ ...formData, externalDoctorClinic: e.target.value })}
-                                    className="w-full px-3 py-2 border-2 border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500"
-                                />
-                            </div>
-                        )}
-                        <p className="text-xs text-gray-500 mt-1">💡 Select internal/external doctor or add a new one.</p>
+                                <option value="__external__" className="font-bold text-purple-600">➕ Add New Doctor</option>
+                            </select>
+                        </div>
                     </div>
+
+                    {showExternalDoctorInput && (
+                        <div className="bg-purple-50/50 p-4 rounded-2xl border border-purple-100 grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                            <div className="col-span-2"><p className="text-[10px] font-black text-purple-400 uppercase tracking-widest mb-1">New Doctor Registration</p></div>
+                            <input
+                                type="text"
+                                placeholder="Full Name *"
+                                required
+                                value={formData.refDoctor}
+                                onChange={(e) => setFormData({ ...formData, refDoctor: e.target.value })}
+                                className="w-full px-3 py-2 border-2 border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500 bg-white"
+                            />
+                            <input
+                                type="text"
+                                placeholder="Clinic / Hospital *"
+                                required
+                                value={formData.externalDoctorClinic}
+                                onChange={(e) => setFormData({ ...formData, externalDoctorClinic: e.target.value })}
+                                className="w-full px-3 py-2 border-2 border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500 bg-white"
+                            />
+                        </div>
+                    )}
 
                     <div className="flex gap-2">
                         <button
@@ -801,14 +881,29 @@ export default function PatientsPage() {
                 <form onSubmit={handleUpdatePatient} className="space-y-3">
                     <div>
                         <label className="block text-sm font-semibold mb-1">Patient Name</label>
-                        <input
-                            type="text"
-                            placeholder="Name"
-                            required
-                            value={formData.name}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg"
-                        />
+                        <div className="flex gap-2">
+                            <select
+                                value={formData.title}
+                                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                className="w-24 px-2 py-2 border-2 border-gray-300 rounded-lg"
+                            >
+                                <option value="Mr.">Mr.</option>
+                                <option value="Mrs.">Mrs.</option>
+                                <option value="Ms.">Ms.</option>
+                                <option value="Miss">Miss</option>
+                                <option value="Master">Master</option>
+                                <option value="Baby">Baby</option>
+                                <option value="Dr.">Dr.</option>
+                            </select>
+                            <input
+                                type="text"
+                                placeholder="Name"
+                                required
+                                value={formData.name}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg"
+                            />
+                        </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                         <div>
@@ -1089,14 +1184,130 @@ export default function PatientsPage() {
                         </select>
                         <p className="text-xs text-gray-500 mt-1">{billingItems.filter(i => i.name && i.name !== 'No tests').length} lab tests found for this date</p>
                     </div>
-                    <table className="w-full text-sm">
-                        <thead className="bg-gray-100"><tr><th className="px-2 py-2 text-left">Item</th><th className="px-2 py-2 w-16">Qty</th><th className="px-2 py-2 w-24">Rate</th><th className="px-2 py-2 w-24">Amount</th><th className="w-8"></th></tr></thead>
-                        <tbody>
-                            {billingItems.map((item, i) => (
-                                <tr key={i} className="border-b"><td className="px-2 py-2"><span className="text-sm font-medium">{item.name}</span></td><td className="px-2 py-2 text-center"><span className="text-sm">{item.quantity}</span></td><td className="px-2 py-2 text-right"><span className="text-sm">{formatCurrency(item.rate)}</span></td><td className="px-2 py-2 text-right font-medium text-sm">{formatCurrency(item.amount)}</td><td className="px-2 py-2">{billingItems.length > 1 && <button onClick={() => setBillingItems(billingItems.filter((_, idx) => idx !== i))} className="text-red-500 text-sm"><i className="fas fa-trash"></i></button>}</td></tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    <div className="relative">
+                        <label className="text-sm font-bold mb-1 block">Quick Add Item</label>
+                        <div className="flex gap-2">
+                            <div className="relative flex-[2]">
+                                <i className="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                                <input
+                                    type="text"
+                                    placeholder="Search template or type custom name..."
+                                    value={testSearch}
+                                    onChange={(e) => setTestSearch(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 outline-none"
+                                />
+                            </div>
+                            <div className="relative flex-1">
+                                <i className="fas fa-tag absolute left-3 top-3 text-gray-400"></i>
+                                <input
+                                    type="number"
+                                    placeholder="Price"
+                                    value={customPrice}
+                                    onChange={(e) => setCustomPrice(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 outline-none"
+                                />
+                            </div>
+                            <button
+                                onClick={addCustomBillingItem}
+                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-bold text-sm whitespace-nowrap shadow-md"
+                            >
+                                <i className="fas fa-plus mr-1"></i> Add Custom
+                            </button>
+                        </div>
+
+                        {testSearch && (
+                            <div className="absolute z-[60] w-full mt-1 bg-white border-2 border-blue-100 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
+                                {templates
+                                    .filter(t => t.name.toLowerCase().includes(testSearch.toLowerCase()))
+                                    .slice(0, 10)
+                                    .map(t => (
+                                        <button
+                                            key={t.id}
+                                            onClick={() => addTemplateToBilling(t)}
+                                            className="w-full text-left px-4 py-3 hover:bg-blue-50 flex justify-between items-center border-b last:border-0 transition-colors"
+                                        >
+                                            <div>
+                                                <div className="font-bold text-gray-800">{t.name}</div>
+                                                <div className="text-xs text-gray-500">{t.category}</div>
+                                            </div>
+                                            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold text-sm">
+                                                ₹{t.totalPrice || t.price || 0}
+                                            </span>
+                                        </button>
+                                    ))
+                                }
+                                {templates.filter(t => t.name.toLowerCase().includes(testSearch.toLowerCase())).length === 0 && (
+                                    <div className="px-4 py-4 text-center text-gray-500">
+                                        <i className="fas fa-search mb-2 block opacity-20 text-2xl"></i>
+                                        No matching templates found.
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="border rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50 border-b">
+                                <tr>
+                                    <th className="px-3 py-2 text-left font-semibold text-gray-600">Service/Item</th>
+                                    <th className="px-3 py-2 w-20 text-center font-semibold text-gray-600">Qty</th>
+                                    <th className="px-3 py-2 w-28 text-right font-semibold text-gray-600">Rate</th>
+                                    <th className="px-3 py-2 w-28 text-right font-semibold text-gray-600">Amount</th>
+                                    <th className="w-10"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {billingItems.map((item, i) => {
+                                    const isPlaceholder = ['No tests', 'No reports found', 'No items found', ''].includes((item.name || '').trim());
+                                    return (
+                                        <tr key={item.id || i} className="border-b last:border-0 hover:bg-gray-50">
+                                            <td className="px-3 py-2">
+                                                <input
+                                                    type="text"
+                                                    value={item.name}
+                                                    onChange={(e) => updateBillingItem(i, 'name', e.target.value)}
+                                                    placeholder="e.g. CBC Test, Consultation..."
+                                                    className={`w-full bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 ${isPlaceholder ? 'text-gray-400 italic' : 'font-medium'}`}
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                <input
+                                                    type="number"
+                                                    value={item.quantity}
+                                                    onChange={(e) => updateBillingItem(i, 'quantity', parseFloat(e.target.value) || 0)}
+                                                    className="w-full text-center bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1"
+                                                    min="1"
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                                <input
+                                                    type="number"
+                                                    value={item.rate}
+                                                    onChange={(e) => updateBillingItem(i, 'rate', parseFloat(e.target.value) || 0)}
+                                                    className="w-full text-right bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 font-semibold"
+                                                    min="0"
+                                                />
+                                            </td>
+                                            <td className="px-3 py-2 text-right font-bold text-gray-700">
+                                                {formatCurrency(item.amount)}
+                                            </td>
+                                            <td className="px-3 py-2 text-center">
+                                                {billingItems.length > 1 && (
+                                                    <button
+                                                        onClick={() => setBillingItems(billingItems.filter((_, idx) => idx !== i))}
+                                                        className="text-gray-400 hover:text-red-500 transition-colors"
+                                                    >
+                                                        <i className="fas fa-trash-alt"></i>
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
@@ -1105,22 +1316,40 @@ export default function PatientsPage() {
                             <div><label className="text-sm font-medium">Paid</label><input type="number" value={paid} onChange={(e) => setPaid(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border rounded" min="0" /></div>
                             <div className="flex items-center gap-2 pt-2"><input type="checkbox" id="includeGST" checked={includeGST} onChange={(e) => setIncludeGST(e.target.checked)} className="w-4 h-4" /><label htmlFor="includeGST" className="text-sm font-medium cursor-pointer">Include GST (18%)</label></div>
                         </div>
-                        <div className="bg-gray-50 p-3 rounded space-y-1 text-sm">
-                            {(() => { const b = calculateBilling(billingItems.filter(i => i.name), discount, includeGST ? 18 : 0, paid); return (<><div className="flex justify-between"><span>Subtotal:</span><span>{formatCurrency(b.subtotal)}</span></div>{b.discount > 0 && <div className="flex justify-between text-green-600"><span>Discount:</span><span>- {formatCurrency(b.discount)}</span></div>}{includeGST && <div className="flex justify-between"><span>GST (18%):</span><span>{formatCurrency(b.gst)}</span></div>}<div className="flex justify-between font-bold text-lg border-t pt-1"><span>Total:</span><span>{formatCurrency(b.total)}</span></div><div className="flex justify-between text-blue-600"><span>Paid:</span><span>{formatCurrency(b.paid)}</span></div>{b.due > 0 && <div className="flex justify-between text-red-600 font-bold"><span>Due:</span><span>{formatCurrency(b.due)}</span></div>}</>); })()}
+                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2 text-sm">
+                            {(() => {
+                                const validItems = billingItems.filter(i => i.name && !['No tests', 'No reports found', 'No items found', ''].includes(i.name.trim()));
+                                const b = calculateBilling(validItems, discount, includeGST ? 18 : 0, paid);
+                                return (
+                                    <>
+                                        <div className="flex justify-between text-gray-600"><span>Subtotal:</span><span>{formatCurrency(b.subtotal)}</span></div>
+                                        {b.discount > 0 && <div className="flex justify-between text-green-600 font-medium"><span>Discount ({discount}%):</span><span>- {formatCurrency(b.discount)}</span></div>}
+                                        {includeGST && <div className="flex justify-between text-gray-600"><span>GST (18%):</span><span>{formatCurrency(b.gst)}</span></div>}
+                                        <div className="flex justify-between font-bold text-xl border-t border-gray-300 pt-2 mt-2 text-gray-900"><span>Total:</span><span>{formatCurrency(b.total)}</span></div>
+                                        <div className="flex justify-between text-blue-600 font-medium"><span>Paid:</span><span>{formatCurrency(b.paid)}</span></div>
+                                        {b.due > 0 && <div className="flex justify-between text-red-600 font-bold border-t border-red-100 pt-1 mt-1"><span>Due Amount:</span><span>{formatCurrency(b.due)}</span></div>}
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                     <div className="flex justify-end gap-2 pt-4 border-t">
                         <button onClick={() => setShowBillingModal(false)} className="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
                         <button onClick={async () => {
-                            if (!user || !billingPatient) return;
+                            const validItems = billingItems.filter(i => i.name && !['No tests', 'No reports found', 'No items found', ''].includes(i.name.trim()));
+                            if (validItems.length === 0) {
+                                alert('Please add at least one valid item to the bill.');
+                                return;
+                            }
                             const dataSourceId = userProfile?.ownerId || user.uid;
-                            const b = calculateBilling(billingItems.filter(i => i.name && i.name !== 'No tests'), discount, includeGST ? 18 : 0, paid);
-                            const invNum = generateInvoiceNumber('INV', Date.now() % 100000);
+                            const b = calculateBilling(validItems, discount, includeGST ? 18 : 0, paid);
+                            const invNum = generateInvoiceNumber('INV', Math.floor(Date.now() / 1000) % 10000);
                             const invData = {
                                 invoiceNumber: invNum,
                                 patientId: billingPatient.patientId || billingPatient.id,
                                 patientName: billingPatient.name,
                                 ...b,
+                                items: validItems, // Store items in invoice
                                 paymentMode,
                                 includeGST,
                                 createdAt: new Date().toISOString(),
@@ -1142,7 +1371,7 @@ export default function PatientsPage() {
                         <i className="fas fa-check text-2xl text-green-600"></i>
                     </div>
                     <h3 className="text-2xl font-bold text-gray-900 mb-2">Patient Added!</h3>
-                    <p className="text-sm text-gray-500 mb-6">Patient registered successfully. Share these credentials.</p>
+                    <p className="text-sm text-gray-500 mb-6">Patient registered successfully. Proceed to collect sample.</p>
 
                     <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 text-left mb-6">
                         <div className="grid grid-cols-2 gap-4 mb-4 border-b border-gray-200 pb-4">
@@ -1156,30 +1385,23 @@ export default function PatientsPage() {
                             </div>
                         </div>
 
-                        <div className="bg-white p-4 rounded-lg border border-purple-100 shadow-sm">
-                            <p className="text-xs font-bold text-purple-800 mb-3 uppercase flex items-center">
-                                <i className="fas fa-key mr-2"></i> Patient Portal Access
-                            </p>
-                            <div className="space-y-2">
-                                <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                                    <span className="text-sm text-gray-600">Username:</span>
-                                    <span className="font-mono font-bold text-gray-900 select-all">{newPatientCreds?.username}</span>
-                                </div>
-                                <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                                    <span className="text-sm text-gray-600">Password:</span>
-                                    <span className="font-mono font-bold text-gray-900 select-all">{newPatientCreds?.password}</span>
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
-                    <button
-                        onClick={() => setShowSuccessModal(false)}
-                        className="w-full bg-gradient-to-r from-green-500 to-green-600 text-white font-bold py-3 rounded-xl hover:shadow-lg transition transform active:scale-95"
-                    >
-                        Done
-                    </button>
-                    <p className="text-xs text-gray-400 mt-2">Credentials also available on printed RX/Invoice.</p>
+                    <div className="flex flex-col gap-3">
+                        <Link
+                            href={`/dashboard/samples?add=true&patientId=${newPatientCreds?.id}`}
+                            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold py-3 rounded-xl hover:shadow-lg transition flex items-center justify-center gap-2"
+                        >
+                            <i className="fas fa-vial"></i> Step 2: Add Sample
+                        </Link>
+                        <button
+                            onClick={() => setShowSuccessModal(false)}
+                            className="w-full bg-gray-100 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-200 transition"
+                        >
+                            Done / Close
+                        </button>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-3">Credentials also available on printed RX/Invoice.</p>
                 </div>
             </Modal>
         </div>

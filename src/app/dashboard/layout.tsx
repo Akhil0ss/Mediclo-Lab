@@ -18,6 +18,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [branding, setBranding] = useState<{ logoUrl?: string; tagline?: string }>({});
 
+    const { showToast } = useToast();
+
     const dataOwnerId = useMemo(() => {
         if (!user) return '';
         return getDataOwnerId(userProfile, user.uid);
@@ -100,12 +102,37 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
             <div className="container-pc w-full mx-auto p-6 lg:px-8 grid grid-cols-12 gap-6">
                 <aside className="col-span-12 lg:col-span-2 space-y-2 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-120px)] lg:overflow-y-auto pr-2">
-                    {tabs.map(tab => (
-                        <Link key={tab.id} href={tab.path}
-                            className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ` + (activeTab === tab.id ? 'gradient-colorful text-white shadow-lg' : 'bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 shadow-sm')}>
-                            <i className={`fas ` + tab.icon + ` w-6`}></i> {tab.label}
-                        </Link>
-                    ))}
+                    {tabs.map(tab => {
+                        const isTemplates = tab.id === 'templates';
+                        return (
+                            <div
+                                key={tab.id}
+                                onClick={(e) => {
+                                    if (isTemplates) {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        // Use e.detail to check for double click (more reliable in some browsers)
+                                        if (e.detail === 2) {
+                                            router.push(tab.path);
+                                        } else if (e.detail === 1) {
+                                            showToast('This is a secure tab. Double click to open.', 'info');
+                                        }
+                                        return;
+                                    }
+                                    router.push(tab.path);
+                                }}
+                                onDoubleClick={(e) => {
+                                    if (isTemplates) {
+                                        e.stopPropagation();
+                                        router.push(tab.path);
+                                    }
+                                }}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all cursor-pointer select-none ` + (activeTab === tab.id ? 'gradient-colorful text-white shadow-lg' : 'bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 shadow-sm')}>
+                                <i className={`fas ` + tab.icon + ` w-6`}></i> {tab.label}
+                                {isTemplates && <i className="fas fa-lock text-[8px] ml-auto opacity-40" title="Double Click to Open"></i>}
+                            </div>
+                        );
+                    })}
                     <a href="https://wa.me/917619948657?text=Hi%2C%20I%20need%20help%20with%20SpotNet%20MedOS" target="_blank" rel="noopener noreferrer" className="block mt-8 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 text-center hover:shadow-md transition-shadow cursor-pointer">
                         <i className="fas fa-headset text-3xl text-blue-300 mb-2"></i>
                         <p className="text-xs text-blue-800 font-bold">Need Help?</p>
