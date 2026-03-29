@@ -9,7 +9,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { getDataOwnerId } from '@/lib/dataUtils';
 import { ToastProvider, useToast } from '@/contexts/ToastContext';
-
+import DashboardChat from '@/components/DashboardChat';
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { user, userProfile, loading } = useAuth();
@@ -226,16 +226,26 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                             </div>
                         );
                     })}
-                    <a href="https://wa.me/917619948657?text=Hi%2C%20I%20need%20help%20with%20SpotNet%20MedOS" target="_blank" rel="noopener noreferrer" className="block mt-8 p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 text-center hover:shadow-md transition-shadow cursor-pointer">
-                        <i className="fas fa-headset text-3xl text-blue-300 mb-2"></i>
-                        <p className="text-xs text-blue-800 font-bold">Need Help?</p>
-                        <p className="text-[10px] text-gray-500">Contact Support</p>
-                    </a>
+                    {userProfile?.role === 'lab' && (
+                        <DashboardChat 
+                            dataOwnerId={dataOwnerId} 
+                            userRole={userProfile.role} 
+                            userName={userProfile.name || 'Lab Staff'} 
+                        />
+                    )}
                 </aside>
                 <main className="flex-1 w-full min-h-[500px]">
                     {children}
                 </main>
             </div>
+            
+            {userProfile?.role === 'owner' && (
+                <DashboardChat 
+                    dataOwnerId={dataOwnerId} 
+                    userRole={userProfile.role} 
+                    userName={userProfile.name || 'Owner'} 
+                />
+            )}
         </div>
     );
 }
