@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext';
 
 export default function PrintReportPage() {
     const params = useParams();
-    const { user, userProfile } = useAuth();
+    const { user, userProfile, loading: authLoading } = useAuth();
     const [report, setReport] = useState<any>(null);
     const [branding, setBranding] = useState<any>(null);
     const [subscription, setSubscription] = useState<any>(null);
@@ -19,32 +19,25 @@ export default function PrintReportPage() {
     const reportId = params.id as string;
 
     useEffect(() => {
-        if (!reportId) return;
+        if (!reportId || authLoading) return;
 
         const fetchData = async () => {
             try {
                 let reportData = null;
                 let ownerId = null;
 
-                // If user is logged in (admin), use their ownerId
+                // Get ownerId from multiple sources (localStorage persists across tabs)
                 if (user) {
                     ownerId = userProfile?.ownerId || user.uid;
+                }
+                // Fallback: check localStorage (critical for new-tab print)
+                if (!ownerId && typeof window !== 'undefined') {
+                    ownerId = localStorage.getItem('ownerId') || localStorage.getItem('patient_owner_id') || null;
+                }
+
+                if (ownerId) {
                     const reportSnapshot = await get(ref(database, `reports/${ownerId}/${reportId}`));
                     reportData = reportSnapshot.val();
-                } else {
-                    // Patient portal access - search for report across all users
-                    const usersSnapshot = await get(ref(database, 'users'));
-                    if (usersSnapshot.exists()) {
-                        const users = usersSnapshot.val();
-                        for (const uid in users) {
-                            const reportSnapshot = await get(ref(database, `reports/${uid}/${reportId}`));
-                            if (reportSnapshot.exists()) {
-                                reportData = reportSnapshot.val();
-                                ownerId = uid;
-                                break;
-                            }
-                        }
-                    }
                 }
 
                 if (!reportData || !ownerId) {
@@ -89,7 +82,7 @@ export default function PrintReportPage() {
         };
 
         fetchData();
-    }, [reportId]);
+    }, [reportId, authLoading, user, userProfile]);
 
     // Generate HTML and replace document content
     useEffect(() => {
@@ -116,48 +109,9 @@ export default function PrintReportPage() {
 
         // Identifiers
         const labName = branding.labName || 'Spotnet MedOS';
-        const labPrefix = labName.replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase().padEnd(4, 'X');
-
-        // Sample ID: Fallback to new format {PREFIX}-{YYYYMM}-{SEQ} if missing
-        let sampleId = report.sampleId;
-        if (!sampleId) {
-            const dateObj = new Date(report.createdAt);
-            const yyyymm = `${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
-            const seq = String(dateObj.getTime()).slice(-4);
-            sampleId = `${labPrefix}-${yyyymm}-${seq}`;
-        }
-
-        let generatedPatientId = report.patientDisplayId || report.patientId;
-        // Validate format: PREFIX-YYYYMM-SEQUENCE (exactly 3 parts, middle is 6 digits)
-        const patParts = (generatedPatientId || '').split('-');
-        const isValidPatId = patParts.length === 3 && /^\d{6}$/.test(patParts[1]);
-
-        if (!isValidPatId) {
-            // Firebase key or invalid: Generate standardized format
-            const dateObj = new Date(report.createdAt || Date.now());
-            const yyyymm = `${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
-            // Try to extract sequence from existing ID, fallback to timestamp
-            const extractedNums = (generatedPatientId || '').replace(/\D/g, '');
-            const seq = extractedNums.length >= 4 ? extractedNums.slice(-4) : String(dateObj.getTime()).slice(-4);
-            generatedPatientId = `${labPrefix}-${yyyymm}-${seq}`;
-        }
-
-
-
-        // Report ID: Validate format PREFIX-YYYYMM-SEQUENCE
-        let formattedReportId = report.reportId || report.id;
-        const repParts = (formattedReportId || '').split('-');
-        const isValidRepId = repParts.length === 3 && /^\d{6}$/.test(repParts[1]);
-
-        if (!isValidRepId) {
-            // Old format or Firebase key: Generate standardized format
-            const dateObj = new Date(report.createdAt || Date.now());
-            const yyyymm = `${dateObj.getFullYear()}${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
-            // Extract all numbers from old ID to preserve sequence (e.g., TEST-00007 → 0007)
-            const extractedNums = (formattedReportId || '').replace(/\D/g, '');
-            const seq = extractedNums.length >= 4 ? extractedNums.slice(-4) : String(dateObj.getTime()).slice(-4);
-            formattedReportId = `${labPrefix}-${yyyymm}-${seq}`;
-        }
+        const sampleId = report.sampleId || report.sampleNumber || 'N/A';
+        const generatedPatientId = report.patientDisplayId || report.patientId || 'N/A';
+        const formattedReportId = report.reportId || report.id || 'N/A';
 
 
         // Create compact test list - truncate if too long

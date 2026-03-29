@@ -12,35 +12,28 @@ import { database } from './firebase';
  * Format: {CLINIC_CODE}-{YYYYMM}-{SEQUENCE}
  * Example: SPOT-202512-0001
  */
-/**
- * Generate Auto Patient ID
- * Format: {CLINIC_CODE}-{YYYYMM}-{SEQUENCE}
- * Example: TEST-202601-0001
- */
 export async function generatePatientId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
     try {
-        // Clinic Code: First 4 letters
-        const clinicCode = clinicName
-            .replace(/[^A-Za-z]/g, '')
-            .substring(0, 4)
+        const prefix = clinicName
+            .replace(/[^A-Za-z0-9]/g, '')
+            .substring(0, 3)
             .toUpperCase()
-            .padEnd(4, 'X');
+            .padEnd(3, 'X');
 
-        // YYYYMM
         const now = new Date();
-        const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const yymm = `${yy}${mm}`;
 
-        // Monthly Counter
-        const counterRef = ref(database, `counters/${ownerId}/patientIds/${yyyymm}`);
-
+        // Daily Counter for Patient IDs
+        const counterRef = ref(database, `counters/${ownerId}/ptIds/${yymm}${dd}`);
         const newCount = await runTransaction(counterRef, (currentCount) => {
             return (currentCount || 0) + 1;
         });
 
-        // Sequence: 4 digits
-        const sequence = String(newCount.snapshot.val()).padStart(4, '0');
-
-        return `${clinicCode}-${yyyymm}-${sequence}`;
+        const sequence = String(newCount.snapshot.val()).padStart(2, '0');
+        return `${prefix}-${yymm}-${dd}${sequence}P`;
     } catch (error) {
         console.error('Error generating patient ID:', error);
         return `P-${Date.now()}`;
@@ -48,66 +41,77 @@ export async function generatePatientId(ownerId: string, clinicName: string = 'C
 }
 
 
-/**
- * Generate Auto Report ID
- * Format: {CLINIC_CODE}-{YYYYMM}-{SEQUENCE}
- * Example: TEST-202601-0001
- */
-export async function generateReportId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
+export async function generateReportId(ownerId: string, clinicName: string = 'CLINIC', branchPrefix?: string): Promise<string> {
     try {
-        const clinicCode = clinicName
-            .replace(/[^A-Za-z]/g, '')
-            .substring(0, 4)
+        const prefix = (branchPrefix || clinicName)
+            .replace(/[^A-Za-z0-9]/g, '')
+            .substring(0, 3)
             .toUpperCase()
-            .padEnd(4, 'X');
+            .padEnd(3, 'X');
 
         const now = new Date();
-        const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const yymm = `${yy}${mm}`;
 
-        const counterRef = ref(database, `counters/${ownerId}/reportIds/${yyyymm}`);
-
+        const counterRef = ref(database, `counters/${ownerId}/rptIds/${yymm}${dd}`);
         const newCount = await runTransaction(counterRef, (currentCount) => {
             return (currentCount || 0) + 1;
         });
 
-        const sequence = String(newCount.snapshot.val()).padStart(4, '0');
-
-        return `${clinicCode}-${yyyymm}-${sequence}`;
+        const sequence = String(newCount.snapshot.val()).padStart(2, '0');
+        return `${prefix}-${yymm}-${dd}${sequence}R`;
     } catch (error) {
         console.error('Error generating report ID:', error);
-        return `L-${Date.now()}`;
+        return `R-${Date.now()}`;
     }
 }
 
-/**
- * Generate Auto Sample ID
- * Format: {CLINIC_CODE}-{YYYYMM}-{SEQUENCE}
- * Example: TEST-202601-0001
- */
-export async function generateSampleId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
+export async function generateSampleId(ownerId: string, clinicName: string = 'CLINIC', branchPrefix?: string): Promise<string> {
     try {
-        const clinicCode = clinicName
-            .replace(/[^A-Za-z]/g, '')
-            .substring(0, 4)
+        const prefix = (branchPrefix || clinicName)
+            .replace(/[^A-Za-z0-9]/g, '')
+            .substring(0, 3)
             .toUpperCase()
-            .padEnd(4, 'X');
+            .padEnd(3, 'X');
 
         const now = new Date();
-        const yyyymm = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const yymm = `${yy}${mm}`;
 
-        const counterRef = ref(database, `counters/${ownerId}/sampleIds/${yyyymm}`);
-
+        const counterRef = ref(database, `counters/${ownerId}/smplIds/${yymm}${dd}`);
         const newCount = await runTransaction(counterRef, (currentCount) => {
             return (currentCount || 0) + 1;
         });
 
-        const sequence = String(newCount.snapshot.val()).padStart(4, '0');
-
-        return `${clinicCode}-${yyyymm}-${sequence}`;
+        const sequence = String(newCount.snapshot.val()).padStart(2, '0');
+        return `${prefix}-${yymm}-${dd}${sequence}S`;
     } catch (error) {
         console.error('Error generating sample ID:', error);
         return `S-${Date.now()}`;
     }
+}
+
+/**
+ * Helper to format ID from a specific date and sequence (for migration)
+ */
+export function formatIdFromDate(labName: string, date: Date, sequence: number, type: 'P' | 'S' | 'R'): string {
+    const prefix = labName
+        .replace(/[^A-Za-z0-9]/g, '')
+        .substring(0, 3)
+        .toUpperCase()
+        .padEnd(3, 'X');
+
+    const yy = String(date.getFullYear()).slice(-2);
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    const yymm = `${yy}${mm}`;
+    const seq = String(sequence).padStart(2, '0');
+
+    return `${prefix}-${yymm}-${dd}${seq}${type}`;
 }
 
 /**

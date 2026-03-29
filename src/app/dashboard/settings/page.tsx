@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { ref, onValue, set, update, push } from 'firebase/database';
+import { ref, onValue, set, update, push, remove, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import GoogleDriveBackup from '@/components/GoogleDriveBackup';
+import { hashPassword, generatePassword } from '@/lib/userUtils';
+import { formatIdFromDate } from '@/lib/idGenerator';
 
 import { useSubscription } from '@/contexts/SubscriptionContext';
 
@@ -63,8 +66,238 @@ export default function SettingsPage() {
     }, [user]);
 
     // UI State
-    const [settingsTab, setSettingsTab] = useState<'branding' | 'billing' | 'backup'>('branding');
+    const [settingsTab, setSettingsTab] = useState<'branding' | 'billing' | 'backup' | 'staff'>('branding');
     const [isEditing, setIsEditing] = useState(false);
+
+    // Staff State
+    const [staffList, setStaffList] = useState<any[]>([]);
+    const [showStaffModal, setShowStaffModal] = useState(false);
+    const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+    const [staffForm, setStaffForm] = useState({ username: '', password: '', role: 'lab', name: '', isActive: true });
+    const [showPassword, setShowPassword] = useState(false);
+
+    useEffect(() => {
+        if (!user) return;
+        const staffRef = ref(database, `users/${userProfile?.ownerId || user.uid}/auth/staff`);
+        const unsubStaff = onValue(staffRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                const list = Object.entries(data).map(([k, v]) => ({ id: k, ...(v as any) }));
+                setStaffList(list);
+            } else {
+                setStaffList([]);
+            }
+        });
+        return () => unsubStaff();
+    }, [user, userProfile]);
+
+    const handleSaveStaff = async () => {
+        if (!user) return;
+        if (!staffForm.name) {
+            alert('Please enter staff member name');
+            return;
+        }
+
+        const ownerId = userProfile?.ownerId || user.uid;
+        // Robust fetch for brandPrefix to handle stale profile state
+        let brandPrefix = (userProfile as any)?.brandPrefix;
+        if (!brandPrefix) {
+            const profileSnap = await get(ref(database, `users/${ownerId}/profile`));
+            brandPrefix = profileSnap.val()?.brandPrefix || 'lab';
+        }
+        
+        try {
+            let finalUsername = staffForm.username;
+            let finalPassword = staffForm.password;
+            
+            // 1. New Staff Handling
+            if (!editingStaffId) {
+                const cleanName = staffForm.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
+                let baseStaffUsername = `${brandPrefix}_${cleanName}`;
+                finalUsername = baseStaffUsername;
+                
+                let counter = 0;
+                const existingUsernames = staffList.map(s => s.username);
+                while (existingUsernames.includes(finalUsername)) {
+                    counter++;
+                    finalUsername = `${baseStaffUsername}${counter}`;
+                }
+
+                // Auto-generate strong password ONLY if blank and NEW
+                if (!finalPassword) {
+                    finalPassword = generatePassword();
+                }
+            }
+
+            const staffId = editingStaffId || push(ref(database, `users/${ownerId}/auth/staff`)).key;
+            const staffRef = ref(database, `users/${ownerId}/auth/staff/${staffId}`);
+
+            const staffData: any = {
+                id: staffId,
+                username: finalUsername,
+                name: staffForm.name,
+                role: 'lab', 
+                isActive: staffForm.isActive,
+                updatedAt: new Date().toISOString()
+            };
+
+            // ONLY update password if a new one was provided OR it was auto-generated for NEW staff
+            if (finalPassword) {
+                staffData.password = finalPassword;
+                staffData.passwordHash = hashPassword(finalPassword);
+            }
+
+            if (editingStaffId) {
+                await update(staffRef, staffData);
+            } else {
+                await set(staffRef, staffData);
+            }
+            setShowStaffModal(false);
+            
+            if (!editingStaffId && finalPassword) {
+                alert(`✅ Staff Created Successfully!\n\nUsername: ${finalUsername}\nPassword: ${finalPassword}\n\nPlease share these with your staff.`);
+            } else {
+                alert('Staff member updated successfully!');
+            }
+            
+            setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true });
+            setEditingStaffId(null);
+            setShowPassword(false);
+        } catch (error) {
+            console.error('Error saving staff:', error);
+            alert('Failed to save staff member');
+        }
+    };
+
+    const handleDeleteStaff = async (staffId: string) => {
+        if (!user) return;
+        if (!confirm('Are you absolutely sure you want to PERMANENTLY DELETE this staff member? This action cannot be undone.')) return;
+        
+        try {
+            await remove(ref(database, `users/${userProfile?.ownerId || user.uid}/auth/staff/${staffId}`));
+            alert('Staff member deleted successfully!');
+        } catch (error) {
+            console.error('Error deleting staff:', error);
+            alert('Failed to delete staff member');
+        }
+    };
+
+    // --- DATA MIGRATION UTILITY (SYNC LEGACY DATA) ---
+    const [isMigrating, setIsMigrating] = useState(false);
+
+    const handleSyncLegacyData = async () => {
+        if (!user || userProfile?.role === 'staff') return;
+        
+        const confirmMsg = "⚠️ DANGER ZONE: This will RENAME all your existing Patient, Sample, and Report IDs to the new format (e.g., TES-2603-2901P).\n\nExisting internal links will still work, but readable IDs will change. Proceed?";
+        if (!confirm(confirmMsg)) return;
+
+        const ownerId = userProfile?.ownerId || user.uid;
+        const labName = userProfile?.labName || 'CLINIC';
+        
+        setIsMigrating(true);
+        try {
+            const updates: any = {};
+            const patientIdMap: Record<string, string> = {};
+            const sampleIdMap: Record<string, string> = {};
+            
+            // 1. MIGRATE PATIENTS
+            const patientsSnap = await get(ref(database, `patients/${ownerId}`));
+            if (patientsSnap.exists()) {
+                const patients: any[] = [];
+                patientsSnap.forEach(child => { patients.push({ key: child.key, ...child.val() }); });
+                
+                // Group by date
+                const groupedByDate: Record<string, any[]> = {};
+                patients.forEach(p => {
+                    const date = new Date(p.createdAt || Date.now()).toISOString().split('T')[0];
+                    if (!groupedByDate[date]) groupedByDate[date] = [];
+                    groupedByDate[date].push(p);
+                });
+
+                // Update Each Group
+                Object.keys(groupedByDate).forEach(date => {
+                    const sorted = groupedByDate[date].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+                    sorted.forEach((p, index) => {
+                        const newId = formatIdFromDate(labName, new Date(p.createdAt || Date.now()), index + 1, 'P');
+                        updates[`patients/${ownerId}/${p.key}/patientId`] = newId;
+                        patientIdMap[p.key] = newId;
+                    });
+                });
+            }
+
+            // 2. MIGRATE SAMPLES
+            const samplesSnap = await get(ref(database, `samples/${ownerId}`));
+            if (samplesSnap.exists()) {
+                const samples: any[] = [];
+                samplesSnap.forEach(child => { samples.push({ key: child.key, ...child.val() }); });
+                
+                const groupedByDate: Record<string, any[]> = {};
+                samples.forEach(s => {
+                    const date = new Date(s.createdAt || s.date || Date.now()).toISOString().split('T')[0];
+                    if (!groupedByDate[date]) groupedByDate[date] = [];
+                    groupedByDate[date].push(s);
+                });
+
+                Object.keys(groupedByDate).forEach(date => {
+                    const sorted = groupedByDate[date].sort((a, b) => new Date(a.createdAt || a.date).getTime() - new Date(b.createdAt || b.date).getTime());
+                    sorted.forEach((s, index) => {
+                        const newId = formatIdFromDate(labName, new Date(s.createdAt || s.date || Date.now()), index + 1, 'S');
+                        updates[`samples/${ownerId}/${s.key}/sampleId`] = newId;
+                        updates[`samples/${ownerId}/${s.key}/sampleNumber`] = newId;
+                        sampleIdMap[s.key] = newId;
+                    });
+                });
+            }
+
+            // 3. MIGRATE REPORTS (DEEP SYNC)
+            const reportsSnap = await get(ref(database, `reports/${ownerId}`));
+            if (reportsSnap.exists()) {
+                const reports: any[] = [];
+                reportsSnap.forEach(child => { reports.push({ key: child.key, ...child.val() }); });
+                
+                const groupedByDate: Record<string, any[]> = {};
+                reports.forEach(r => {
+                    const date = new Date(r.createdAt || r.reportDate || Date.now()).toISOString().split('T')[0];
+                    if (!groupedByDate[date]) groupedByDate[date] = [];
+                    groupedByDate[date].push(r);
+                });
+
+                Object.keys(groupedByDate).forEach(date => {
+                    const sorted = groupedByDate[date].sort((a, b) => new Date(a.createdAt || a.reportDate).getTime() - new Date(b.createdAt || b.reportDate).getTime());
+                    sorted.forEach((r, index) => {
+                        const newId = formatIdFromDate(labName, new Date(r.createdAt || r.reportDate || Date.now()), index + 1, 'R');
+                        const reportPath = `reports/${ownerId}/${r.key}`;
+                        updates[`${reportPath}/reportId`] = newId;
+                        
+                        // DEEP SYNC: Update internal ID references for Patients & Samples
+                        if (r.patientId && patientIdMap[r.patientId]) {
+                            updates[`${reportPath}/patientDisplayId`] = patientIdMap[r.patientId];
+                        }
+                        
+                        // If report has a sample number field (often stored as sampleId or sampleNumber)
+                        // Note: r.sampleId is usually the Firebase key, check mapping
+                        if (r.sampleId && sampleIdMap[r.sampleId]) {
+                            updates[`${reportPath}/sampleId`] = sampleIdMap[r.sampleId];
+                        }
+                    });
+                });
+            }
+
+            if (Object.keys(updates).length > 0) {
+                await update(ref(database), updates);
+                alert(`✅ Total Healing Success! Migrated ${Object.keys(updates).length} fields to the new format.`);
+            } else {
+                alert("No records found to migrate.");
+            }
+        } catch (error) {
+            console.error('Migration failed:', error);
+            alert('Migration failed. Check console for details.');
+        } finally {
+            setIsMigrating(false);
+        }
+    };
+
+
 
     // Backup State
     const [backupLoading, setBackupLoading] = useState<string | null>(null);
@@ -238,12 +471,129 @@ export default function SettingsPage() {
                     <button onClick={() => setSettingsTab('backup')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${settingsTab === 'backup' ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                         Backup
                     </button>
+                    <button onClick={() => setSettingsTab('staff')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${settingsTab === 'staff' ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                        Staff
+                    </button>
+                    <button onClick={() => setSettingsTab('maintenance')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${settingsTab === 'maintenance' ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                        Maintenance
+                    </button>
 
                 </div>
             </div>
 
             {/* Content Area */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 min-h-[400px]">
+
+                {/* MAINTENANCE / DANGER ZONE TAB */}
+                {settingsTab === 'maintenance' && (
+                    <div className="p-8 animate-in fade-in slide-in-from-bottom-2">
+                        <div className="max-w-2xl mx-auto">
+                            <div className="bg-red-50 border-2 border-red-100 rounded-2xl p-8 shadow-sm text-center">
+                                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center text-red-600 text-3xl shadow-inner mx-auto mb-6">
+                                    <i className="fas fa-exclamation-triangle"></i>
+                                </div>
+                                
+                                <h3 className="text-2xl font-bold text-red-900 mb-2">Laboratory Maintenance</h3>
+                                <p className="text-red-700 text-sm mb-10">Repair and synchronize legacy laboratory data.</p>
+
+                                <div className="bg-white/80 backdrop-blur-sm p-8 rounded-2xl border border-red-100 shadow-sm text-left">
+                                    <h4 className="font-bold text-gray-800 text-lg mb-3 flex items-center gap-2">
+                                        <i className="fas fa-sync-alt text-blue-600"></i> Sync Legacy Data IDs
+                                    </h4>
+                                    <div className="text-sm text-gray-600 space-y-4 mb-8 leading-relaxed">
+                                        <p>This automated tool will scan all your old records and rename them to your new professional format:</p>
+                                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 font-mono text-center text-blue-800 font-bold">
+                                            {(userProfile as any)?.labName?.replace(/[^A-Za-z0-9]/g,'').substring(0,3).toUpperCase() || 'TES'}-2603-2900P
+                                        </div>
+                                        <p className="p-3 bg-red-50 text-red-700 rounded-lg border border-red-100">
+                                            <i className="fas fa-info-circle mr-2"></i> <strong>Note:</strong> Old QR codes on printed reports will still work, but the "Patient ID" and "Report ID" text on your dashboard will change to the new format.
+                                        </p>
+                                    </div>
+
+                                    <button 
+                                        onClick={handleSyncLegacyData}
+                                        disabled={isMigrating}
+                                        className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all ${
+                                            isMigrating 
+                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-inner' 
+                                            : 'bg-gradient-to-r from-red-600 to-orange-600 text-white hover:shadow-lg hover:scale-[1.01] active:scale-[0.98]'
+                                        }`}
+                                    >
+                                        {isMigrating ? (
+                                            <>
+                                                <i className="fas fa-circle-notch fa-spin"></i>
+                                                MIGRATING {((userProfile as any)?.labName?.substring(0,3).toUpperCase() || 'DATA')}...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <i className="fas fa-database"></i>
+                                                START DATA SYNC
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                <div className="mt-8 p-4 bg-white/40 rounded-lg text-[11px] text-gray-400 text-center border border-dashed border-gray-200 uppercase tracking-widest font-bold">
+                                    Maintenance Tool Version 1.0.0
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* STAFF TAB */}
+                {settingsTab === 'staff' && (
+                    <div className="p-6 animate-in fade-in slide-in-from-bottom-2">
+                        <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100">
+                            <div>
+                                <h3 className="font-bold text-lg text-gray-800">Staff Management</h3>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md text-[10px] font-bold border border-blue-100 flex items-center gap-1">
+                                        <i className="fas fa-shield-halved"></i> 
+                                        LOGIN PREFIX: {(userProfile as any)?.brandPrefix || '...'}
+                                    </span>
+                                    <p className="text-[10px] text-gray-500">Only your staff uses this prefix to login.</p>
+                                </div>
+                            </div>
+                            <button onClick={() => { setEditingStaffId(null); setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true }); setShowStaffModal(true); }} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm flex items-center gap-2">
+                                <i className="fas fa-plus"></i> Add Staff
+                            </button>
+                        </div>
+                        
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead className="bg-gray-50 text-xs text-gray-500 uppercase font-semibold">
+                                    <tr>
+                                        <th className="px-6 py-2 rounded-l-lg">Name</th>
+                                        <th className="px-6 py-2">Username</th>
+                                        <th className="px-6 py-2">Role</th>
+                                        <th className="px-6 py-2">Status</th>
+                                        <th className="px-6 py-2 text-right rounded-r-lg">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {staffList.map(staff => (
+                                        <tr key={staff.id} className="hover:bg-gray-50 transition-colors border-b last:border-0 border-gray-100">
+                                            <td className="px-6 py-2 font-medium text-gray-900">{staff.name}</td>
+                                            <td className="px-6 py-2 text-sm font-mono text-blue-600">{staff.username}</td>
+                                            <td className="px-6 py-2"><span className="px-2.5 py-1 bg-purple-100 text-purple-700 rounded text-xs font-bold uppercase">{staff.role}</span></td>
+                                            <td className="px-6 py-2">
+                                                <span className={`px-2 py-1 rounded text-xs font-bold ${staff.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                    {staff.isActive ? 'ACTIVE' : 'INACTIVE'}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-2 text-right flex justify-end gap-1">
+                                                <button onClick={() => { setEditingStaffId(staff.id); setStaffForm({ username: staff.username, password: staff.password || '', role: staff.role, name: staff.name, isActive: staff.isActive }); setShowStaffModal(true); setShowPassword(false); }} className="text-blue-600 hover:text-blue-800 p-2" title="Edit Staff"><i className="fas fa-edit"></i></button>
+                                                <button onClick={() => handleDeleteStaff(staff.id)} className="text-red-600 hover:text-red-800 p-2" title="Delete Staff"><i className="fas fa-trash"></i></button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {staffList.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-gray-400">No staff members found. Create one.</td></tr>}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
 
                 {/* BRANDING TAB */}
                 {settingsTab === 'branding' && (
@@ -485,6 +835,49 @@ export default function SettingsPage() {
                                         </button>
                                     </div>
                                 </div>
+
+                                {/* Google Drive Backup Card */}
+                                <div className="bg-white border rounded-xl p-6 hover:shadow-md transition-shadow group relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                                        <i className="fab fa-google-drive text-6xl text-blue-600"></i>
+                                    </div>
+                                    <div className="relative z-10">
+                                        <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 mb-4 group-hover:scale-110 transition-transform">
+                                            <i className="fab fa-google-drive text-xl"></i>
+                                        </div>
+                                        <h4 className="font-bold text-gray-900 text-lg mb-1">Cloud Backup</h4>
+                                        <p className="text-sm text-gray-500 mb-4">Securely upload your complete database to your personal Google Drive.</p>
+
+                                        {!formData.googleClientId ? (
+                                            <button
+                                                onClick={() => setShowDriveConfigModal(true)}
+                                                className="w-full bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 font-bold py-2 px-4 rounded-lg shadow-sm flex items-center justify-center gap-2 transition-all"
+                                            >
+                                                <i className="fas fa-cog"></i> Configure Drive
+                                            </button>
+                                        ) : (
+                                            <GoogleDriveBackup
+                                                clientId={formData.googleClientId}
+                                                fileName={`Mediclo_Backup_${new Date().toISOString().split('T')[0]}.json`}
+                                                getData={async () => {
+                                                    if (!user) return null;
+                                                    const { createBackup } = await import('@/lib/backupManager');
+                                                    return await createBackup(user.uid);
+                                                }}
+                                                onSuccess={() => alert('Backup successfully saved to Google Drive!')}
+                                            />
+                                        )}
+
+                                        {formData.googleClientId && (
+                                            <button
+                                                onClick={() => setShowDriveConfigModal(true)}
+                                                className="mt-2 text-xs text-gray-400 hover:text-gray-600 underline w-full text-center"
+                                            >
+                                                Reconfigure Client ID
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -566,6 +959,78 @@ export default function SettingsPage() {
                     </div>
                 )
             }
+
+            {/* STAFF MODAL */}
+            {showStaffModal && (
+                <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-gray-800">{editingStaffId ? 'Edit Staff' : 'Add Staff Member'}</h3>
+                            <button onClick={() => setShowStaffModal(false)} className="text-gray-400 hover:text-gray-600"><i className="fas fa-times text-xl"></i></button>
+                        </div>
+                        <div className="space-y-5">
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Staff Full Name</label>
+                                <input 
+                                    type="text" 
+                                    autoComplete="off" 
+                                    value={staffForm.name} 
+                                    onChange={e => setStaffForm({...staffForm, name: e.target.value})} 
+                                    className="w-full p-2.5 border-2 border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+                                    placeholder="Enter full name" 
+                                />
+                            </div>
+
+                            {editingStaffId && (
+                                <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Staff Username (Read Only)</label>
+                                    <div className="p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-blue-600 font-mono text-sm select-all">
+                                        {staffForm.username}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">{editingStaffId ? 'Reset Password' : 'Password (Auto-generated if empty)'}</label>
+                                <div className="relative">
+                                    <input 
+                                        type={showPassword ? 'text' : 'password'} 
+                                        autoComplete="new-password"
+                                        value={staffForm.password} 
+                                        onChange={e => setStaffForm({...staffForm, password: e.target.value})} 
+                                        className="w-full p-2.5 pr-10 border-2 border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono transition-all" 
+                                        placeholder={editingStaffId ? "Enter new password to change" : "Leave empty to auto-generate"}
+                                    />
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                                    >
+                                        <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                                    </button>
+                                </div>
+                                {!editingStaffId && (
+                                    <p className="text-[10px] text-gray-400 mt-1">Username will be generated automatically: <strong>prefix_name</strong></p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Designation</label>
+                                <div className="p-2 bg-purple-50 text-purple-700 rounded-lg border border-purple-100 font-bold text-sm flex items-center gap-2">
+                                    <i className="fas fa-flask"></i> Lab Technician
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 mt-4">
+                                <input type="checkbox" id="isActiveStaff" checked={staffForm.isActive} onChange={e => setStaffForm({...staffForm, isActive: e.target.checked})} className="w-4 h-4 text-blue-600 rounded" />
+                                <label htmlFor="isActiveStaff" className="text-sm font-bold text-gray-700">Account Active</label>
+                            </div>
+                        </div>
+                        <div className="mt-8 flex justify-end gap-3">
+                            <button onClick={() => setShowStaffModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+                            <button onClick={handleSaveStaff} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition">Save Staff</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }

@@ -1,7 +1,7 @@
 // Authentication service for username/password login
 import { ref, get, set } from 'firebase/database';
-import { database } from './firebase';
-import { generateUsername, generatePassword, hashPassword, generateUniqueBrandPrefix, type UserRole } from './userUtils';
+import { auth, database } from './firebase';
+import { generateUsername, generatePassword, hashPassword, verifyPassword, generateUniqueBrandPrefix, type UserRole } from './userUtils';
 
 export interface AuthUser {
     userId: string;
@@ -10,6 +10,7 @@ export interface AuthUser {
     name: string;
     isActive: boolean;
     doctorId?: string;
+    ownerId?: string;
 }
 
 export interface UserCredentials {
@@ -27,31 +28,100 @@ export async function authenticateUser(
     password: string
 ): Promise<AuthUser | null> {
     try {
-        console.log(`Debug: Auth attempt for '${username}'`);
+        const cleanUsername = username.toLowerCase().trim();
+        console.log(`🔍 Client Auth: ${cleanUsername}`);
 
-        const response = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ username, password }),
-        });
+        // 1. Extract prefix
+        let prefix = '';
+        if (cleanUsername.includes('_')) {
+            prefix = cleanUsername.split('_')[0];
+        } else if (cleanUsername.includes('@')) {
+            prefix = cleanUsername.split('@')[0];
+        } else {
+            prefix = cleanUsername;
+        }
 
-        if (!response.ok) {
-            console.error('Debug: Auth failed with status:', response.status);
+        // 2. SURGICAL LOOKUP: Get Owner ID from Prefix Index
+        const currentUid = auth.currentUser?.uid || 'NOT_LOGGED_IN';
+        console.log(`🛡️ Auth context check - UID: ${currentUid}`);
+
+        const prefixRef = ref(database, `prefixes/${prefix}`);
+        const prefixSnap = await get(prefixRef);
+        
+        if (!prefixSnap.exists()) {
+            console.error('❌ Laboratory not found for prefix:', prefix);
             return null;
         }
 
-        const data = await response.json();
+        const ownerId = prefixSnap.val();
+        console.log(`🎯 Prefix matched! Owner ID: ${ownerId}`);
 
-        if (data.success && data.user) {
-            console.log('Debug: Auth successful');
-            return data.user;
+        // 3. TARGETED FETCH: Get ONLY this owner's auth data
+        const authRef = ref(database, `users/${ownerId}/auth`);
+        const authSnap = await get(authRef);
+
+        if (!authSnap.exists()) {
+            console.error('❌ Authentication data missing for owner');
+            return null;
         }
 
+        const authData = authSnap.val();
+
+        // 4. Verify Credentials (defensive check)
+        // Check primary roles
+        const primaryRoles = ['receptionist', 'lab', 'pharmacy'];
+        for (const r of primaryRoles) {
+            const pUser = authData[r];
+            if (pUser && typeof pUser === 'object' && pUser.username === cleanUsername && verifyPassword(password, pUser.passwordHash)) {
+                return {
+                    userId: pUser.id || pUser.username,
+                    username: pUser.username,
+                    name: pUser.name,
+                    role: pUser.role || (r as UserRole),
+                    isActive: pUser.isActive !== false,
+                    ownerId: ownerId
+                };
+            }
+        }
+
+        // Check staff collection
+        if (authData.staff && typeof authData.staff === 'object') {
+            for (const sId in authData.staff) {
+                const staff = authData.staff[sId];
+                if (staff && staff.username === cleanUsername && verifyPassword(password, staff.passwordHash)) {
+                    return {
+                        userId: sId,
+                        username: staff.username,
+                        name: staff.name,
+                        role: staff.role,
+                        isActive: staff.isActive !== false,
+                        ownerId: ownerId
+                    };
+                }
+            }
+        }
+
+        // Check doctors
+        if (authData.doctors && typeof authData.doctors === 'object') {
+            for (const dId in authData.doctors) {
+                const doctor = authData.doctors[dId];
+                if (doctor && doctor.username === cleanUsername && verifyPassword(password, doctor.passwordHash)) {
+                    return {
+                        userId: dId,
+                        username: doctor.username,
+                        name: doctor.name,
+                        role: 'doctor',
+                        isActive: doctor.isActive !== false,
+                        ownerId: ownerId
+                    };
+                }
+            }
+        }
+
+        console.error('❌ Invalid username or password');
         return null;
     } catch (error) {
-        console.error('Authentication error:', error);
+        console.error('CRITICAL Authentication Error:', error);
         return null;
     }
 }
@@ -111,6 +181,9 @@ export async function completeProfileSetup(
             name: 'Lab Admin', // Default name
             createdAt: new Date().toISOString()
         });
+
+        // Save to global prefix index for O(1) login lookups
+        await set(ref(database, `prefixes/${brandPrefix}`), userId);
 
         // Initialize Branding with defaults
         await set(ref(database, `branding/${userId}`), {

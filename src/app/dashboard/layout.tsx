@@ -2,7 +2,7 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { signOut } from 'firebase/auth';
 import { auth, database } from '@/lib/firebase';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, update, query, limitToLast } from 'firebase/database';
 
 import { useRouter, usePathname } from 'next/navigation';
 import { useState, useEffect, useMemo } from 'react';
@@ -17,6 +17,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
     const [activeTab, setActiveTab] = useState('dashboard');
     const [branding, setBranding] = useState<{ logoUrl?: string; tagline?: string }>({});
+    const [notifications, setNotifications] = useState<any[]>([]);
+    const [showNotifications, setShowNotifications] = useState(false);
 
     const { showToast } = useToast();
 
@@ -24,6 +26,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         if (!user) return '';
         return getDataOwnerId(userProfile, user.uid);
     }, [user, userProfile]);
+
+    const unreadCount = notifications.filter(n => !n.read).length;
 
     useEffect(() => {
         if (!loading && !user) router.push('/login');
@@ -36,11 +40,26 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         if (!user || !dataOwnerId) return;
+
+        // Branding
         const brandingRef = ref(database, 'branding/' + dataOwnerId);
-        const unsub = onValue(brandingRef, (snapshot: any) => {
+        const unsubBranding = onValue(brandingRef, (snapshot: any) => {
             if (snapshot.exists()) setBranding(snapshot.val());
         });
-        return () => unsub();
+
+        // Notifications
+        const notifRef = query(ref(database, 'notifications/' + dataOwnerId), limitToLast(20));
+        const unsubNotif = onValue(notifRef, (snapshot) => {
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                const list = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+                setNotifications(list.reverse()); // Newest first
+            } else {
+                setNotifications([]);
+            }
+        });
+
+        return () => { unsubBranding(); unsubNotif(); };
     }, [user, dataOwnerId]);
 
     const handleSignOut = async () => {
@@ -65,9 +84,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         { id: 'patients', label: 'Patients', icon: 'fa-users', path: '/dashboard/patients' },
         { id: 'samples', label: 'Samples', icon: 'fa-vial', path: '/dashboard/samples' },
         { id: 'reports', label: 'Reports', icon: 'fa-file-medical', path: '/dashboard/reports' },
-        { id: 'templates', label: 'Templates', icon: 'fa-flask-vial', path: '/dashboard/templates' },
-        { id: 'analytics', label: 'Analytics', icon: 'fa-chart-bar', path: '/dashboard/analytics' },
-        { id: 'settings', label: 'Settings', icon: 'fa-cog', path: '/dashboard/settings' },
+        ...(userProfile?.role !== 'lab' ? [
+            { id: 'templates', label: 'Templates', icon: 'fa-flask-vial', path: '/dashboard/templates' },
+            { id: 'analytics', label: 'Analytics', icon: 'fa-chart-bar', path: '/dashboard/analytics' },
+            { id: 'settings', label: 'Settings', icon: 'fa-cog', path: '/dashboard/settings' },
+        ] : [])
     ];
 
     if (loading) return <div className='min-h-screen flex items-center justify-center'>Loading...</div>;
@@ -82,11 +103,83 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                             {branding.logoUrl ? <img src={branding.logoUrl} className="w-full h-full object-contain" /> : <i className="fas fa-flask text-2xl"></i>}
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold">{userProfile?.labName || 'Mediclo LIMS'}</h1>
+                            <h1 className="text-2xl font-bold">{(branding as any).labName || userProfile?.labName || 'Mediclo LIMS'}</h1>
                             <p className="text-sm opacity-90">{branding.tagline || 'Lab Information System'}</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-3">
+                        {/* Notification Bell */}
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowNotifications(!showNotifications)}
+                                className="relative bg-white/20 p-2 rounded-lg hover:bg-white/30 text-white transition-colors"
+                            >
+                                <i className="fas fa-bell text-lg"></i>
+                                {unreadCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center animate-pulse">
+                                        {unreadCount}
+                                    </span>
+                                )}
+                            </button>
+
+                            {/* Dropdown */}
+                            {showNotifications && (
+                                <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden text-gray-800 animate-fadeIn">
+                                    <div className="p-3 bg-gray-50 border-b flex justify-between items-center">
+                                        <h3 className="font-bold text-sm text-gray-700">Notifications</h3>
+                                        {unreadCount > 0 && (
+                                            <button
+                                                onClick={async () => {
+                                                    // Mark all as read
+                                                    const updates: any = {};
+                                                    notifications.forEach(n => {
+                                                        if (!n.read) updates[`notifications/${dataOwnerId}/${n.id}/read`] = true;
+                                                    });
+                                                    if (Object.keys(updates).length) await update(ref(database), updates);
+                                                }}
+                                                className="text-xs text-blue-600 hover:underline"
+                                            >
+                                                Mark all read
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="max-h-64 overflow-y-auto">
+                                        {notifications.length === 0 ? (
+                                            <div className="p-4 text-center text-gray-400 text-sm">
+                                                No notifications
+                                            </div>
+                                        ) : (
+                                            notifications.map(n => (
+                                                <div
+                                                    key={n.id}
+                                                    className={`p-3 border-b hover:bg-gray-50 transition-colors ${!n.read ? 'bg-blue-50/50' : ''}`}
+                                                >
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${n.type === 'critical' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+                                                            {n.type?.toUpperCase() || 'INFO'}
+                                                        </span>
+                                                        <span className="text-[10px] text-gray-400">
+                                                            {new Date(n.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm font-semibold text-gray-800">{n.title}</p>
+                                                    <p className="text-xs text-gray-600 mb-2">{n.message}</p>
+                                                    {!n.read && (
+                                                        <button
+                                                            onClick={() => update(ref(database, `notifications/${dataOwnerId}/${n.id}`), { read: true })}
+                                                            className="text-[10px] text-blue-500 hover:text-blue-700 font-medium"
+                                                        >
+                                                            Mark as read
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
                         <div className="text-right mr-2">
                             <p className="text-sm font-semibold">{user?.displayName || userProfile?.name}</p>
                             <span className="text-xs bg-white/30 px-2 py-0.5 rounded-full">
@@ -100,8 +193,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </div>
             </header>
 
-            <div className="container-pc w-full mx-auto p-6 lg:px-8 grid grid-cols-12 gap-6">
-                <aside className="col-span-12 lg:col-span-2 space-y-2 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-120px)] lg:overflow-y-auto pr-2">
+            <div className="container-pc w-full mx-auto p-6 lg:px-8 flex flex-col lg:flex-row gap-6">
+                <aside className="w-full lg:w-52 flex-shrink-0 space-y-2 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-120px)] lg:overflow-y-auto pr-2">
                     {tabs.map(tab => {
                         const isTemplates = tab.id === 'templates';
                         return (
@@ -139,7 +232,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                         <p className="text-[10px] text-gray-500">Contact Support</p>
                     </a>
                 </aside>
-                <main className="col-span-12 lg:col-span-10 min-h-[500px]">
+                <main className="flex-1 w-full min-h-[500px]">
                     {children}
                 </main>
             </div>

@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { ref, onValue, remove } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import { logAudit } from '@/lib/audit';
 
 export default function AllReportsPage() {
     const { user, userProfile } = useAuth();
@@ -114,25 +115,37 @@ export default function AllReportsPage() {
 
         const dataSourceId = userProfile.ownerId || user.uid;
         await remove(ref(database, `reports/${dataSourceId}/${reportId}`));
+
+        // Log Audit
+        await logAudit(dataSourceId, 'DELETE_REPORT', `Report ${reportId} deleted`, user.email || user.uid);
+
         showToast('Report deleted!', 'success');
     };
 
     // Helper function to format report ID
     const formatReportId = (report: any) => {
-        const repId = report.reportId || report.id;
-        const parts = (repId || '').split('-');
-        // Check if valid format: 3 parts, middle is 6 digits (YYYYMM)
-        if (parts.length === 3 && /^\d{6}$/.test(parts[1])) {
+        const repId = report.reportId || report.id || '';
+        const parts = repId.split('-');
+        
+        // Optimized format check:
+        // Case 1: New Signature Format (e.g., TES-2603-2901R) - 3 parts, middle is 4 digits (YYMM)
+        // Case 2: Legacy Valid Format (e.g., LABX-202603-0001) - 3 parts, middle is 6 digits (YYYYMM)
+        const middle = parts[1] || '';
+        const isStandard = parts.length === 3 && (/^\d{4}$/.test(middle) || /^\d{6}$/.test(middle));
+        
+        if (isStandard) {
             return repId;
         }
-        // Invalid format: regenerate with extracted sequence
-        const prefix = (userProfile?.labName || 'LAB').replace(/[^A-Za-z]/g, '').substring(0, 4).toUpperCase().padEnd(4, 'X');
+
+        // Invalid format fallback: regenerate with extracted sequence
+        const prefix = (userProfile?.labName || 'LAB').replace(/[^A-Za-z0-9]/g, '').substring(0, 3).toUpperCase().padEnd(3, 'X');
         const d = new Date(report.createdAt);
-        const ym = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const yymm = `${String(d.getFullYear()).slice(-2)}${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const dd = String(d.getDate()).padStart(2, '0');
         // Extract numbers from old ID (e.g., TEST-00007 → 0007)
-        const nums = (repId || '').replace(/\D/g, '');
-        const seq = nums.length >= 4 ? nums.slice(-4) : String(d.getTime()).slice(-4);
-        return `${prefix}-${ym}-${seq}`;
+        const nums = repId.replace(/\D/g, '');
+        const seq = nums.length >= 2 ? nums.slice(-2) : String(d.getTime()).slice(-2);
+        return `${prefix}-${yymm}-${dd}${seq}R`;
     };
 
     // Pagination
@@ -184,12 +197,12 @@ export default function AllReportsPage() {
                     <table className="w-full min-w-full">
                         <thead className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
                             <tr>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Report ID</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Patient Name</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Mobile</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Tests</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Date</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Actions</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Report ID</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Patient Name</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Mobile</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Tests</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Date</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -203,16 +216,16 @@ export default function AllReportsPage() {
                             ) : (
                                 paginatedReports.map(report => (
                                     <tr key={report.id} className="border-b hover:bg-gray-50 transition">
-                                        <td className="px-4 py-3 text-sm font-mono text-purple-600">
+                                        <td className="px-4 py-2 text-sm font-mono text-purple-600">
                                             {formatReportId(report)}
                                         </td>
-                                        <td className="px-4 py-3 text-sm font-semibold text-gray-800">
+                                        <td className="px-4 py-2 text-sm font-semibold text-gray-800">
                                             {report.patientName}
                                         </td>
-                                        <td className="px-4 py-3 text-sm font-medium text-gray-600">
+                                        <td className="px-4 py-2 text-sm font-medium text-gray-600">
                                             {report.patientMobile || 'N/A'}
                                         </td>
-                                        <td className="px-4 py-3 text-sm">
+                                        <td className="px-4 py-2 text-sm">
                                             {(() => {
                                                 const tests = report.tests || (report.testName ? [report.testName] : []);
                                                 if (tests.length === 0) return <span className="text-gray-400">N/A</span>;
@@ -249,26 +262,51 @@ export default function AllReportsPage() {
                                                 );
                                             })()}
                                         </td>
-                                        <td className="px-4 py-3 text-sm">
-                                            <div>{new Date(report.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
-                                            <div className="text-xs text-gray-500">{new Date(report.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
+                                        <td className="px-4 py-2 text-sm">
+                                        <div className="flex items-center gap-1.5 font-medium text-gray-700" title={`Time: ${new Date(report.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`}>
+                                            <span>{new Date(report.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                                            <i className="far fa-clock text-blue-400 cursor-help text-xs hover:text-blue-600 transition-colors"></i>
+                                        </div>
                                         </td>
-                                        <td className="px-4 py-3 text-sm flex items-center">
-                                            <button
-                                                onClick={() => handleDownloadPDF(report.id)}
-                                                className="text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 px-3 py-1.5 rounded-lg transition-colors duration-200 flex items-center gap-2 mr-2"
-                                                title="View Report PDF"
-                                            >
-                                                <i className="fas fa-file-pdf"></i>
-                                                <span className="font-bold text-xs">PDF</span>
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteReport(report.id)}
-                                                className="text-gray-400 hover:text-red-600 transition-colors ml-2"
-                                                title="Delete"
-                                            >
-                                                <i className="fas fa-trash"></i>
-                                            </button>
+                                        <td className="px-4 py-2 text-sm">
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => handleDownloadPDF(report.id)}
+                                                    className="bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 hover:text-red-700 px-2 py-1.5 rounded transition-all flex items-center gap-1 w-[60px] justify-center"
+                                                    title="View PDF"
+                                                >
+                                                    <i className="fas fa-file-pdf text-xs"></i>
+                                                    <span className="font-bold text-[10px]">PDF</span>
+                                                </button>
+
+                                                <button
+                                                    onClick={() => {
+                                                        const phone = report.patientMobile ? report.patientMobile.replace(/\D/g, '') : '';
+                                                        if (!phone || phone.length < 10) {
+                                                            alert('Invalid patient mobile number');
+                                                            return;
+                                                        }
+                                                        const reportLink = `${window.location.origin}/print/report/${report.reportId || report.id}?ownerId=${userProfile?.ownerId || user.uid}`;
+                                                        const text = `Hello ${report.patientName}, your lab report is ready. You can view it here: ${reportLink}`;
+                                                        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+                                                    }}
+                                                    className="bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 hover:text-green-700 px-2 py-1.5 rounded transition-all flex items-center gap-1 w-[60px] justify-center"
+                                                    title="Send on WhatsApp"
+                                                >
+                                                    <i className="fab fa-whatsapp text-xs"></i>
+                                                    <span className="font-bold text-[10px]">Send</span>
+                                                </button>
+
+                                                {userProfile?.role === 'lab' && (
+                                                    <button
+                                                        onClick={() => handleDeleteReport(report.id)}
+                                                        className="text-gray-400 hover:text-red-600 transition-colors p-1.5"
+                                                        title="Delete Report"
+                                                    >
+                                                        <i className="fas fa-trash text-xs"></i>
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))

@@ -13,8 +13,9 @@
 import { useState } from 'react';
 // Rule-based Analysis Helper (Replaces AI)
 const analyzeReportRules = (results: any[]) => {
-    const abnormals: string[] = [];
+    const abnormals: any[] = [];
     let criticalCount = 0;
+    let highCount = 0;
 
     results.forEach(r => {
         if (!r.normalRange || !r.value) return;
@@ -23,31 +24,58 @@ const analyzeReportRules = (results: any[]) => {
 
         if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(val)) {
             if (val < parts[0] || val > parts[1]) {
-                abnormals.push(r.test);
-                const range = parts[1] - parts[0];
-                const deviation = Math.max(parts[0] - val, val - parts[1]);
-                // 20% deviation considered critical
-                if (deviation > (range * 0.2)) criticalCount++;
+                const rangeWidth = parts[1] - parts[0] || 1;
+                const deviation = val < parts[0] ? (parts[0] - val) : (val - parts[1]);
+                const percentDeviation = (deviation / rangeWidth) * 100;
+
+                let severity = 'warning';
+                if (percentDeviation > 30) {
+                    severity = 'critical';
+                    criticalCount++;
+                } else if (percentDeviation > 15) {
+                    severity = 'high';
+                    highCount++;
+                }
+
+                abnormals.push({ test: r.test, val, min: parts[0], max: parts[1], severity, unit: r.unit });
             }
         }
     });
 
     let riskLevel = 'low';
     if (abnormals.length > 0) riskLevel = 'medium';
-    if (criticalCount > 0 || abnormals.length > 3) riskLevel = 'high';
+    if (highCount > 0 || abnormals.length > 2) riskLevel = 'high';
+    if (criticalCount > 0) riskLevel = 'critical';
+
+    const doctorSuggestions = abnormals.length > 0
+        ? [`Clinical correlation required for ${abnormals.map(a => a.test).join(', ')}.`, "Consider evaluating underlying comorbidities.", "Immediate follow-up if symptoms persist."]
+        : ["Routine monitoring recommended."];
+
+    const patientExplanation = abnormals.length > 0
+        ? `Some of your results are outside the standard range. This isn't always a cause for alarm but should be discussed with your doctor.`
+        : "Your laboratory results currently fall within the standard reference ranges.";
 
     return {
-        abnormals,
+        abnormals: abnormals.map(a => a.test),
+        detailedAbnormals: abnormals,
         insights: abnormals.length
-            ? `Analysis identified ${abnormals.length} parameter(s) outside standard reference ranges. This requires clinical correlation.`
+            ? `Analysis identified ${abnormals.length} parameter(s) requiring attention. The ${abnormals[0].test} deviation is ${percentDeviationCalculated(abnormals[0])}% from the reference range.`
             : "All test parameters fall within the standard reference ranges.",
         recommendations: abnormals.length
-            ? ["Consult physician for clinical correlation.", "Consider repeat testing if asymptomatic."]
-            : ["Routine follow-up as advised by your doctor."],
+            ? ["Consult physician for clinical correlation.", "Do not self-medicate based on these results."]
+            : ["Continue with routine health checkups."],
+        doctorSuggestions,
+        patientExplanation,
         riskLevel,
-        confidenceScore: 100
+        confidenceScore: 98
     };
 };
+
+function percentDeviationCalculated(a: any) {
+    const range = a.max - a.min || 1;
+    const dev = a.val < a.min ? (a.min - a.val) : (a.val - a.max);
+    return Math.round((dev / range) * 100);
+}
 
 interface AIReportAnalysisProps {
     testResults: Array<{ test: string; value: string; unit: string; normalRange?: string }>;
@@ -146,20 +174,32 @@ export default function AIReportAnalysis({
                         </div>
                     </div>
 
-                    {/* Abnormal Values */}
-                    {analysis.abnormals && analysis.abnormals.length > 0 && (
-                        <div className="bg-white rounded-lg p-3 border border-orange-200">
-                            <h4 className="font-bold text-sm text-orange-800 mb-2 flex items-center gap-2">
-                                <i className="fas fa-exclamation-triangle"></i>
-                                Abnormal Values
-                            </h4>
-                            <div className="flex flex-wrap gap-2">
-                                {analysis.abnormals.map((test: string, idx: number) => (
-                                    <span key={idx} className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs font-semibold">
-                                        {test}
-                                    </span>
+                    {/* Detailed Abnormals (New) */}
+                    {analysis.detailedAbnormals && analysis.detailedAbnormals.length > 0 && (
+                        <div className="bg-white rounded-lg p-3 border border-red-200">
+                            <h4 className="font-bold text-xs text-red-800 mb-2 uppercase tracking-wide">Technical Findings</h4>
+                            <div className="space-y-2">
+                                {analysis.detailedAbnormals.map((a: any, idx: number) => (
+                                    <div key={idx} className="flex justify-between items-center text-xs">
+                                        <span className="font-medium text-gray-700">{a.test}</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-gray-400">{a.min}-{a.max} {a.unit}</span>
+                                            <span className={`font-bold ${a.severity === 'critical' ? 'text-red-600' : 'text-orange-600'}`}>{a.val}</span>
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
+                        </div>
+                    )}
+
+                    {/* Patient Education (New) */}
+                    {analysis.patientExplanation && (
+                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg p-3 text-white">
+                            <h4 className="font-bold text-xs mb-1 uppercase tracking-wider flex items-center gap-2">
+                                <i className="fas fa-user-graduate"></i>
+                                Understanding Your Results
+                            </h4>
+                            <p className="text-xs opacity-90 leading-relaxed italic">"{analysis.patientExplanation}"</p>
                         </div>
                     )}
 
@@ -168,23 +208,23 @@ export default function AIReportAnalysis({
                         <div className="bg-white rounded-lg p-3 border border-blue-200">
                             <h4 className="font-bold text-sm text-blue-800 mb-2 flex items-center gap-2">
                                 <i className="fas fa-lightbulb"></i>
-                                Medical Insights
+                                Medical Summary
                             </h4>
                             <p className="text-sm text-gray-700">{analysis.insights}</p>
                         </div>
                     )}
 
-                    {/* Recommendations */}
-                    {analysis.recommendations && analysis.recommendations.length > 0 && (
-                        <div className="bg-white rounded-lg p-3 border border-green-200">
-                            <h4 className="font-bold text-sm text-green-800 mb-2 flex items-center gap-2">
-                                <i className="fas fa-clipboard-check"></i>
-                                Recommendations
+                    {/* Doctor Suggestions (New) */}
+                    {analysis.doctorSuggestions && analysis.doctorSuggestions.length > 0 && (
+                        <div className="bg-slate-800 rounded-lg p-3 text-white">
+                            <h4 className="font-bold text-xs text-slate-400 mb-2 uppercase tracking-widest flex items-center gap-2">
+                                <i className="fas fa-stethoscope"></i>
+                                Suggestions for Physician
                             </h4>
                             <ul className="space-y-1">
-                                {analysis.recommendations.map((rec: string, idx: number) => (
-                                    <li key={idx} className="text-sm text-gray-700 flex items-start gap-2">
-                                        <i className="fas fa-check-circle text-green-600 mt-0.5"></i>
+                                {analysis.doctorSuggestions.map((rec: string, idx: number) => (
+                                    <li key={idx} className="text-[11px] flex items-start gap-2 opacity-90">
+                                        <i className="fas fa-arrow-right text-blue-400 mt-1"></i>
                                         <span>{rec}</span>
                                     </li>
                                 ))}

@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { ref, onValue, push, set, update } from 'firebase/database';
+import { ref, onValue, push, set, update, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
-import { generateSequentialId } from '@/lib/idGenerator';
+import { generateReportId } from '@/lib/idGenerator';
 import { useRouter } from 'next/navigation';
 import Modal from './Modal';
 import AIReportAnalysis from './AIReportAnalysis';
 import { defaultTemplates } from '@/lib/defaultTemplates';
+import { getParameterTrend } from '@/lib/trendAnalysis';
+import { mergeTemplates } from '@/lib/templateUtils';
 
 interface QuickReportModalProps {
     onClose: () => void;
@@ -24,6 +26,12 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
     const { user } = useAuth();
     const { isPremium } = useSubscription();
     const router = useRouter();
+
+    // Fix missing showToast with a simple helper
+    const showToast = (message: string, type: string = 'info') => {
+        alert(`${type.toUpperCase()}: ${message}`);
+    };
+
     const [selectedPatientId, setSelectedPatientId] = useState('');
     const [selectedSampleId, setSelectedSampleId] = useState('');
     const [selectedDoctorId, setSelectedDoctorId] = useState('');
@@ -73,15 +81,9 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                 const userTemplates: any[] = [];
                 snapshot.forEach(child => { userTemplates.push({ id: child.key, ...child.val() }); });
 
-                // Merge with local defaultTemplates using consistent ID generation
-                const formattedDefaults = defaultTemplates.map((t, idx) => ({
-                    ...t,
-                    id: `SYS-${idx}-${t.name.replace(/\s+/g, '-')}`,
-                    isSystem: true
-                }));
-
-                const combined = [...userTemplates, ...formattedDefaults];
-                setTemplates(combined.sort((a, b) => a.name.localeCompare(b.name)));
+                // Use centralized mergeTemplates to prevent duplicates and prioritize overrides
+                const combined = mergeTemplates(userTemplates);
+                setTemplates(combined);
             }),
             onValue(samplesRef, (snapshot) => {
                 const data: any[] = [];
@@ -164,6 +166,33 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             }
         }
     }, [initialSampleId, samples]);
+
+    // Synchronize Doctor based on Patient/Sample
+    useEffect(() => {
+        if (!selectedPatientId || patients.length === 0) return;
+
+        const patient = patients.find(p => p.id === selectedPatientId);
+        const sample = selectedSampleId ? samples.find(s => s.id === selectedSampleId) : null;
+        
+        // Priority: 1. Inherited From Sample, 2. Patient's Default Doctor
+        const targetDoctorName = sample?.patientRefDoctor || patient?.refDoctor;
+
+        if (targetDoctorName) {
+            // Check if it's an internal doctor
+            const internalDoc = doctors.find(d => d.name.toLowerCase().includes(targetDoctorName.toLowerCase()));
+            if (internalDoc) {
+                setSelectedDoctorId(internalDoc.id);
+                setSelectedExternalDoctorId('');
+            } else {
+                // Check external doctors
+                const externalDoc = externalDoctors.find(d => d.name.toLowerCase().includes(targetDoctorName.toLowerCase()));
+                if (externalDoc) {
+                    setSelectedExternalDoctorId(externalDoc.id);
+                    setSelectedDoctorId('');
+                }
+            }
+        }
+    }, [selectedPatientId, selectedSampleId, patients, doctors, externalDoctors]);
 
 
 
@@ -325,15 +354,90 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
 
         try {
             // Generate sequential IDs with premium status from subscription
-            const reportId = await generateSequentialId(
-                ownerId, // Use ownerId
-                'report',
-                branding.labName,
-                isPremium
+            const reportId = await generateReportId(
+                ownerId, 
+                branding.labName || 'CLINIC'
             );
 
             // We use the existing sample ID
             const sampleId = sampleData?.sampleNumber || 'UNKNOWN';
+
+            const testDetails = await Promise.all(selectedTests.map(async (testId) => {
+                const template = templates.find(t => t.id === testId);
+                if (!template) return null;
+
+                const typeData = reportTypeStates[testId] || {};
+                const isCulture = template.reportType === 'culture' || (template.category === 'Microbiology' && template.name.toLowerCase().includes('culture'));
+                const isNarrative = template.reportType === 'narrative' || ['Radiology', 'Histopathology', 'Biopsy', 'Cardiology'].includes(template.category) ||
+                    template.name.toLowerCase().includes('x-ray') ||
+                    template.name.toLowerCase().includes('ultrasound');
+
+                const subtests = await Promise.all((template.subtests || []).map(async (subtest: any, index: number) => {
+                    const value = testResults[testId]?.[index] || '';
+                    const ranges = patientData.gender === 'Male' ? subtest.ranges.male : subtest.ranges.female;
+
+                    // Fetch Trend Data
+                    const trend = await getParameterTrend(ownerId, selectedPatientId, subtest.name);
+
+                    // Calculate threat level (Corrected Logic)
+                    let threatLevel = 'Normal';
+                    const numValue = parseFloat(value);
+
+                    // Only calculate if value is a number and ranges exist
+                    if (!isNaN(numValue) && ranges && ranges.min !== undefined && ranges.max !== undefined) {
+                        const min = parseFloat(ranges.min);
+                        const max = parseFloat(ranges.max);
+
+                        if (numValue < min || numValue > max) {
+                            threatLevel = 'warning';
+
+                            // Check if it's REALLY bad (e.g. 30% off)
+                            const rangeSpan = (max - min) || 1;
+                            if (numValue < min - (rangeSpan * 0.3) || numValue > max + (rangeSpan * 0.3)) {
+                                threatLevel = 'critical';
+
+                                // Push Critical Alert Notification
+                                // We do this asynchronously without awaiting to not block UI
+                                push(ref(database, `notifications/${ownerId}`), {
+                                    type: 'CRITICAL_VALUE',
+                                    title: 'Critical Lab Value Detected',
+                                    message: `Critical ${subtest.name} (${value} ${subtest.unit}) for ${patientData.name}.`,
+                                    patientId: selectedPatientId,
+                                    reportId: reportId,
+                                    severity: 'critical',
+                                    read: false,
+                                    createdAt: new Date().toISOString()
+                                }).catch(e => console.error(e));
+                            }
+                        }
+                    }
+
+                    return {
+                        name: subtest.name,
+                        unit: subtest.unit,
+                        value,
+                        ranges,
+                        threatLevel, // Pass the calculated threat level to the PDF
+                        trend: trend.slice(-5) // Pass last 5 trend points
+                    };
+                }));
+
+                return {
+                    testId,
+                    testName: template.name,
+                    category: template.category,
+                    reportType: template.reportType || (isCulture ? 'culture' : isNarrative ? 'narrative' : 'numeric'),
+                    cultureData: isCulture ? {
+                        organism: typeData.organism || '',
+                        colonyCount: typeData.colonyCount || '',
+                        antibiotics: typeData.antibiotics || []
+                    } : null,
+                    narrativeText: isNarrative ? (typeData.narrativeText || '') : null,
+                    findings: isNarrative ? (typeData.findings || '') : null,
+                    impression: isNarrative ? (typeData.impression || '') : null,
+                    subtests
+                };
+            }));
 
             const reportData = {
                 reportId,
@@ -347,71 +451,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                 refDoctorId: selectedDoctorId || '',
                 testName: selectedTests.map(id => templates.find(t => t.id === id)?.name).join(', '),
                 tests: selectedTests.map(id => templates.find(t => t.id === id)?.name),
-                testDetails: selectedTests.map(testId => {
-                    const template = templates.find(t => t.id === testId);
-                    if (!template) return null;
-
-                    const typeData = reportTypeStates[testId] || {};
-                    const isCulture = template.reportType === 'culture' || (template.category === 'Microbiology' && template.name.toLowerCase().includes('culture'));
-                    const isNarrative = template.reportType === 'narrative' || ['Radiology', 'Histopathology', 'Biopsy', 'Cardiology'].includes(template.category) ||
-                        template.name.toLowerCase().includes('x-ray') ||
-                        template.name.toLowerCase().includes('ultrasound');
-
-                    return {
-                        testId,
-                        testName: template.name,
-                        category: template.category,
-                        reportType: template.reportType || (isCulture ? 'culture' : isNarrative ? 'narrative' : 'numeric'),
-                        cultureData: isCulture ? {
-                            organism: typeData.organism || '',
-                            colonyCount: typeData.colonyCount || '',
-                            antibiotics: typeData.antibiotics || []
-                        } : null,
-                        narrativeText: isNarrative ? (typeData.narrativeText || '') : null,
-                        findings: isNarrative ? (typeData.findings || '') : null,
-                        impression: isNarrative ? (typeData.impression || '') : null,
-                        subtests: (template.subtests || []).map((subtest: any, index: number) => {
-                            const value = testResults[testId]?.[index] || '';
-                            const ranges = patientData.gender === 'Male' ? subtest.ranges.male : subtest.ranges.female;
-
-                            // Calculate threat level (Corrected Logic)
-                            let threatLevel = 'Normal';
-                            const numValue = parseFloat(value);
-
-                            // Only calculate if value is a number and ranges exist
-                            if (!isNaN(numValue) && ranges && ranges.min !== undefined && ranges.max !== undefined) {
-                                const min = parseFloat(ranges.min);
-                                const max = parseFloat(ranges.max);
-
-                                // Check Critical First (30% deviation)
-                                // Use 0.7 for min and 1.3 for max as critical boundaries? 
-                                // Actually, typical lab logic:
-                                // Low: < Min
-                                // High: > Max
-                                // Critical: < Min*0.7 OR > Max*1.3 (Example)
-
-                                // Let's simplify to: warning if out of range, critical if significantly out
-                                if (numValue < min || numValue > max) {
-                                    threatLevel = 'warning';
-
-                                    // Check if it's REALLY bad (e.g. 20% off)
-                                    const rangeSpan = max - min;
-                                    if (numValue < min - (rangeSpan * 0.5) || numValue > max + (rangeSpan * 0.5)) {
-                                        threatLevel = 'critical';
-                                    }
-                                }
-                            }
-
-                            return {
-                                name: subtest.name,
-                                unit: subtest.unit,
-                                value,
-                                ranges,
-                                threatLevel // Pass the calculated threat level to the PDF
-                            };
-                        })
-                    };
-                }).filter(Boolean),
+                testDetails: testDetails.filter(Boolean),
                 reportDate,
                 createdAt: new Date().toISOString(),
                 sampleId,
@@ -432,7 +472,50 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                 reportId: reportId
             });
 
-            alert(skipPrint ? 'Test finalized successfully!' : 'Report generated successfully!');
+            // ---------------------------------------------------------
+            // INVENTORY AUTO-DEDUCTION (Top-Class Feature)
+            // ---------------------------------------------------------
+            try {
+                const inventoryRef = ref(database, `inventory/${ownerId}`);
+                const invSnapshot = await get(inventoryRef);
+
+                if (invSnapshot.exists()) {
+                    const inventory = invSnapshot.val();
+                    const updates: any = {};
+                    const usedItems: string[] = [];
+                    // Get test names from the template IDs map
+                    const testNames = selectedTests.map(id => templates.find(t => t.id === id)?.name || '').filter(Boolean);
+
+                    Object.keys(inventory).forEach(key => {
+                        const item = inventory[key];
+                        if (item.quantity <= 0) return; // Skip if out of stock
+
+                        // Simple fuzzy match: Does inventory item name contain the test name? 
+                        // Or does test name contain inventory item name?
+                        // Example: "Glucose Kit" matches "Glucose Fasting" (partial)
+                        const matchedTest = testNames.find(tName => {
+                            const t = tName.toLowerCase();
+                            const i = item.name.toLowerCase();
+                            return i.includes(t) || t.includes(i);
+                        });
+
+                        if (matchedTest) {
+                            updates[`inventory/${ownerId}/${key}/quantity`] = item.quantity - 1;
+                            if (!usedItems.includes(item.name)) usedItems.push(item.name);
+                        }
+                    });
+
+                    if (Object.keys(updates).length > 0) {
+                        await update(ref(database), updates);
+                        if (usedItems.length > 0) showToast(`Inventory Updated: Used ${usedItems.join(', ')}`, 'info');
+                    }
+                }
+            } catch (invError) {
+                console.error('Inventory deduction failed:', invError);
+            }
+            // ---------------------------------------------------------
+
+            showToast(skipPrint ? 'Test finalized successfully!' : 'Report generated successfully!', 'success');
             onClose();
 
             // Open print view only if not skipped

@@ -7,9 +7,6 @@ import { generateUsername } from '@/lib/userUtils';
 
 export async function POST(request: NextRequest) {
     try {
-        // Sign in anonymously to bypass security rules
-        await signInAnonymously(auth);
-
         const { username, password } = await request.json();
         const cleanPassword = password ? password.trim() : '';
 
@@ -17,104 +14,140 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Missing credentials' }, { status: 400 });
         }
 
+        // --- AUTHENTICATE SERVER CONTEXT ---
+        // Crucial for satisfying Firebase security rules in a Node.js/Next.js environment
+        if (!auth.currentUser) {
+            try {
+                await signInAnonymously(auth);
+                console.log('✅ Server authenticated anonymously for login query');
+            } catch (err: any) {
+                console.warn('⚠️ Server-side auth warning:', err.message);
+                // Continue anyway, as some rules might allow public access
+            }
+        }
+
         const cleanUsername = username.toLowerCase().trim();
-        const rolePart = cleanUsername.split('@')[1];
-
-        let role: string;
-        let path: string;
-
-        if (rolePart === 'receptionist' || rolePart === 'admin') {
-            role = 'receptionist';
-            path = 'receptionist';
-        } else if (rolePart === 'lab') {
-            role = 'lab';
-            path = 'lab';
-        } else if (rolePart === 'pharmacy') {
-            role = 'pharmacy';
-            path = 'pharmacy';
-        } else if (rolePart && rolePart.startsWith('dr')) {
-            // Doctor usernames are like: spot@drjohn, spot@drmary
-            role = 'doctor';
-            path = 'doctors';
+        
+        // 1. Extract prefix
+        let prefix = '';
+        if (cleanUsername.includes('_')) {
+            prefix = cleanUsername.split('_')[0];
+        } else if (cleanUsername.includes('@')) {
+            prefix = cleanUsername.split('@')[0];
         } else {
-            // Invalid username format
-            return NextResponse.json({ error: 'Invalid username format' }, { status: 401 });
+            prefix = cleanUsername; 
         }
 
-        const labPrefix = cleanUsername.split('@')[0];
+        console.log(`🔍 Auth Attempt: ${cleanUsername} (Prefix: ${prefix})`);
 
-        // Read all users (this works because we're on the server with admin SDK)
-        const usersRef = ref(database, 'users');
-        const snapshot = await get(usersRef);
+        // 2. SURGICAL LOOKUP
+        const prefixRef = ref(database, `prefixes/${prefix}`);
+        const prefixSnap = await get(prefixRef);
+        
+        let ownerId = prefixSnap.exists() ? prefixSnap.val() : null;
+        let usersToSearch = [];
 
-        if (!snapshot.exists()) {
-            return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
+        if (ownerId && typeof ownerId === 'string') {
+            console.log(`🎯 Prefix matched! Owner: ${ownerId}`);
+            const ownerRef = ref(database, `users/${ownerId}`);
+            const ownerSnap = await get(ownerRef);
+            if (ownerSnap.exists()) {
+                usersToSearch.push({ id: ownerId, data: ownerSnap.val() });
+            }
         }
 
-        const users = snapshot.val();
+        if (usersToSearch.length === 0) {
+            console.log('⚠️ Prefix not found in index.');
+            return NextResponse.json({ error: 'Laboratory not found. Owner must login via Google first to index.' }, { status: 404 });
+        }
 
-        // Search through all owners
-        for (const ownerId in users) {
-            const profileRef = ref(database, `users/${ownerId}/profile`);
-            const profileSnapshot = await get(profileRef);
+        // 4. Fetch Subscriptions
+        const subsSnap = await get(ref(database, 'subscriptions'));
+        const subscriptions = subsSnap.exists() ? subsSnap.val() : {};
 
-            if (!profileSnapshot.exists()) continue;
+        // 5. Match User
+        for (const item of usersToSearch) {
+            const currentOwnerId = item.id;
+            const userData = item.data;
+            if (!userData || !userData.auth) continue;
 
-            const profile = profileSnapshot.val();
+            const authData = userData.auth;
+            
+            // Sub Status Helper
+            const isOwnerSubActive = () => {
+                const subData = subscriptions[currentOwnerId];
+                const now = new Date();
+                if (subData && subData.isPremium) {
+                    return new Date(subData.expiryDate) > now;
+                }
+                const createdAt = userData?.profile?.createdAt;
+                if (createdAt) {
+                    const trialDuration = 14 * 24 * 60 * 60 * 1000;
+                    return (now.getTime() - new Date(createdAt).getTime()) < trialDuration;
+                }
+                return false;
+            };
 
-            // Improved Owner Detection: Check actual usage (Receptionist/Lab) instead of re-deriving
-            // This handles cases where prefix has a number suffix (e.g. 'medi1') due to uniqueness checks
-            let clinicPrefix = '';
-            const authData = users[ownerId].auth;
+            const isSubActive = isOwnerSubActive();
 
-            if (authData?.receptionist?.username) clinicPrefix = authData.receptionist.username.split('@')[0];
-            else if (authData?.lab?.username) clinicPrefix = authData.lab.username.split('@')[0];
-            else if (authData?.pharmacy?.username) clinicPrefix = authData.pharmacy.username.split('@')[0];
-            else clinicPrefix = generateUsername(profile.labName || '', 'receptionist').split('@')[0]; // Fallback
-
-            if (clinicPrefix === labPrefix) {
-                const authPath = role === 'doctor'
-                    ? `users/${ownerId}/auth/doctors`
-                    : `users/${ownerId}/auth/${path}`;
-
-                const userRef = ref(database, authPath);
-                const userSnapshot = await get(userRef);
-
-                if (!userSnapshot.exists()) continue;
-
-                if (role === 'doctor') {
-                    const doctors = userSnapshot.val();
-                    for (const doctorId in doctors) {
-                        const doctor = doctors[doctorId];
-                        if (doctor.username === cleanUsername && verifyPassword(cleanPassword, doctor.passwordHash)) {
-                            console.log('✅ Doctor login successful:', doctorId);
-                            return NextResponse.json({
-                                success: true,
-                                user: {
-                                    userId: doctorId,
-                                    username: doctor.username,
-                                    name: doctor.name,
-                                    role: 'doctor',
-                                    isActive: doctor.isActive,
-                                    doctorId: doctor.doctorId,
-                                    ownerId: ownerId
-                                }
-                            });
-                        }
+            // Check primary roles
+            const primaryRoles = ['receptionist', 'lab', 'pharmacy'];
+            for (const r of primaryRoles) {
+                const pUser = authData[r];
+                if (pUser && typeof pUser === 'object' && pUser.username === cleanUsername && verifyPassword(cleanPassword, pUser.passwordHash)) {
+                    if (!isSubActive && r !== 'receptionist') {
+                        return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
                     }
-                } else {
-                    const user = userSnapshot.val();
-                    if (user.username === cleanUsername && verifyPassword(cleanPassword, user.passwordHash)) {
-                        console.log(`✅ ${role} login successful`);
+                    return NextResponse.json({
+                        success: true,
+                        user: {
+                            userId: pUser.id || pUser.username,
+                            username: pUser.username,
+                            name: pUser.name,
+                            role: pUser.role || r,
+                            isActive: pUser.isActive !== false,
+                            ownerId: currentOwnerId
+                        }
+                    });
+                }
+            }
+
+            // Check staff collection
+            if (authData.staff && typeof authData.staff === 'object') {
+                for (const sId in authData.staff) {
+                    const staff = authData.staff[sId];
+                    if (staff && staff.username === cleanUsername && verifyPassword(cleanPassword, staff.passwordHash)) {
+                        if (!isSubActive) return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
                         return NextResponse.json({
                             success: true,
                             user: {
-                                userId: user.id || user.username,
-                                username: user.username,
-                                name: user.name,
-                                role: user.role,
-                                isActive: user.isActive,
-                                ownerId: ownerId
+                                userId: sId,
+                                username: staff.username,
+                                name: staff.name,
+                                role: staff.role,
+                                isActive: staff.isActive !== false,
+                                ownerId: currentOwnerId
+                            }
+                        });
+                    }
+                }
+            }
+
+            // Check doctors collection
+            if (authData.doctors && typeof authData.doctors === 'object') {
+                for (const dId in authData.doctors) {
+                    const doctor = authData.doctors[dId];
+                    if (doctor && doctor.username === cleanUsername && verifyPassword(cleanPassword, doctor.passwordHash)) {
+                        if (!isSubActive) return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
+                        return NextResponse.json({
+                            success: true,
+                            user: {
+                                userId: dId,
+                                username: doctor.username,
+                                name: doctor.name,
+                                role: 'doctor',
+                                isActive: doctor.isActive !== false,
+                                ownerId: currentOwnerId
                             }
                         });
                     }
@@ -123,8 +156,12 @@ export async function POST(request: NextRequest) {
         }
 
         return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-    } catch (error) {
-        console.error('Auth API error:', error);
-        return NextResponse.json({ error: 'Authentication failed' }, { status: 500 });
+    } catch (error: any) {
+        console.error('CRITICAL Auth API Error:', error.message);
+        return NextResponse.json({ 
+            error: 'Authentication failed. Please try again later.', 
+            debug: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        }, { status: 500 });
     }
 }

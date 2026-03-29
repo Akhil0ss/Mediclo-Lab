@@ -57,9 +57,16 @@ export default function TemplatesPage() {
     }]);
 
     useEffect(() => {
-        if (!user) return;
+        if (!user || !userProfile) return;
+
+        // Safety: If the user is staff but ownerId isn't loaded yet, wait.
+        if (userProfile.role === 'lab' && !userProfile.ownerId) {
+            console.log('⏳ Templates: Waiting for Laboratory Owner ID sync...');
+            return;
+        }
+
         loadTemplates();
-    }, [user, dataSourceId]);
+    }, [user, userProfile, dataSourceId]);
 
     useEffect(() => {
         const lowerQ = searchQuery.toLowerCase();
@@ -385,11 +392,11 @@ export default function TemplatesPage() {
                     <table className="w-full min-w-full">
                         <thead className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
                             <tr>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Test Name</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Category</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Subtests</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Price</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Actions</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Test Name</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Category</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Subtests</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Price</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -409,7 +416,7 @@ export default function TemplatesPage() {
                             ) : (
                                 paginatedTemplates.map(template => (
                                     <tr key={template.id} className="border-b hover:bg-gray-50 transition">
-                                        <td className="px-4 py-3 text-sm font-semibold text-gray-800">
+                                        <td className="px-4 py-2 text-sm font-semibold text-gray-800">
                                             {template.name}
                                             {template.isSystem ? (
                                                 <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-200" title="System Template (Standard)">
@@ -425,10 +432,10 @@ export default function TemplatesPage() {
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm">{template.category}</td>
-                                        <td className="px-4 py-3 text-sm">{template.subtests?.length || 0}</td>
-                                        <td className="px-4 py-3 text-sm font-semibold text-green-600">₹{template.totalPrice}</td>
-                                        <td className="px-4 py-3 text-sm">
+                                        <td className="px-4 py-2 text-sm">{template.category}</td>
+                                        <td className="px-4 py-2 text-sm">{template.subtests?.length || 0}</td>
+                                        <td className="px-4 py-2 text-sm font-semibold text-green-600">₹{template.totalPrice}</td>
+                                        <td className="px-4 py-2 text-sm">
                                             <div className="flex items-center gap-3">
                                                 <button
                                                     onClick={() => openViewModal(template)}

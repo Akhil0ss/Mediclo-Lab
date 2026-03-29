@@ -200,7 +200,7 @@ export default function BillingPage() {
                         <tbody>
                             {items.map((item, idx) => (
                                 <tr key={idx} className="border-b hover:bg-gray-50 transition-colors">
-                                    <td className="px-4 py-3 text-sm">
+                                    <td className="px-4 py-2 text-sm">
                                         <input
                                             type="text"
                                             value={item.name}
@@ -209,7 +209,7 @@ export default function BillingPage() {
                                             className="w-full px-2 py-1 border border-transparent focus:border-blue-300 focus:bg-white rounded transition-all outline-none"
                                         />
                                     </td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-4 py-2">
                                         <input
                                             type="number"
                                             value={item.quantity}
@@ -218,7 +218,7 @@ export default function BillingPage() {
                                             min="1"
                                         />
                                     </td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-4 py-2">
                                         <input
                                             type="number"
                                             value={item.rate}
@@ -227,10 +227,10 @@ export default function BillingPage() {
                                             min="0"
                                         />
                                     </td>
-                                    <td className="px-4 py-3 text-right font-bold text-gray-700">
+                                    <td className="px-4 py-2 text-right font-bold text-gray-700">
                                         {formatCurrency(item.amount)}
                                     </td>
-                                    <td className="px-4 py-3 text-center">
+                                    <td className="px-4 py-2 text-center">
                                         {items.length > 1 && (
                                             <button onClick={() => removeItem(idx)} className="text-gray-300 hover:text-red-500 transition-colors">
                                                 <i className="fas fa-trash-alt"></i>

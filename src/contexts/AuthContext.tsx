@@ -287,11 +287,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         // Only use session if it has actual user data (role/username)
                         // Session created by session management only has sessionId/device/lastActive
                         if (session.role || session.username) {
+                            console.log('✅ Found staff session - syncing branding for lab:', session.labName);
                             setUserProfile({
                                 role: session.role,
                                 name: session.name || session.username,
-                                email: '',
-                                ownerId: session.ownerId
+                                email: session.email || '',
+                                labName: session.labName || '',
+                                hospitalName: session.labName || '',
+                                ownerId: session.ownerId,
+                                setupCompleted: true
                             });
                             setLoading(false);
                             return;

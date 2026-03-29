@@ -1,0 +1,171 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+    
+    "users": {
+      "$userId": {
+        ".read": "auth != null && auth.uid === $userId",
+        ".write": "auth != null && auth.uid === $userId",
+        
+        "profile": {
+          ".read": "auth != null && auth.uid === $userId",
+          ".write": "auth != null && auth.uid === $userId",
+          ".validate": "newData.hasChildren(['name', 'email', 'hospitalName', 'role'])"
+        },
+        
+        "settings": {
+          ".read": "auth != null && auth.uid === $userId",
+          ".write": "auth != null && auth.uid === $userId"
+        }
+      }
+    },
+    
+    "hospitals": {
+      "$hospitalId": {
+        ".read": "auth != null && (data.child('owner').val() === auth.uid || data.child('staff/' + auth.uid).exists())",
+        ".write": "auth != null && data.child('owner').val() === auth.uid",
+        
+        "info": {
+          ".read": "auth != null && (data.parent().child('owner').val() === auth.uid || data.parent().child('staff/' + auth.uid).exists())",
+          ".write": "auth != null && data.parent().child('owner').val() === auth.uid",
+          ".validate": "newData.hasChildren(['name', 'address', 'contact'])"
+        },
+        
+        "staff": {
+          "$staffId": {
+            ".read": "auth != null && (data.parent().parent().child('owner').val() === auth.uid || data.parent().parent().child('staff/' + auth.uid).exists())",
+            ".write": "auth != null && data.parent().parent().child('owner').val() === auth.uid"
+          }
+        },
+        
+        "settings": {
+          ".read": "auth != null && (data.parent().child('owner').val() === auth.uid || data.parent().child('staff/' + auth.uid).exists())",
+          ".write": "auth != null && data.parent().child('owner').val() === auth.uid"
+        }
+      }
+    },
+    
+    "patients": {
+      "$hospitalId": {
+        "$patientId": {
+          ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+          ".write": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+          
+          "personal_info": {
+            ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+            ".write": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+            ".validate": "newData.hasChildren(['name', 'age', 'gender'])"
+          },
+          
+          "medical_history": {
+            ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+            ".write": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())"
+          }
+        }
+      }
+    },
+    
+    "lab_reports": {
+      "$hospitalId": {
+        "$reportId": {
+          ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+          ".write": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+          
+          "metadata": {
+            ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+            ".write": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+            ".validate": "newData.hasChildren(['patientId', 'createdAt', 'status'])"
+          },
+          
+          "results": {
+            ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+            ".write": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())"
+          },
+          
+          "pdf_data": {
+            ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+            ".write": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())"
+          }
+        },
+        
+        "_index": {
+          ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+          ".write": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())"
+        }
+      }
+    },
+    
+    "lab_tests": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users/' + auth.uid + '/profile/role').val() === 'admin'",
+      
+      "$testId": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('users/' + auth.uid + '/profile/role').val() === 'admin'",
+        ".validate": "newData.hasChildren(['name', 'category', 'price', 'parameters'])"
+      }
+    },
+    
+    "templates": {
+      "$hospitalId": {
+        ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+        ".write": "auth != null && root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid",
+        
+        "$templateId": {
+          ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+          ".write": "auth != null && root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid"
+        }
+      }
+    },
+    
+    "analytics": {
+      "$hospitalId": {
+        ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+        ".write": "auth != null && root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid",
+        
+        "reports": {
+          ".read": "auth != null && (root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid || root.child('hospitals/' + $hospitalId + '/staff/' + auth.uid).exists())",
+          ".write": "false"
+        },
+        
+        "revenue": {
+          ".read": "auth != null && root.child('hospitals/' + $hospitalId + '/owner').val() === auth.uid",
+          ".write": "false"
+        }
+      }
+    },
+    
+    "subscriptions": {
+      "$userId": {
+        ".read": "auth != null && auth.uid === $userId",
+        ".write": "auth != null && auth.uid === $userId",
+        
+        "current_plan": {
+          ".read": "auth != null && auth.uid === $userId",
+          ".write": "false"
+        },
+        
+        "billing_history": {
+          ".read": "auth != null && auth.uid === $userId",
+          ".write": "false"
+        }
+      }
+    },
+    
+    "system": {
+      ".read": "auth != null && root.child('users/' + auth.uid + '/profile/role').val() === 'admin'",
+      ".write": "auth != null && root.child('users/' + auth.uid + '/profile/role').val() === 'admin'",
+      
+      "settings": {
+        ".read": "auth != null && root.child('users/' + auth.uid + '/profile/role').val() === 'admin'",
+        ".write": "auth != null && root.child('users/' + auth.uid + '/profile/role').val() === 'admin'"
+      },
+      
+      "audit_log": {
+        ".read": "auth != null && root.child('users/' + auth.uid + '/profile/role').val() === 'admin'",
+        ".write": "false"
+      }
+    }
+  }
+}

@@ -93,7 +93,15 @@ export default function SamplesPage() {
     useEffect(() => {
         if (!user || !userProfile) return;
 
+        // Ensure we are fetching from the Master Owner account
         const dataSourceId = userProfile.ownerId || user.uid;
+
+        // Safety: If the user is staff but ownerId isn't loaded yet, wait.
+        if (userProfile.role === 'lab' && !userProfile.ownerId) {
+            console.log('⏳ Samples: Waiting for Laboratory Owner ID sync...');
+            return;
+        }
+
         const samplesRef = ref(database, `samples/${dataSourceId}`);
         const patientsRef = ref(database, `patients/${dataSourceId}`);
         const templatesRef = ref(database, `templates/${dataSourceId}`);
@@ -205,6 +213,7 @@ export default function SamplesPage() {
             sampleNumber: sampleId, // Keep for backward compatibility
             patientId: formData.patientId,
             patientName: patient?.name || '',
+            patientRefDoctor: patient?.refDoctor || 'Self', // Inherit doctor from patient
             sampleType: formData.sampleType,
             date: formData.date,
             status: formData.status,
@@ -409,13 +418,13 @@ export default function SamplesPage() {
                     <table className="w-full min-w-full">
                         <thead className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
                             <tr>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Sample ID</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Patient Name</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Mobile</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Sample Type</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Collection Date</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Status</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Actions</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold whitespace-nowrap">Sample ID</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold whitespace-nowrap">Patient Name</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold whitespace-nowrap">Mobile</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold whitespace-nowrap">Sample Type</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold whitespace-nowrap">Collection Date</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold whitespace-nowrap">Status</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold whitespace-nowrap">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -433,18 +442,22 @@ export default function SamplesPage() {
 
                                     return (
                                         <tr key={sample.id} className="border-b hover:bg-gray-50 transition">
-                                            <td className="px-4 py-3 text-sm font-semibold text-purple-600">
+                                            <td className="px-4 py-2 text-sm font-mono text-purple-600 whitespace-nowrap">
                                                 {sample.sampleNumber}
                                                 {sample.priority && sample.priority !== 'Routine' && (
-                                                    <span className={`block mt-1 text-xs w-fit px-1.5 py-0.5 rounded ${sample.priority === 'Emergency' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
+                                                    <span className={`inline-block ml-2 text-xs w-fit px-1.5 py-0.5 rounded font-sans ${sample.priority === 'Emergency' ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'
                                                         }`}>
                                                         {sample.priority}
                                                     </span>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 text-sm font-semibold">{patientName}</td>
-                                            <td className="px-4 py-3 text-sm font-medium text-gray-600">{patient?.mobile || 'N/A'}</td>
-                                            <td className="px-4 py-3 text-sm">
+                                            <td className="px-4 py-2 text-sm font-semibold text-gray-800 whitespace-nowrap">
+                                                {patientName}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm font-medium text-gray-600 whitespace-nowrap">
+                                                {patient?.mobile || 'N/A'}
+                                            </td>
+                                            <td className="px-4 py-2 text-sm min-w-[200px]">
                                                 {(() => {
                                                     const sampleTypes = sample.sampleType ? sample.sampleType.split(', ') : [];
                                                     if (sampleTypes.length === 0) return <span className="text-gray-400">N/A</span>;
@@ -454,22 +467,22 @@ export default function SamplesPage() {
                                                     const isExpanded = expandedTestsRow === sample.id;
 
                                                     return (
-                                                        <div className="flex flex-col gap-1">
-                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <div className="flex flex-col gap-1.5">
+                                                            <div className="flex items-center gap-2">
                                                                 <span className="inline-block bg-green-50 text-green-700 px-2 py-0.5 rounded text-xs font-medium border border-green-100 whitespace-nowrap">
                                                                     {firstType}
                                                                 </span>
                                                                 {remainingCount > 0 && (
                                                                     <button
                                                                         onClick={() => setExpandedTestsRow(isExpanded ? null : sample.id)}
-                                                                        className="inline-block bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded text-xs font-bold border border-purple-200 hover:bg-purple-100 transition-colors whitespace-nowrap"
+                                                                        className="inline-block bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-xs font-bold border border-purple-200 hover:bg-purple-100 transition-colors whitespace-nowrap"
                                                                     >
-                                                                        {isExpanded ? '−' : `+${remainingCount}`}
+                                                                        {isExpanded ? '− Less' : `+${remainingCount} more`}
                                                                     </button>
                                                                 )}
                                                             </div>
                                                             {isExpanded && remainingCount > 0 && (
-                                                                <div className="flex flex-wrap gap-1">
+                                                                <div className="mt-1 p-2 bg-gray-50 rounded border border-gray-200 flex flex-wrap gap-1">
                                                                     {sampleTypes.slice(1).map((type: string, idx: number) => (
                                                                         <span key={idx} className="inline-block bg-green-50 text-green-700 px-2 py-0.5 rounded text-xs font-medium border border-green-100">
                                                                             {type}
@@ -487,22 +500,31 @@ export default function SamplesPage() {
                                                     );
                                                 })()}
                                             </td>
-                                            <td className="px-4 py-3 text-sm">
-                                                <div>{new Date(sample.date).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
-                                                <div className="text-xs text-gray-500">{new Date(sample.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
+                                            <td className="px-4 py-2 text-sm whitespace-nowrap">
+                                                <div className="flex items-center gap-1.5 font-medium text-gray-700" title={`Time: ${new Date(sample.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`}>
+                                                    <span>{new Date(sample.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                                                    <i className="far fa-clock text-blue-400 cursor-help text-xs cursor-pointer hover:text-blue-600 transition-colors"></i>
+                                                </div>
                                                 {sample.collectedBy && (
                                                     <div className="text-xs text-gray-500 mt-0.5">
                                                         <i className="fas fa-user-nurse mr-1"></i>{sample.collectedBy}
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 text-sm">
+                                            <td className="px-4 py-2 text-sm whitespace-nowrap">
                                                 <span className={`status-badge ${statusColors[sample.status as keyof typeof statusColors]}`}>
                                                     {sample.status}
                                                 </span>
                                             </td>
-                                            <td className="px-4 py-3 text-sm">
+                                            <td className="px-4 py-2 text-sm whitespace-nowrap">
                                                 <div className="flex items-center gap-3">
+                                                    <button
+                                                        onClick={() => window.open(`/print/label/${sample.id}?ownerId=${userProfile?.ownerId || user.uid}`, '_blank')}
+                                                        className="text-gray-600 hover:text-gray-800 transition-colors bg-gray-100 p-1.5 rounded border border-gray-200 shadow-sm"
+                                                        title="Print Label"
+                                                    >
+                                                        <i className="fas fa-barcode"></i>
+                                                    </button>
                                                     {sample.status !== 'Completed' && (
                                                         <button
                                                             onClick={async () => {
@@ -515,10 +537,10 @@ export default function SamplesPage() {
                                                                     showToast('Sample marked as Completed!', 'success');
                                                                 }
                                                             }}
-                                                            className="text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 px-2 py-1 rounded border border-indigo-200 text-xs font-bold"
+                                                            className="text-indigo-600 hover:text-indigo-800 transition-colors bg-indigo-50 p-1.5 rounded border border-indigo-200 shadow-sm"
                                                             title="Quick Complete"
                                                         >
-                                                            <i className="fas fa-check-double mr-1"></i> Done
+                                                            <i className="fas fa-check-double"></i>
                                                         </button>
                                                     )}
                                                     <button

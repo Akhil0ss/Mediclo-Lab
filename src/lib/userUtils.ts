@@ -19,10 +19,24 @@ export async function generateUniqueBrandPrefix(labName: string): Promise<string
         .substring(0, 4)
         .padEnd(4, 'x'); // Pad with 'x' if less than 4 chars
 
-    // Add random suffix to ensure uniqueness without reading database (avoids permissions errors)
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000); // 1000-9999
+    let prefix = basePrefix;
+    let isUnique = false;
+    let attempts = 0;
 
-    return `${basePrefix}${randomSuffix}`;
+    // Check availability in prefixes node
+    while (!isUnique && attempts < 10) {
+        const potentialPrefix = attempts === 0 ? prefix : `${prefix}${Math.floor(100 + Math.random() * 900)}`;
+        const prefixRef = ref(database, `prefixes/${potentialPrefix}`);
+        const snapshot = await get(prefixRef);
+        
+        if (!snapshot.exists()) {
+            prefix = potentialPrefix;
+            isUnique = true;
+        }
+        attempts++;
+    }
+
+    return prefix;
 }
 
 /**

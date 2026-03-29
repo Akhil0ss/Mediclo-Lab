@@ -31,6 +31,8 @@ export default function PatientsPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [doctors, setDoctors] = useState<any[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState('');
     const [visitPurpose, setVisitPurpose] = useState('lab');
     const [currentPage, setCurrentPage] = useState(1);
     const searchParams = useSearchParams();
@@ -339,6 +341,34 @@ export default function PatientsPage() {
         setCurrentPage(1);
     }, [searchQuery, patients, userProfile, user]);
 
+    const handleFilterByDate = () => {
+        if (!fromDate || !toDate) {
+            showToast('Please select both dates', 'warning');
+            return;
+        }
+
+        // Apply Date Filter
+        const filtered = patients.filter(p => {
+            if (!p.createdAt) return false;
+            try {
+                const patientDate = new Date(p.createdAt).toISOString().split('T')[0];
+                return patientDate >= fromDate && patientDate <= toDate;
+            } catch (e) {
+                return false;
+            }
+        });
+
+        // Maintain role restriction if Doctor
+        let finalFiltered = filtered;
+        if (userProfile?.role === 'doctor') {
+            const doctorName = userProfile?.name;
+            finalFiltered = filtered.filter(p => p.refDoctor === doctorName);
+        }
+
+        setFilteredPatients(finalFiltered);
+        setCurrentPage(1);
+    };
+
     const handleAddPatient = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user) return;
@@ -532,30 +562,55 @@ export default function PatientsPage() {
     return (
         <div>
             <div className="bg-white rounded-xl shadow-lg p-6">
-                <div className="flex justify-between items-center mb-4 flex-wrap gap-3">
-                    <h2 className="text-xl font-bold text-gray-800">Patient Management</h2>
-                    <div className="flex gap-2 flex-wrap">
+                <div className="mb-4">
+                    <div className="flex gap-2 flex-wrap items-center">
+                        {userProfile?.role === 'lab' && (
+                            <div className="mr-auto">
+                                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                    <i className="fas fa-users text-blue-600"></i>
+                                    Patients
+                                </h2>
+                            </div>
+                        )}
+                        {!isViewOnly && (
+                            <button
+                                onClick={openAddModal}
+                                className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-2 rounded-lg hover:shadow-lg focus:outline-none"
+                            >
+                                <i className="fas fa-plus mr-2"></i>Add Patient
+                            </button>
+                        )}
                         <input
                             type="text"
                             placeholder="Search patients..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="px-4 py-2 border rounded-lg"
+                            className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 min-w-[200px]"
+                        />
+                        <input
+                            type="date"
+                            value={fromDate}
+                            onChange={(e) => setFromDate(e.target.value)}
+                            className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                        <input
+                            type="date"
+                            value={toDate}
+                            onChange={(e) => setToDate(e.target.value)}
+                            className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                         />
                         <button
+                            onClick={handleFilterByDate}
+                            className="bg-gradient-to-r from-gray-600 to-gray-700 text-white px-4 py-2 rounded-lg hover:shadow-lg"
+                        >
+                            <i className="fas fa-filter mr-2"></i>Filter
+                        </button>
+                        <button
                             onClick={exportToCSV}
-                            className="bg-gradient-to-r from-green-600 to-teal-600 text-white px-4 py-2 rounded-lg hover:shadow-lg"
+                            className="bg-gradient-to-r from-green-600 to-teal-600 text-white px-4 py-2 rounded-lg hover:shadow-lg ml-auto"
                         >
                             <i className="fas fa-download mr-2"></i>Export CSV
                         </button>
-                        {!isViewOnly && (
-                            <button
-                                onClick={openAddModal}
-                                className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-4 py-2 rounded-lg hover:shadow-lg"
-                            >
-                                <i className="fas fa-plus mr-2"></i>Add Patient
-                            </button>
-                        )}
                     </div>
                 </div>
 
@@ -563,14 +618,14 @@ export default function PatientsPage() {
                     <table className="w-full min-w-full">
                         <thead className="bg-gradient-to-r from-purple-600 to-blue-600 text-white">
                             <tr>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">ID</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Name</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Age/Gender</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Contact</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Address</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Ref. Dr</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Created</th>
-                                <th className="px-4 py-3 text-left text-sm font-semibold">Actions</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">ID</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Name</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Age/Gender</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Contact</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Address</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Ref. Dr</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Created</th>
+                                <th className="px-4 py-2 text-left text-sm font-semibold">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -584,10 +639,10 @@ export default function PatientsPage() {
                             ) : (
                                 paginatedPatients.map(patient => (
                                     <tr key={patient.id} className="border-b hover:bg-gray-50 transition">
-                                        <td className="px-4 py-3 text-sm">
+                                        <td className="px-4 py-2 text-sm">
                                             <span className="font-mono font-bold text-purple-600 text-xs">{patient.patientId || 'N/A'}</span>
                                         </td>
-                                        <td className="px-4 py-3 text-sm font-semibold text-gray-800">
+                                        <td className="px-4 py-2 text-sm font-semibold text-gray-800">
                                             <div className="flex items-center gap-2 flex-wrap">
                                                 <span>{patient.title} {patient.name}</span>
                                                 {patient.source === 'WEB' && (
@@ -597,9 +652,9 @@ export default function PatientsPage() {
                                                 )}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-sm">{patient.age} / {patient.gender ? patient.gender[0] : '?'}</td>
-                                        <td className="px-4 py-3 text-sm">{patient.mobile}</td>
-                                        <td className="px-4 py-3 text-sm">
+                                        <td className="px-4 py-2 text-sm">{patient.age} / {patient.gender ? patient.gender[0] : '?'}</td>
+                                        <td className="px-4 py-2 text-sm">{patient.mobile}</td>
+                                        <td className="px-4 py-2 text-sm">
                                             {(() => {
                                                 const address = patient.address || 'N/A';
                                                 if (address === 'N/A' || address.length <= 30) return address;
@@ -623,16 +678,18 @@ export default function PatientsPage() {
                                                 );
                                             })()}
                                         </td>
-                                        <td className="px-4 py-3 text-sm">{patient.refDoctor || 'N/A'}</td>
-                                        <td className="px-4 py-3 text-sm text-gray-600">
+                                        <td className="px-4 py-2 text-sm">{patient.refDoctor || 'N/A'}</td>
+                                        <td className="px-4 py-2 text-sm text-gray-600">
                                             {patient.createdAt ? (
                                                 <div>
-                                                    <div>{new Date(patient.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit' })}</div>
-                                                    <div className="text-xs text-gray-500">{new Date(patient.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
+                                                    <div className="flex items-center gap-1.5 font-medium text-gray-700" title={`Time: ${new Date(patient.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`}>
+                                                        <span>{new Date(patient.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                                                        <i className="far fa-clock text-blue-400 cursor-help text-xs hover:text-blue-600 transition-colors"></i>
+                                                    </div>
                                                 </div>
                                             ) : 'N/A'}
                                         </td>
-                                        <td className="px-4 py-3 text-sm">
+                                        <td className="px-4 py-2 text-sm">
                                             <div className="flex items-center gap-3">
                                                 <button
                                                     onClick={() => openViewModal(patient)}
@@ -1067,35 +1124,42 @@ export default function PatientsPage() {
                                         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                                         .map(report => (
                                             <div key={report.id} className="bg-white border border-purple-200 rounded-lg p-3 hover:shadow-md transition">
-                                                <div className="flex justify-between items-start">
-                                                    <div className="flex-1">
-                                                        <div className="font-semibold text-purple-600">Report ID: {report.reportId}</div>
-                                                        <div className="text-sm text-gray-600">Sample: {report.sampleId}</div>
-                                                        <div className="text-xs text-gray-500 mt-1">
+                                                <div className="flex justify-between items-center text-sm gap-4">
+                                                    <div className="flex-1 flex items-center gap-4 min-w-0">
+                                                        <div className="font-semibold text-purple-600 truncate flex-shrink-0 max-w-[40%]" title={report.testName}>
+                                                            {report.testName || 'Report'} <span className="text-gray-400 text-xs font-mono">({report.reportId})</span>
+                                                        </div>
+                                                        <div className="text-gray-600 truncate min-w-0" title={`Sample: ${report.sampleId}`}>
+                                                            Smpl: {report.sampleId}
+                                                        </div>
+                                                        <div className="text-gray-500 text-xs whitespace-nowrap hidden sm:block">
                                                             {new Date(report.createdAt).toLocaleString('en-IN', {
-                                                                day: '2-digit',
-                                                                month: 'short',
-                                                                year: 'numeric',
-                                                                hour: '2-digit',
-                                                                minute: '2-digit'
+                                                                day: '2-digit', month: 'short', year: '2-digit'
                                                             })}
                                                         </div>
                                                     </div>
-                                                    <span className={`px-2 py-1 rounded text-xs font-semibold ${report.threatLevel === 'Critical' ? 'bg-red-100 text-red-700' :
-                                                        report.threatLevel === 'High' ? 'bg-orange-100 text-orange-700' :
-                                                            report.threatLevel === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
-                                                                'bg-green-100 text-green-700'
-                                                        }`}>
-                                                        {report.threatLevel || 'Normal'}
-                                                    </span>
+                                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                                        <span className={`px-2 py-1 rounded text-xs font-semibold ${report.threatLevel === 'Critical' ? 'bg-red-100 text-red-700' :
+                                                            report.threatLevel === 'High' ? 'bg-orange-100 text-orange-700' :
+                                                                report.threatLevel === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
+                                                                    'bg-green-100 text-green-700'
+                                                            }`}>
+                                                            {report.threatLevel || 'Normal'}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => window.open(`/print/report/${report.id}`, '_blank')}
+                                                            className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-2.5 py-1 rounded text-xs font-bold hover:shadow-lg transition flex items-center gap-1"
+                                                            title="Print PDF"
+                                                        >
+                                                            <i className="fas fa-print"></i> <span className="hidden sm:inline">PDF</span>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
                                 </div>
                             )}
                         </div>
-
-
 
                         {/* Samples History */}
                         <div className="mb-4">
@@ -1106,23 +1170,48 @@ export default function PatientsPage() {
                             {samples.filter(s => s.patientId === selectedPatient.id).length === 0 ? (
                                 <p className="text-gray-500 text-sm italic pl-6">No samples found</p>
                             ) : (
-                                <div className="space-y-2 max-h-40 overflow-y-auto">
+                                <div className="space-y-2 max-h-60 overflow-y-auto">
                                     {samples
                                         .filter(s => s.patientId === selectedPatient.id)
                                         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                                         .map(sample => (
-                                            <div key={sample.id} className="bg-white border border-orange-200 rounded-lg p-2 text-sm">
-                                                <div className="flex justify-between">
-                                                    <div>
-                                                        <span className="font-semibold text-orange-600">Sample: {sample.sampleNumber}</span>
-                                                        <div className="text-xs text-gray-500">
-                                                            {new Date(sample.createdAt).toLocaleDateString('en-IN')}
+                                            <div key={sample.id} className="bg-white border border-orange-200 rounded-lg p-2 hover:shadow-md transition text-sm">
+                                                <div className="flex justify-between items-start gap-2">
+                                                    <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                                                        {/* Top Row: IDs & Secondary Details */}
+                                                        <div className="flex flex-wrap items-center gap-2 md:gap-3 text-[11px] text-gray-500">
+                                                            <span className="font-bold text-orange-600 whitespace-nowrap text-sm">Smpl: {sample.sampleNumber}</span>
+                                                            
+                                                            {sample.sampleType && (
+                                                                <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                                                    <i className="fas fa-vial mr-1"></i> {sample.sampleType}
+                                                                </span>
+                                                            )}
+                                                            <span className="whitespace-nowrap"><i className="far fa-calendar-alt mr-1"></i>{new Date(sample.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                                                            {sample.collectedBy && <span className="whitespace-nowrap truncate max-w-[120px]"><i className="fas fa-user-nurse mr-1"></i>{sample.collectedBy}</span>}
+                                                            {selectedPatient.refDoctor && <span className="whitespace-nowrap truncate max-w-[120px]"><i className="fas fa-user-md mr-1"></i>{selectedPatient.refDoctor}</span>}
                                                         </div>
+
+                                                        {/* Bottom Row: Selected Tests */}
+                                                        {sample.tests && Array.isArray(sample.tests) && sample.tests.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1 mt-0.5">
+                                                                {sample.tests.map((t: string, i: number) => (
+                                                                    <span key={i} className="bg-orange-50 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-orange-200 whitespace-nowrap">
+                                                                        {t}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                    <span className={`px-2 py-1 rounded text-xs font-semibold ${sample.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                                                        }`}>
-                                                        {sample.status}
-                                                    </span>
+                                                    
+                                                    <div className="flex items-center flex-shrink-0 mt-1">
+                                                        <span className={`px-2 py-1 rounded text-[11px] font-semibold ${sample.status === 'Completed' ? 'bg-green-100 text-green-700' :
+                                                            sample.status === 'Processing' ? 'bg-blue-100 text-blue-700' :
+                                                                'bg-yellow-100 text-yellow-700'
+                                                            }`}>
+                                                            {sample.status}
+                                                        </span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}

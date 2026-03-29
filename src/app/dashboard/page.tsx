@@ -114,11 +114,11 @@ export default function DashboardPage() {
                     <table className="w-full text-left">
                         <thead className="bg-gray-50 text-xs font-bold text-gray-500 uppercase">
                             <tr>
-                                <th className="px-6 py-3">Sample ID</th>
-                                <th className="px-6 py-3">Date</th>
-                                <th className="px-6 py-3">Patient</th>
-                                <th className="px-6 py-3">Type</th>
-                                <th className="px-6 py-3 text-right">Action</th>
+                                <th className="px-6 py-2">Sample ID</th>
+                                <th className="px-6 py-2">Date</th>
+                                <th className="px-6 py-2">Patient</th>
+                                <th className="px-6 py-2">Type</th>
+                                <th className="px-6 py-2 text-right">Action</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -127,15 +127,19 @@ export default function DashboardPage() {
                             ) : (
                                 pendingSamplesList.map(s => (
                                     <tr key={s.id} className="hover:bg-blue-50 transition">
-                                        <td className="px-6 py-4 font-mono font-bold text-blue-600 text-sm">{s.sampleNumber}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">{new Date(s.date).toLocaleDateString()}</td>
-                                        <td className="px-6 py-4 font-semibold text-gray-800">{s.patientName}</td>
-                                        <td className="px-6 py-4"><span className="bg-gray-100 px-2 py-1 rounded text-xs">{s.sampleType}</span></td>
-                                        <td className="px-6 py-4 text-right">
-                                            <button onClick={() => { setSelectedSample(s.id); setShowQuickReportModal(true); }}
-                                                className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded font-bold transition">
-                                                Generate Report
-                                            </button>
+                                        <td className="px-6 py-2 font-mono font-bold text-blue-600 text-sm">{s.sampleNumber}</td>
+                                        <td className="px-6 py-2 text-sm text-gray-600">{new Date(s.date).toLocaleDateString()}</td>
+                                        <td className="px-6 py-2 font-semibold text-gray-800">{s.patientName}</td>
+                                        <td className="px-6 py-2"><span className="bg-gray-100 px-2 py-1 rounded text-xs">{s.sampleType}</span></td>
+                                        <td className="px-6 py-2 text-right">
+                                            {userProfile?.role === 'lab' ? (
+                                                <button onClick={() => { setSelectedSample(s.id); setShowQuickReportModal(true); }}
+                                                    className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded font-bold transition">
+                                                    Generate Report
+                                                </button>
+                                            ) : (
+                                                <span className="text-xs text-amber-600 font-semibold bg-amber-50 px-2 py-1 rounded">Pending Lab</span>
+                                            )}
                                         </td>
                                     </tr>
                                 ))

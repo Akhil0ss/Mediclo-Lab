@@ -136,7 +136,7 @@ export async function runDataCleanup(userId: string, ownerId: string) {
 
     try {
         await Promise.all([
-            cleanupNotifications(userId),
+            cleanupNotifications(ownerId),
             archiveOldChats(ownerId),
             cleanupOldAppointments(ownerId)
         ]);

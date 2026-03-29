@@ -10,6 +10,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AIReportAnalysis from '@/components/AIReportAnalysis';
 import { defaultTemplates } from '@/lib/defaultTemplates';
+import { mergeTemplates } from '@/lib/templateUtils';
 
 interface Patient {
     id: string;
@@ -18,6 +19,7 @@ interface Patient {
     age: number;
     gender: string;
     mobile: string;
+    refDoctor?: string;
 }
 
 interface Parameter {
@@ -57,7 +59,19 @@ export default function CreateReportPage() {
     useEffect(() => {
         if (!user || !userProfile) return;
 
+        const allowedRoles = ['owner', 'lab'];
+        if (!allowedRoles.includes(userProfile.role)) {
+            router.push('/dashboard/reports');
+            return;
+        }
+
         const dataSourceId = userProfile.ownerId || user.uid;
+
+        // Safety: If the user is staff but ownerId isn't loaded yet, wait.
+        if (userProfile.role === 'lab' && !userProfile.ownerId) {
+            console.log('⏳ Reports: Waiting for Laboratory Owner ID sync...');
+            return;
+        }
 
         // Fetch Patients
         const patientsUnsub = onValue(ref(database, `patients/${dataSourceId}`), (snapshot) => {
@@ -69,26 +83,16 @@ export default function CreateReportPage() {
         });
 
         // Fetch Templates (user templates + default templates)
-        // Fetch Templates (user templates + default templates from file)
-        const templatesUnsub = onValue(ref(database, `templates/${dataSourceId}`), (snapshot) => {
-            const userTemplates: Template[] = [];
+        const userTemplatesRef = ref(database, `templates/${dataSourceId}`);
+        const templatesUnsub = onValue(userTemplatesRef, (snapshot) => {
+            const userTemplates: any[] = [];
             snapshot.forEach((child) => {
-                userTemplates.push({ id: child.key, ...child.val() } as Template);
+                userTemplates.push({ id: child.key, ...child.val() });
             });
 
-            // Merge with local defaultTemplates (from file)
-            const userTemplateNames = new Set(userTemplates.map(t => t.name));
-
-            // Map file defaults to Template interface using CONSISTENT ID generation
-            const fileDefaults = defaultTemplates.map((t, idx) => ({
-                ...t,
-                id: `SYS-${idx}-${t.name.replace(/\s+/g, '-')}`, // Matches Samples Page & Quick Report
-                isSystem: true
-            } as unknown as Template));
-
-            const relevantDefaults = fileDefaults.filter(dt => !userTemplateNames.has(dt.name));
-
-            setTemplates([...userTemplates, ...relevantDefaults]);
+            // Use centralized mergeTemplates to prevent duplicates and prioritize overrides
+            const combined = mergeTemplates(userTemplates);
+            setTemplates(combined as unknown as Template[]);
         });
 
         return () => {
@@ -97,9 +101,19 @@ export default function CreateReportPage() {
         };
     }, [user, userProfile]);
 
-    // Handle Sample Pre-fill
+    // Handle Sample Pre-fill and Doctor Sync
     useEffect(() => {
-        if (!user || !userProfile || !sampleIdQuery || patients.length === 0) return;
+        if (!user || !userProfile || patients.length === 0) return;
+
+        // Auto-fill Doctor from selected patient
+        if (selectedPatientId) {
+            const patient = patients.find(p => p.id === selectedPatientId);
+            if (patient?.refDoctor) {
+                setReferredBy(patient.refDoctor);
+            }
+        }
+
+        if (!sampleIdQuery) return;
 
         const loadSample = async () => {
             const dataSourceId = userProfile.ownerId || user.uid;
@@ -108,18 +122,15 @@ export default function CreateReportPage() {
                 const sample = snapshot.val();
                 setLoadedSample(sample);
                 if (sample.patientId) setSelectedPatientId(sample.patientId);
-                // Warning: Handling multiple tests in sample vs single template report is complex.
-                // Ideally we select the first test template from sample.
-                if (sample.tests && sample.tests.length > 0) {
-                    // Logic to match test name to template ID? 
-                    // sample.tests might be ['CBC', 'LFT'] (Names?) or IDs.
-                    // Assuming names for now or skipping. 
-                    // User can select template manually.
+                
+                // Inherit doctor from sample if available
+                if (sample.patientRefDoctor) {
+                    setReferredBy(sample.patientRefDoctor);
                 }
             }
         };
         loadSample();
-    }, [sampleIdQuery, user, userProfile, patients]);
+    }, [sampleIdQuery, selectedPatientId, user, userProfile, patients]);
 
     // Helper function to calculate formulas
     const calculateFormula = (formula: string, resultsMap: Record<string, string>, parameters: any[] = []): string => {
@@ -224,91 +235,106 @@ export default function CreateReportPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user || !selectedPatientId || !selectedTemplateId) {
-            alert('Please select Patient and Template');
+        if (!user || !userProfile) return;
+
+        // Validation: Select Patient and Template
+        if (!selectedPatientId || !selectedTemplateId) {
+            alert('Please select BOTH a Patient and a Test Template before saving.');
             return;
         }
 
         const patient = patients.find(p => p.id === selectedPatientId);
         const template = templates.find(t => t.id === selectedTemplateId);
 
-        if (!patient || !template) return;
-
-        // Generate Auto Report ID
-        const dataSourceId = userProfile?.ownerId || user.uid;
-        const reportId = await generateReportId(dataSourceId, userProfile?.labName || 'CLINIC');
-
-        // Build testDetails array with proper structure for print page
-        const params = template.subtests || template.parameters || [];
-
-        const testDetails = [{
-            testName: template.name,
-            category: template.category || 'General',
-            subtests: params.map((param: any) => {
-                // Ensure latest calculations are used
-                let value = results[param.name] || '';
-
-                if (param.formula && !value) {
-                    value = calculateFormula(param.formula, results, params);
-                }
-
-                const numValue = parseFloat(value);
-
-                // Determine ranges based on patient gender
-                let ranges = param.ranges || {};
-                if (param.ranges?.male && param.ranges?.female) {
-                    ranges = patient.gender === 'Male' ? param.ranges.male : param.ranges.female;
-                }
-
-                // Calculate threat level (matching legacy app logic)
-                let threatLevel = 'normal';
-                if (param.type === 'numeric' && !isNaN(numValue) && ranges.min !== undefined && ranges.max !== undefined) {
-                    const min = parseFloat(ranges.min);
-                    const max = parseFloat(ranges.max);
-
-                    // Critical: 30% beyond normal range
-                    if (numValue < min * 0.7 || numValue > max * 1.3) {
-                        threatLevel = 'critical';
-                    }
-                    // Warning: Outside normal range
-                    else if (numValue < min || numValue > max) {
-                        threatLevel = 'warning';
-                    }
-                }
-
-                return {
-                    name: param.name,
-                    value: value,
-                    unit: param.unit || '',
-                    ranges: ranges,
-                    type: param.type || 'numeric',
-                    threatLevel: threatLevel
-                };
-            })
-        }];
-
-        const reportData = {
-            reportId,
-            patientId: patient.id, // Firebase Key
-            patientDisplayId: patient.patientId || '', // Readable ID
-            patientName: patient.name,
-            patientAge: patient.age,
-            patientGender: patient.gender,
-            patientMobile: patient.mobile,
-            patientRefDoctor: referredBy || 'Self',
-            testId: template.id,
-            testName: template.name,
-            sampleId: loadedSample?.sampleNumber || '',
-            sampleType: loadedSample?.sampleType || 'Blood',
-            price: template.totalPrice || template.rate || '0',
-            testDetails: testDetails, // NEW FORMAT
-            reportDate,
-            createdAt: new Date().toISOString(),
-            status: 'Completed'
-        };
+        if (!patient || !template) {
+            alert('Invalid Patient or Template selected. Please try again.');
+            return;
+        }
 
         try {
+            // Generate Auto Report ID
             const dataSourceId = userProfile?.ownerId || user.uid;
+            
+            // Wait for ID generation
+            const reportId = await generateReportId(dataSourceId, userProfile?.labName || 'CLINIC');
+            
+            if (!reportId) {
+                throw new Error('Could not generate a valid Report ID. Please check your connectivity.');
+            }
+
+            // Build testDetails array with proper structure for print page
+            const params = template.subtests || template.parameters || [];
+
+            const testDetails = [{
+                testName: template.name,
+                category: template.category || 'General',
+                subtests: params.map((param: any) => {
+                    // Ensure latest calculations are used
+                    let value = results[param.name] || '';
+
+                    if (param.formula && !value) {
+                        value = calculateFormula(param.formula, results, params);
+                    }
+
+                    const numValue = parseFloat(value || 'NaN');
+
+                    // Determine ranges based on patient gender
+                    let ranges = param.ranges || {};
+                    if (param.ranges?.male && param.ranges?.female) {
+                        ranges = (patient.gender || 'Male').toLowerCase() === 'male' ? param.ranges.male : param.ranges.female;
+                    }
+
+                    // Calculate threat level (matching legacy app logic)
+                    let threatLevel = 'normal';
+                    if (param.type === 'numeric' && !isNaN(numValue) && ranges.min !== undefined && ranges.max !== undefined) {
+                        const min = parseFloat(ranges.min);
+                        const max = parseFloat(ranges.max);
+
+                        // Critical: 30% beyond normal range extremes
+                        if (numValue < min * 0.7 || numValue > max * 1.3) {
+                            threatLevel = 'critical';
+                        }
+                        // Warning: Outside normal range but not critical
+                        else if (numValue < min || numValue > max) {
+                            threatLevel = 'warning';
+                        }
+                    }
+
+                    return {
+                        name: param.name || 'Unnamed Parameter',
+                        value: value || '',
+                        unit: param.unit || '',
+                        ranges: {
+                            min: ranges.min !== undefined ? ranges.min : '',
+                            max: ranges.max !== undefined ? ranges.max : ''
+                        },
+                        type: param.type || 'numeric',
+                        threatLevel: threatLevel
+                    };
+                })
+            }];
+
+            const reportData = {
+                reportId,
+                patientId: patient.id, // Firebase Key
+                patientDisplayId: patient.patientId || '', // Readable ID
+                patientName: patient.name || 'Unknown',
+                patientAge: patient.age || 0,
+                patientGender: patient.gender || 'Unknown',
+                patientMobile: patient.mobile || '',
+                patientRefDoctor: referredBy || patient.refDoctor || 'Self',
+                testId: template.id,
+                testName: template.name,
+                sampleId: loadedSample?.sampleId || loadedSample?.sampleNumber || '',
+                sampleType: loadedSample?.sampleType || 'Specimen',
+                price: template.totalPrice || template.rate || 0,
+                testDetails: testDetails,
+                reportDate: reportDate || new Date().toISOString().split('T')[0],
+                createdAt: new Date().toISOString(),
+                status: 'Completed',
+                labName: userProfile.labName || 'Clinic'
+            };
+
             await push(ref(database, `reports/${dataSourceId}`), reportData);
 
             // Update Sample status if applicable
@@ -329,7 +355,7 @@ export default function CreateReportPage() {
             router.push('/dashboard/reports');
         } catch (error) {
             console.error('Error creating report:', error);
-            alert('Failed to create report');
+            alert('Failed to create report. Details: ' + (error instanceof Error ? error.message : 'Unknown error'));
         }
     };
 

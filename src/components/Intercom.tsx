@@ -65,10 +65,10 @@ export default function Intercom() {
     useEffect(() => {
         if (!user) return;
 
-        // For staff, use username as notification key. For others, use uid
+        // For staff, use ownerId as notification key. For others, use uid
         const authMethod = typeof window !== 'undefined' ? localStorage.getItem('authMethod') : null;
-        const username = typeof window !== 'undefined' ? localStorage.getItem('username') : null;
-        const notificationKey = (authMethod === 'username' && username) ? username : user.uid;
+        const storedOwnerId = typeof window !== 'undefined' ? localStorage.getItem('ownerId') : null;
+        const notificationKey = (authMethod === 'username' && storedOwnerId) ? storedOwnerId : user.uid;
 
         const notifRef = ref(database, `notifications/${notificationKey}`);
         const unsub = onValue(notifRef, (snapshot) => {

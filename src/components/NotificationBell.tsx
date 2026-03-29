@@ -12,6 +12,7 @@ export default function NotificationBell() {
     const [unreadCount, setUnreadCount] = useState(0);
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const notifKeyRef = useRef<string>('');
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -29,10 +30,11 @@ export default function NotificationBell() {
     useEffect(() => {
         if (!user) return;
 
-        // Determine correct notification key (handle staff username vs firebase uid)
+        // Determine correct notification key (staff uses ownerId, owner uses uid)
         const authMethod = typeof window !== 'undefined' ? localStorage.getItem('authMethod') : null;
-        const username = typeof window !== 'undefined' ? localStorage.getItem('username') : null;
-        const notificationKey = (authMethod === 'username' && username) ? username : user.uid;
+        const ownerId = typeof window !== 'undefined' ? localStorage.getItem('ownerId') : null;
+        const notificationKey = (authMethod === 'username' && ownerId) ? ownerId : user.uid;
+        notifKeyRef.current = notificationKey;
 
         const notifRef = ref(database, `notifications/${notificationKey}`);
         const unsubscribe = onValue(notifRef, (snapshot) => {
@@ -75,7 +77,7 @@ export default function NotificationBell() {
 
     const handleNotificationClick = async (notification: Notification) => {
         if (!notification.read && notification.id && user) {
-            await markAsRead(user.uid, notification.id);
+            await markAsRead(notifKeyRef.current || user.uid, notification.id);
         }
         // Handle navigation based on type if needed
         // e.g., router.push(`/dashboard/reports/${notification.data.reportId}`)
