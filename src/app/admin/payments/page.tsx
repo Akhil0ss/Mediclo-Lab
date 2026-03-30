@@ -29,13 +29,25 @@ export default function AdminPayments() {
                     const allRequests: any[] = [];
                     // Data structure is now: { USER_ID: { ...requestData } }
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    Object.entries(data).forEach(([userId, reqData]: [string, any]) => {
-                        // Filter out malformed entries or check if it's the request object
-                        if (reqData.amount && reqData.status) {
+                    Object.entries(data).forEach(([userId, userVal]: [string, any]) => {
+                        // If flat structure: { USER_ID: { amount, status } }
+                        if (userVal.amount && userVal.status) {
                             allRequests.push({
-                                id: 'latest', // Virtual ID since we keyed by UserID
-                                userId, // The key is the UserID
-                                ...reqData
+                                id: 'latest',
+                                userId,
+                                ...userVal
+                            });
+                        } 
+                        // If nested structure: { USER_ID: { REQUEST_ID: { amount, status } } }
+                        else if (userVal && typeof userVal === 'object') {
+                            Object.entries(userVal).forEach(([reqId, reqData]: [string, any]) => {
+                                if (reqData.amount && reqData.status) {
+                                    allRequests.push({
+                                        id: reqId,
+                                        userId,
+                                        ...reqData
+                                    });
+                                }
                             });
                         }
                     });
@@ -71,11 +83,14 @@ export default function AdminPayments() {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const updates: any = {};
 
+            const pathPrefix = req.id === 'latest' 
+                ? `payment_requests/${req.userId}` 
+                : `payment_requests/${req.userId}/${req.id}`;
+
             // 1. Update Request Status
-            // Path is payment_requests/USER_ID/status (no ID)
-            updates[`payment_requests/${req.userId}/status`] = 'approved';
-            updates[`payment_requests/${req.userId}/approvedAt`] = new Date().toISOString();
-            updates[`payment_requests/${req.userId}/approvedBy`] = user?.uid;
+            updates[`${pathPrefix}/status`] = 'approved';
+            updates[`${pathPrefix}/approvedAt`] = new Date().toISOString();
+            updates[`${pathPrefix}/approvedBy`] = user?.uid;
 
             // 2. Update User Subscription
             // CRITICAL: Must set 'isPremium' to true as per SubscriptionContext
@@ -104,10 +119,13 @@ export default function AdminPayments() {
         if (!confirm(`Reject payment for ${req.userName}?`)) return;
         try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const updates: any = {};
-            updates[`payment_requests/${req.userId}/status`] = 'rejected';
-            updates[`payment_requests/${req.userId}/rejectedAt`] = new Date().toISOString();
-            updates[`payment_requests/${req.userId}/rejectedBy`] = user?.uid;
+            const pathPrefix = req.id === 'latest' 
+                ? `payment_requests/${req.userId}` 
+                : `payment_requests/${req.userId}/${req.id}`;
+
+            updates[`${pathPrefix}/status`] = 'rejected';
+            updates[`${pathPrefix}/rejectedAt`] = new Date().toISOString();
+            updates[`${pathPrefix}/rejectedBy`] = user?.uid;
 
             await update(ref(database), updates);
         } catch (e) {
