@@ -151,9 +151,9 @@ export default function AdminUsers() {
     if (loading) return <div className="p-12 text-center text-gray-500 font-mono">Loading God Mode Data...</div>;
 
     return (
-        <div>
+        <div className="flex flex-col flex-1 min-h-0">
             {/* Header Stand */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div className="flex-shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                 <div>
                     <h2 className="text-3xl font-bold text-gray-800 tracking-tight flex items-center gap-2">
                         <i className="fas fa-users-cog text-purple-600"></i> User Control Center
@@ -172,7 +172,7 @@ export default function AdminUsers() {
             </div>
 
             {/* Stats Overview */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="flex-shrink-0 grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                 <button onClick={() => setFilter('all')} className={`p-4 rounded-xl text-left transition ${filter === 'all' ? 'bg-gray-800 text-white shadow-lg' : 'bg-white border border-gray-200 hover:bg-gray-50'}`}>
                     <div className="text-xs font-bold uppercase opacity-70">Total Users</div>
                     <div className="text-2xl font-bold">{stats.total}</div>
@@ -192,54 +192,54 @@ export default function AdminUsers() {
             </div>
 
             {/* Users Table */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold text-xs uppercase">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col flex-1 min-h-0">
+                <div className="overflow-auto flex-1 custom-scrollbar">
+                    <table className="w-full text-left whitespace-nowrap">
+                        <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 font-bold text-[11px] uppercase sticky top-0 z-10 shadow-sm">
                             <tr>
-                                <th className="px-6 py-4">User Identity</th>
-                                <th className="px-6 py-4">Role</th>
-                                <th className="px-6 py-4">Subscription</th>
-                                <th className="px-6 py-4 text-right">God Actions</th>
+                                <th className="px-4 py-3">User Identity</th>
+                                <th className="px-4 py-3">Role</th>
+                                <th className="px-4 py-3">Subscription</th>
+                                <th className="px-4 py-3 text-right">God Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                             {filteredUsers.map((u) => (
                                 <tr key={u.uid} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4">
-                                        <div className="font-bold text-gray-900">{u.name || 'Unknown'}</div>
-                                        <div className="text-xs text-gray-500">{u.email}</div>
-                                        <div className="text-[10px] font-mono text-gray-400 mt-1">{u.uid}</div>
+                                    <td className="px-4 py-3">
+                                        <div className="font-bold text-gray-900 text-sm truncate max-w-[200px]">{u.name || 'Unknown'}</div>
+                                        <div className="text-[11px] text-gray-500">{u.email}</div>
+                                        <div className="text-[10px] font-mono text-gray-400 mt-0.5" title={u.uid}>{u.uid.substring(0, 8)}...</div>
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-3">
                                         <button
                                             onClick={() => handleChangeRole(u.uid, u.role)}
                                             className="px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-xs font-bold text-gray-700 transition"
                                             title="Click to Edit Role"
                                         >
-                                            {u.role || 'User'} <i className="fas fa-pen ml-1 text-[10px] opacity-50"></i>
+                                            {u.role || 'User'} <i className="fas fa-pen ml-1 text-[9px] opacity-50"></i>
                                         </button>
                                     </td>
-                                    <td className="px-6 py-4">
+                                    <td className="px-4 py-3">
                                         {u.subscription.status === 'Premium' ? (
                                             <div>
-                                                <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 w-fit">
-                                                    <i className="fas fa-crown text-[10px]"></i> Premium
+                                                <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 w-fit">
+                                                    <i className="fas fa-crown text-[9px]"></i> Premium
                                                 </span>
-                                                <div className={`text-xs mt-1 font-medium ${u.subscription.isExpiring ? 'text-red-500 animate-pulse' : 'text-green-600'}`}>
+                                                <div className={`text-[11px] mt-1 font-medium ${u.subscription.isExpiring ? 'text-red-500 animate-pulse' : 'text-green-600'}`}>
                                                     {u.subscription.daysLeft} days left
                                                 </div>
                                             </div>
                                         ) : (
-                                            <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs font-bold">Free Plan</span>
+                                                <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-[10px] font-bold">Free Plan</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 text-right">
+                                    <td className="px-4 py-3 text-right">
                                         <div className="flex items-center justify-end gap-2">
                                             {u.subscription.status !== 'Premium' ? (
                                                 <button
                                                     onClick={() => handleGrantPremium(u.uid, u.name)}
-                                                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-sm"
+                                                    className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded shadow-sm text-[11px] font-bold transition flex items-center gap-1"
                                                     title="Grant Premium"
                                                 >
                                                     <i className="fas fa-gift"></i> Grant
@@ -247,7 +247,7 @@ export default function AdminUsers() {
                                             ) : (
                                                 <button
                                                     onClick={() => handleRevokePremium(u.uid, u.name)}
-                                                    className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-bold transition"
+                                                    className="bg-white border border-red-200 text-red-600 px-2 py-1 rounded hover:bg-red-50 text-[11px] font-bold transition flex items-center gap-1"
                                                     title="Revoke Premium"
                                                 >
                                                     <i className="fas fa-ban"></i> Revoke
@@ -259,7 +259,7 @@ export default function AdminUsers() {
                             ))}
                             {filteredUsers.length === 0 && (
                                 <tr>
-                                    <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
+                                    <td colSpan={4} className="px-4 py-12 text-center text-gray-500 text-sm">
                                         No users found matching filter '{filter}'.
                                     </td>
                                 </tr>

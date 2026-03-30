@@ -10,7 +10,7 @@
           ".read": "auth != null"
         },
         "auth": {
-          ".read": "auth != null && (auth.uid === $userId || root.child('admins/' + auth.uid).val() === true || auth.token.email === 'wdbyakt@gmail.com')",
+          ".read": "auth != null",
           ".write": "auth != null && auth.uid === $userId"
         }
       }

@@ -457,72 +457,29 @@ export default function PrintReportPage() {
             padding: 0;
             margin: 0;
             line-height: 1.3;
-        }
-        
-        .watermark {
-            position: fixed;
-            top: 50%;
-            left: 50%; 
-            transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 80px;
-            font-weight: 800;
-            color: rgba(0,0,0,0.04);
-            z-index: 0;
-            white-space: nowrap;
-            pointer-events: none;
-            user-select: none;
-        }
-        }
-        
-        .watermark {
-            position: fixed;
-            top: 50%;
-            left: 50%; 
-            transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 80px;
-            font-weight: 800;
-            color: rgba(0,0,0,0.04);
-            z-index: 0;
-            white-space: nowrap;
-            pointer-events: none;
-            user-select: none;
-        }
             color: #1e293b;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
         }
-
+        
         .watermark {
             position: fixed;
             top: 50%;
-            left: 50%;
+            left: 50%; 
             transform: translate(-50%, -50%) rotate(-45deg);
             font-size: 80px;
             font-weight: 800;
-            color: rgba(0,0,0,0.03); 
-            z-index: 0; 
-            white-space: nowrap; 
-            pointer-events: none; 
-            text-transform: uppercase;
-        }
-
-        .watermark {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 80px;
-            font-weight: 800;
-            color: rgba(0,0,0,0.03); 
-            z-index: 0; 
-            white-space: nowrap; 
-            pointer-events: none; 
+            color: rgba(0,0,0,0.03);
+            z-index: 0;
+            white-space: nowrap;
+            pointer-events: none;
+            user-select: none;
             text-transform: uppercase;
         }
 
         .report-container {
             width: 210mm; 
-            min-height: 296mm; 
             margin: 0 auto; 
             background: white;
             padding: 0;
@@ -548,9 +505,7 @@ export default function PrintReportPage() {
            .report-container {
                width: 100%;
                margin: 0;
-               margin-top: 0;
                box-shadow: none;
-               min-height: 285mm;
            }
            
             .no-print { display: none !important; }

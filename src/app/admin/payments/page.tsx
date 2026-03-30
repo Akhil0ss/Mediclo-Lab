@@ -119,6 +119,8 @@ export default function AdminPayments() {
         if (!confirm(`Reject payment for ${req.userName}?`)) return;
         try {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const updates: any = {};
+            
             const pathPrefix = req.id === 'latest' 
                 ? `payment_requests/${req.userId}` 
                 : `payment_requests/${req.userId}/${req.id}`;
@@ -175,50 +177,49 @@ export default function AdminPayments() {
     );
 
     return (
-        <div className="min-h-screen bg-gray-50 p-6 md:p-12">
-            <div className="max-w-6xl mx-auto">
-                <div className="flex items-center justify-between mb-8">
-                    <h1 className="text-3xl font-bold text-gray-800 tracking-tight">
+        <div className="flex flex-col flex-1 min-h-0">
+            <div className="flex flex-shrink-0 items-center justify-between mb-6">
+                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">
                         <span className="text-purple-600 mr-2"><i className="fas fa-shield-alt"></i></span>
                         Admin Verification
                     </h1>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="bg-gray-50 border-b border-gray-100 text-xs uppercase font-bold text-gray-500 tracking-wider">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 min-h-0">
+                    <div className="overflow-auto flex-1 custom-scrollbar">
+                        <table className="w-full text-left whitespace-nowrap">
+                            <thead className="bg-gray-50 border-b border-gray-100 text-xs uppercase font-bold text-gray-500 tracking-wider sticky top-0 z-10 shadow-sm">
                                 <tr>
-                                    <th className="px-6 py-4">Date</th>
-                                    <th className="px-6 py-4">User</th>
-                                    <th className="px-6 py-4">Plan / Amount</th>
-                                    <th className="px-6 py-4">UTR Number</th>
-                                    <th className="px-6 py-4">Status</th>
-                                    <th className="px-6 py-4 text-right">Actions</th>
+                                    <th className="px-4 py-3">Date</th>
+                                    <th className="px-4 py-3">User</th>
+                                    <th className="px-4 py-3">Plan / Amount</th>
+                                    <th className="px-4 py-3">UTR Number</th>
+                                    <th className="px-4 py-3">Status</th>
+                                    <th className="px-4 py-3 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {requests.map(req => (
                                     <tr key={req.userId} className="hover:bg-gray-50 transition-colors">
-                                        <td className="px-6 py-4 text-sm text-gray-600">
+                                        <td className="px-4 py-3 text-sm text-gray-600">
                                             <div className="font-bold text-gray-800">{new Date(req.createdAt).toLocaleDateString()}</div>
-                                            <div className="text-xs">{new Date(req.createdAt).toLocaleTimeString()}</div>
+                                            <div className="text-[10px] text-gray-500">{new Date(req.createdAt).toLocaleTimeString()}</div>
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <div className="font-bold text-gray-800">{req.userName}</div>
-                                            <div className="text-xs text-gray-500 font-mono hidden md:block" title={req.userId}>{req.userId.substring(0, 8)}...</div>
+                                        <td className="px-4 py-3">
+                                            <div className="font-bold text-gray-800 text-sm truncate max-w-[150px]">{req.userName}</div>
+                                            <div className="text-[10px] text-gray-400 font-mono" title={req.userId}>{req.userId.substring(0, 8)}...</div>
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <div className="font-medium text-purple-700">{req.plan}</div>
+                                        <td className="px-4 py-3">
+                                            <div className="font-medium text-purple-700 text-sm">{req.plan}</div>
                                             <div className="text-xs font-bold">₹{req.amount}</div>
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <div className="font-mono font-bold bg-gray-100 px-2 py-1 rounded inline-block text-gray-700 select-all border border-gray-200">
+                                        <td className="px-4 py-3">
+                                            <div className="font-mono text-xs font-bold bg-gray-100 px-2 py-1 rounded inline-block text-gray-700 select-all border border-gray-200">
                                                 {req.utr}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wide
+                                        <td className="px-4 py-3">
+                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide
                                                 ${req.status === 'approved' ? 'bg-green-100 text-green-700' :
                                                     req.status === 'rejected' ? 'bg-red-100 text-red-700' :
                                                         'bg-yellow-100 text-yellow-700'}`}
@@ -226,14 +227,14 @@ export default function AdminPayments() {
                                                 {req.status}
                                             </span>
                                         </td>
-                                        <td className="px-6 py-4 text-right space-x-2">
+                                        <td className="px-4 py-3 text-right">
                                             {req.status === 'pending' && (
                                                 <div className="flex justify-end gap-2">
-                                                    <button onClick={() => handleApprove(req)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg shadow-sm hover:bg-green-700 text-xs font-bold transition flex items-center gap-1">
+                                                    <button onClick={() => handleApprove(req)} className="bg-green-600 text-white px-2 py-1 rounded shadow-sm hover:bg-green-700 text-[11px] font-bold transition flex items-center gap-1">
                                                         <i className="fas fa-check"></i> Approve
                                                     </button>
-                                                    <button onClick={() => handleReject(req)} className="bg-white border border-red-200 text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 text-xs font-bold transition flex items-center gap-1">
-                                                        <i className="fas fa-times"></i> Reject
+                                                    <button onClick={() => handleReject(req)} className="bg-white border border-red-200 text-red-600 px-2 py-1 rounded hover:bg-red-50 text-[11px] font-bold transition flex items-center gap-1">
+                                                        <i className="fas fa-times"></i>
                                                     </button>
                                                 </div>
                                             )}
@@ -241,13 +242,12 @@ export default function AdminPayments() {
                                     </tr>
                                 ))}
                                 {requests.length === 0 && (
-                                    <tr><td colSpan={6} className="px-6 py-12 text-center text-gray-400">No payment requests found.</td></tr>
+                                    <tr><td colSpan={6} className="px-4 py-12 text-center text-gray-400 text-sm">No payment requests found.</td></tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
                 </div>
-            </div>
         </div>
     );
 }
