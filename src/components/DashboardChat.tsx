@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ref, onValue, push, serverTimestamp } from 'firebase/database';
+import { ref, onValue, push, serverTimestamp, update } from 'firebase/database';
 import { database } from '@/lib/firebase';
 
 interface Message {
@@ -10,6 +10,7 @@ interface Message {
     senderRole: string;
     senderName: string;
     timestamp: number;
+    isRead?: boolean;
 }
 
 interface DashboardChatProps {
@@ -41,7 +42,7 @@ export default function DashboardChat({ dataOwnerId, userRole, userName }: Dashb
         }
     }, [messages, isOpen, isOwner]);
 
-    // Fetch messages
+    // Fetch messages and Handle Read Receipts
     useEffect(() => {
         if (!dataOwnerId) return;
 
@@ -56,19 +57,35 @@ export default function DashboardChat({ dataOwnerId, userRole, userName }: Dashb
                 
                 setMessages(msgs);
 
-                const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
-
-                if (isOwner) {
-                    if (!isOpen && lastMsg && lastMsg.senderRole !== userRole) {
-                        setUnreadCount(prev => prev + 1);
-                    }
-                } else {
-                    if (lastMsg && lastMsg.senderRole !== userRole && document.activeElement?.id !== 'chat-input') {
-                        setLabUnreadCount(prev => prev + 1);
+                // 1. Mark as read in DB if chat is opened
+                if (isOpen) {
+                    const unreadUpdates: Record<string, any> = {};
+                    let hasUnread = false;
+                    msgs.forEach(m => {
+                        if (m.senderRole !== userRole && !m.isRead) {
+                            unreadUpdates[`chats/one-to-one/${dataOwnerId}/${m.id}/isRead`] = true;
+                            hasUnread = true;
+                        }
+                    });
+                    if (hasUnread) {
+                        update(ref(database), unreadUpdates).catch(console.error);
                     }
                 }
+
+                // 2. Adjust local notification dots
+                const unreadLocal = msgs.filter(m => m.senderRole !== userRole && !m.isRead).length;
+                if (!isOpen) {
+                    if (isOwner) setUnreadCount(unreadLocal);
+                    else setLabUnreadCount(unreadLocal);
+                } else {
+                    setUnreadCount(0);
+                    setLabUnreadCount(0);
+                }
+
             } else {
                 setMessages([]);
+                setUnreadCount(0);
+                setLabUnreadCount(0);
             }
         });
 
@@ -77,11 +94,14 @@ export default function DashboardChat({ dataOwnerId, userRole, userName }: Dashb
 
     // Clear unread when opened
     useEffect(() => {
-        if (isOpen) setUnreadCount(0);
+        if (isOpen) {
+            setUnreadCount(0);
+            setLabUnreadCount(0);
+        }
     }, [isOpen]);
 
     const handleInputFocus = () => {
-        if (!isOwner) {
+        if (!isOwner && isOpen) {
             setLabUnreadCount(0);
         }
     };
@@ -148,8 +168,11 @@ export default function DashboardChat({ dataOwnerId, userRole, userName }: Dashb
                                 ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-tr-sm' 
                                 : 'bg-white border border-gray-100 text-gray-800 rounded-tl-sm'}`}>
                                 <p className="whitespace-pre-wrap">{msg.text}</p>
-                                <span className={`text-[8px] mt-0.5 block font-medium ${isMe ? 'text-blue-100 text-right' : 'text-gray-400 text-left'}`}>
+                                <span className={`text-[8px] mt-0.5 flex items-center gap-1 font-medium ${isMe ? 'text-blue-100 justify-end' : 'text-gray-400 justify-start'}`}>
                                     {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}
+                                    {isMe && (
+                                        <i className={`fas fa-check-double text-[9px] ${msg.isRead ? 'text-[#34d399]' : 'text-blue-200/60'}`} title={msg.isRead ? 'Read' : 'Delivered'}></i>
+                                    )}
                                 </span>
                             </div>
                         </div>
@@ -182,33 +205,60 @@ export default function DashboardChat({ dataOwnerId, userRole, userName }: Dashb
         </form>
     );
 
-    // Render for LAB Role (Inline Sidebar Box - Compact)
+    // Render for LAB Role (Floating right Bubble)
     if (!isOwner) {
         return (
-            <div className="mt-4 bg-white rounded-xl shadow-sm border border-blue-100 overflow-hidden flex flex-col h-[280px]">
-                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-2 flex items-center justify-between cursor-pointer" onClick={handleInputFocus}>
-                    <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                            <i className="fas fa-user-tie text-white text-[10px]"></i>
+            <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end">
+                <div className={`transition-all duration-300 transform origin-bottom-right ${isOpen ? 'scale-100 opacity-100 mb-3' : 'scale-0 opacity-0 mb-0 h-0 w-0 overflow-hidden'}`}>
+                    <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-[280px] h-[360px] flex flex-col overflow-hidden">
+                        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-2 flex justify-between items-center cursor-pointer" onClick={() => setIsOpen(false)}>
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                                    <i className="fas fa-user-tie text-white text-[10px]"></i>
+                                </div>
+                                <div>
+                                    <h3 className="text-white font-bold text-[12px] leading-none">Owner Chat</h3>
+                                    <div className="flex items-center gap-1 mt-0.5">
+                                        <span className="w-1 h-1 rounded-full bg-green-400 animate-pulse"></span>
+                                        <p className="text-blue-100 text-[9px]">Connected</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); handleClearChat(e); }} 
+                                    title="Clear Chat History"
+                                    className="text-white/80 hover:text-white w-6 h-6 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors"
+                                >
+                                    <i className="fas fa-trash-alt text-[10px]"></i>
+                                </button>
+                                <button className="text-white/80 hover:text-white w-6 h-6 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors">
+                                    <i className="fas fa-times text-[10px]"></i>
+                                </button>
+                            </div>
                         </div>
-                        <div>
-                            <h3 className="text-white font-bold text-[12px] leading-none flex items-center gap-1.5">
-                                Owner Chat
-                                {labUnreadCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>}
-                            </h3>
-                            <p className="text-blue-100 text-[9px] mt-0.5">Connected</p>
-                        </div>
+                        {renderMessageList()}
+                        {renderInputArea()}
                     </div>
-                    <button 
-                         onClick={handleClearChat} 
-                         title="Clear Chat History"
-                         className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition"
-                    >
-                         <i className="fas fa-trash-alt text-[10px]"></i>
-                    </button>
                 </div>
-                {renderMessageList()}
-                {renderInputArea()}
+
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className={`w-12 h-12 rounded-full flex items-center justify-center shadow-2xl transform transition-transform hover:scale-105 active:scale-95 ${isOpen ? 'bg-gray-800 text-white rotate-90' : 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white'}`}
+                >
+                    {isOpen ? (
+                        <i className="fas fa-times text-lg"></i>
+                    ) : (
+                        <div className="relative">
+                            <i className="fas fa-comment-dots text-xl mt-0.5"></i>
+                            {labUnreadCount > 0 && (
+                                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1 min-w-[16px] h-[16px] rounded-full flex items-center justify-center shadow-lg animate-bounce">
+                                    {labUnreadCount > 9 ? '9+' : labUnreadCount}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </button>
             </div>
         );
     }

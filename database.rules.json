@@ -1,104 +1,144 @@
 {
   "rules": {
     "users": {
-        "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid",
-            "profile": {
-                ".validate": "newData.hasChildren(['role', 'name'])"
-            }
+        ".read": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        "$userId": {
+        ".read": "auth != null && (auth.uid === $userId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $userId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        "profile": {
+          ".read": "auth != null"
+        },
+        "auth": {
+          ".read": "auth != null && (auth.uid === $userId || root.child('admins/' + auth.uid).val() === true || auth.token.email === 'wdbyakt@gmail.com')",
+          ".write": "auth != null && auth.uid === $userId"
         }
+      }
+    },
+    "prefixes": {
+      "$prefix": {
+        ".read": "true",
+        ".write": "auth != null && (!data.exists() || data.val() === auth.uid || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
     },
     "sessions": {
-        "$uid": {
-            ".read": "auth != null && auth.uid === $uid",
-            ".write": "auth != null && auth.uid === $uid",
-            ".validate": "newData.hasChildren(['lastActive', 'ownerId'])"
-        }
-    },
-    "patients": {
-        "$ownerId": {
-            ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".indexOn": ["createdAt", "mobile", "name", "patientId"],
-            "$patientId": {
-                // Allow reading specific patient details for PDF generation if user is authenticated (link protection)
-                ".read": "auth != null"
-            }
-        }
-    },
-    "reports": {
-        "$ownerId": {
-            ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".indexOn": ["createdAt", "patientId", "date", "status", "billNumber"],
-            "$reportId": {
-                // Allow viewing specific report if direct link is known
-                ".read": "auth != null"
-            }
-        }
-    },
-    "samples": {
-        "$ownerId": {
-            ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".indexOn": ["status", "patientId", "date", "createdAt"]
-        }
-    },
-    "doctors": {
-        "$ownerId": {
-            ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".indexOn": ["name", "email", "createdAt"]
-        }
-    },
-    "externalDoctors": {
-        "$ownerId": {
-            ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)"
-        }
-    },
-    "templates": {
-        "$ownerId": {
-            ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)"
-        }
-    },
-    "counters": {
-        "$ownerId": {
-            ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)"
-        }
-    },
-    "subscriptions": {
-        "$ownerId": {
-            // Needed for system features and layout logic
-            ".read": "auth != null",
-            ".write": "auth != null && auth.uid === $ownerId"
-        }
-    },
-    "audit_logs": {
-        "$ownerId": {
-            ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions').child(auth.uid).child('ownerId').val() === $ownerId)",
-            ".write": "auth != null"
-        }
-    },
-    "payment_requests": {
-        "$ownerId": {
-            ".read": "auth != null && auth.uid === $ownerId",
-            ".write": "auth != null && auth.uid === $ownerId"
-        }
+      "$sessionId": {
+        ".read": "auth != null && (auth.uid === $sessionId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $sessionId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
     },
     "branding": {
+      "$ownerId": {
+        ".read": "true",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
+    },
+    "templates": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
+    },
+    "patients": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".indexOn": ["createdAt", "mobile", "name", "patientId"]
+      }
+    },
+    "samples": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".indexOn": ["status", "patientId", "date", "createdAt"]
+      }
+    },
+    "reports": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".indexOn": ["createdAt", "patientId", "date", "status", "billNumber"]
+      }
+    },
+    "invoices": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
+    },
+    "doctors": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".indexOn": ["name", "email", "createdAt"]
+      }
+    },
+    "externalDoctors": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
+    },
+    "inventory": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
+    },
+    "audit_logs": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
+    },
+    "notifications": {
+      "$userId": {
+        ".read": "auth != null && (auth.uid === $userId || root.child('sessions/' + auth.uid + '/ownerId').val() === $userId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $userId || root.child('sessions/' + auth.uid + '/ownerId').val() === $userId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
+    },
+    "counters": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
+    },
+    "appointments": {
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
+    },
+    "chats": {
+      "$type": {
         "$ownerId": {
-            // Lab logo/address must be public for PDF generation
-            ".read": "true",
-            ".write": "auth != null && auth.uid === $ownerId"
+          ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+          ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
         }
+      }
+    },
+    "subscriptions": {
+      ".read": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+      ".write": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+      "$ownerId": {
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId)",
+        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId)"
+      }
     },
     "common_templates": {
-        ".read": "true",
-        ".write": "auth != null && root.child('users').child(auth.uid).child('profile').child('role').val() === 'admin'"
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+    },
+    "admins": {
+      ".read": "auth != null",
+      ".write": "auth != null && auth.token.email === 'wdbyakt@gmail.com'"
+    },
+    "payment_requests": {
+      ".read": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+      "$userId": {
+        ".read": "auth != null && (auth.uid === $userId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (auth.uid === $userId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
     }
   }
 }

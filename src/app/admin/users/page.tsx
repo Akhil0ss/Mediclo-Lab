@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { database } from '@/lib/firebase';
-import { ref, onValue, update } from 'firebase/database';
+import { ref, onValue, get, update } from 'firebase/database';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function AdminUsers() {
@@ -18,21 +18,17 @@ export default function AdminUsers() {
     const [search, setSearch] = useState('');
 
     useEffect(() => {
-        // Fetch Users and Subscriptions
-        const usersRef = ref(database, 'users');
-        const subsRef = ref(database, 'subscriptions');
-
-        // Listen to both
-        const unsubUsers = onValue(usersRef, (snapUsers) => {
+        // Fix 5: Use get() for subscriptions (one-time read) to avoid nested listener memory leak
+        const unsubUsers = onValue(ref(database, 'users'), async (snapUsers) => {
             const usersData = snapUsers.val();
 
-            onValue(subsRef, (snapSubs) => {
+            try {
+                // One-time read for subscriptions — no leak
+                const snapSubs = await get(ref(database, 'subscriptions'));
                 const subsData = snapSubs.val() || {};
 
                 if (usersData) {
                     const now = new Date();
-                    const sevenDays = 7 * 24 * 60 * 60 * 1000;
-
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const list = Object.entries(usersData).map(([uid, val]: [string, any]) => {
                         const sub = subsData[uid];
@@ -54,16 +50,10 @@ export default function AdminUsers() {
                         return {
                             uid,
                             ...val.profile,
-                            subscription: {
-                                status,
-                                daysLeft,
-                                isExpiring,
-                                plan: sub?.plan || 'Free'
-                            }
+                            subscription: { status, daysLeft, isExpiring, plan: sub?.plan || 'Free' }
                         };
                     });
 
-                    // Stats
                     const s = {
                         total: list.length,
                         premium: list.filter(u => u.subscription.status === 'Premium').length,
@@ -71,19 +61,22 @@ export default function AdminUsers() {
                         expiring: list.filter(u => u.subscription.isExpiring).length
                     };
                     setStats(s);
-
-                    // Filter valid profiles
                     const validUsers = list.filter(u => u.name || u.email);
                     setUsers(validUsers);
                     setFilteredUsers(validUsers);
                 } else {
                     setUsers([]);
                 }
-                setLoading(false);
-            });
+            } catch (error: any) {
+                console.error('Data load error:', error.message);
+            }
+            setLoading(false);
+        }, (error) => {
+            console.error('Users read error:', error.message);
+            setLoading(false);
         });
 
-        // Simple cleanup (Note: nested listeners usually need managing, simplified here)
+        // Fix 5: Single cleanup — no nested listener orphans
         return () => unsubUsers();
     }, []);
 

@@ -2,6 +2,7 @@
 
 import { ref, get } from 'firebase/database';
 import { database } from './firebase';
+import bcrypt from 'bcryptjs';
 
 /**
  * Generate a unique brand prefix for usernames.
@@ -111,11 +112,19 @@ export function generatePassword(): string {
 }
 
 /**
- * Simple password hashing (for demo - use bcrypt in production)
- * In production, use bcrypt or similar library
+ * Hash a password using bcryptjs (saltRounds=12)
+ * Industry-standard, brute-force resistant
  */
 export function hashPassword(password: string): string {
-    // Simple hash for demo - replace with bcrypt in production
+    const salt = bcrypt.genSaltSync(12);
+    return bcrypt.hashSync(password, salt);
+}
+
+/**
+ * Legacy DJB2 hash — only used for detecting old-format hashes
+ * DO NOT use for new passwords
+ */
+function legacyDJB2Hash(password: string): string {
     let hash = 0;
     for (let i = 0; i < password.length; i++) {
         const char = password.charCodeAt(i);
@@ -126,10 +135,19 @@ export function hashPassword(password: string): string {
 }
 
 /**
- * Verify password against hash
+ * Verify password against hash — backward compatible
+ * Supports both old DJB2 hashes and new bcrypt hashes
+ * Old hashes: short alphanumeric string (e.g. "1z5b4a2")
+ * New hashes: start with "$2b$" (bcrypt format)
  */
 export function verifyPassword(password: string, hash: string): boolean {
-    return hashPassword(password) === hash;
+    if (!hash) return false;
+    // Detect bcrypt hash by its prefix
+    if (hash.startsWith('$2b$') || hash.startsWith('$2a$')) {
+        return bcrypt.compareSync(password, hash);
+    }
+    // Fallback: legacy DJB2 comparison for old hashes
+    return legacyDJB2Hash(password) === hash;
 }
 
 /**

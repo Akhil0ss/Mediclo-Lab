@@ -471,3 +471,41 @@ Provide differential diagnosis (JSON):
     }
 }
 
+/**
+ * 10. Lab Operations AI Assistant (Sidebar Tips)
+ */
+export async function generateLabSuggestions(
+    recentReports: Array<{ testName: string; status: string }>
+): Promise<{
+    suggestions: Array<{ icon: string; text: string }>;
+}> {
+    const prompt = `Analyze these recent lab tests/reports and give 3 precise, actionable tips for the lab technician (e.g. equipment calibration, sample handling workflow, reporting speed, error prevention).
+Recent Tests: ${recentReports.length > 0 ? recentReports.map(r => `${r.testName} (${r.status})`).join(', ') : 'No recent tests found. Provide general top-tier lab best practices.'}
+
+Output JSON ONLY format:
+{
+  "suggestions": [
+     {"icon": "fas fa-microscope", "text": "Short actionable tip (max 10 words)"}
+  ]
+}`;
+
+    const result = await callGroq([
+        { role: 'system', content: 'You are a Clinical Lab Manager AI. Give actionable, hyper-concise technical workflow tips. Output raw JSON only.' },
+        { role: 'user', content: prompt }
+    ], 250, 0.4);
+
+    try {
+        const cleanResponse = result.response.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(cleanResponse);
+    } catch {
+        return {
+            suggestions: [
+                { icon: "fas fa-vial", text: "Ensure proper sample centrifugation times." },
+                { icon: "fas fa-thermometer-half", text: "Monitor reagent fridge temperature logs." },
+                { icon: "fas fa-clipboard-check", text: "Double-check patient IDs before testing." }
+            ]
+        };
+    }
+}
+
+

@@ -721,7 +721,12 @@ export default function SettingsPage() {
                                     <p className="text-sm text-white/80 mb-4">
                                         {isPremium ? `Valid until ${expiryDate ? new Date(expiryDate).toLocaleDateString() : 'N/A'}` : `${daysRemaining} days remaining in trial`}
                                     </p>
-                                    {!isPremium && <button onClick={handleUpgrade} className="bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-bold shadow hover:bg-gray-100 transition">Upgrade Now</button>}
+                                    {!isPremium && !paymentHistory.some(p => p.status === 'pending') && (
+                                        <button onClick={handleUpgrade} className="bg-white text-indigo-600 px-4 py-2 rounded-lg text-sm font-bold shadow hover:bg-gray-100 transition">Upgrade Now</button>
+                                    )}
+                                    {!isPremium && paymentHistory.some(p => p.status === 'pending') && (
+                                        <button disabled className="bg-white/70 text-indigo-800/70 cursor-not-allowed px-4 py-2 rounded-lg text-sm font-bold shadow">Verification Pending</button>
+                                    )}
                                 </div>
                             </div>
 

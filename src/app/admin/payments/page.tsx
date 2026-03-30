@@ -164,9 +164,6 @@ export default function AdminPayments() {
                         <span className="text-purple-600 mr-2"><i className="fas fa-shield-alt"></i></span>
                         Admin Verification
                     </h1>
-                    <button onClick={() => router.push('/dashboard')} className="text-gray-500 hover:text-gray-800 font-medium">
-                        <i className="fas fa-arrow-left mr-1"></i> Back to Dashboard
-                    </button>
                 </div>
 
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

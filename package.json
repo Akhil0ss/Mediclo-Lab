@@ -15,6 +15,8 @@
     "@headlessui/react": "^2.2.9",
     "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^5.2.2",
+    "@types/bcryptjs": "^2.4.6",
+    "bcryptjs": "^3.0.3",
     "chart.js": "^4.5.1",
     "date-fns": "^4.1.0",
     "firebase": "^12.7.0",

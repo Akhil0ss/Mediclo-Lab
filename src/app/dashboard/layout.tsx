@@ -10,6 +10,7 @@ import Link from 'next/link';
 import { getDataOwnerId } from '@/lib/dataUtils';
 import { ToastProvider, useToast } from '@/contexts/ToastContext';
 import DashboardChat from '@/components/DashboardChat';
+import AILabSuggestions from '@/components/AILabSuggestions';
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { user, userProfile, loading } = useAuth();
@@ -194,8 +195,9 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             </header>
 
             <div className="container-pc w-full mx-auto p-6 lg:px-8 flex flex-col lg:flex-row gap-6">
-                <aside className="w-full lg:w-52 flex-shrink-0 space-y-2 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-120px)] lg:overflow-y-auto pr-2">
-                    {tabs.map(tab => {
+                <aside className="w-full lg:w-52 flex-shrink-0 flex flex-col gap-2 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-120px)] lg:overflow-y-auto pr-2">
+                    <div className="space-y-2">
+                        {tabs.map(tab => {
                         const isTemplates = tab.id === 'templates';
                         return (
                             <div
@@ -226,14 +228,25 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                             </div>
                         );
                     })}
-                    {userProfile?.role === 'lab' && (
+                </div>
+                {userProfile?.role !== 'lab' && (
+                    <a href="https://wa.me/917619948657?text=Hi%2C%20I%20need%20help%20with%20Mediclo%20Lab" target="_blank" rel="noopener noreferrer" className="block mt-4 p-3 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 text-center hover:shadow-md transition-shadow cursor-pointer">
+                        <i className="fas fa-headset text-2xl text-blue-300 mb-1"></i>
+                        <h4 className="font-bold text-gray-800 text-sm">Need Help?</h4>
+                        <p className="text-[10px] text-gray-500">Chat with Support</p>
+                    </a>
+                )}
+                {userProfile?.role === 'lab' && (
+                    <>
+                        <AILabSuggestions dataOwnerId={dataOwnerId} />
                         <DashboardChat 
                             dataOwnerId={dataOwnerId} 
                             userRole={userProfile.role} 
                             userName={userProfile.name || 'Lab Staff'} 
                         />
-                    )}
-                </aside>
+                    </>
+                )}
+            </aside>
                 <main className="flex-1 w-full min-h-[500px]">
                     {children}
                 </main>

@@ -15,73 +15,65 @@ export default function AdminDashboard() {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const loadStats = () => {
-            // 1. Users
-            const usersRef = ref(database, 'users');
-            onValue(usersRef, (snap) => {
-                const count = snap.size;
-                setStats(prev => ({ ...prev, totalUsers: count }));
-            });
+        // 1. Users
+        const unsubUsers = onValue(ref(database, 'users'), (snap) => {
+            const data = snap.val();
+            setStats(prev => ({ ...prev, totalUsers: data ? Object.keys(data).length : 0 }));
+        }, (error) => {
+            console.error('Users read error:', error.message);
+        });
 
-            // 2. Payments
-            const paymentsRef = ref(database, 'payment_requests');
-            onValue(paymentsRef, (snap) => {
-                const data = snap.val();
-                let revenue = 0;
-                let todayRev = 0;
-                let pending = 0;
-                const todayStr = new Date().toDateString();
-
-                if (data) {
+        // 2. Payments
+        const unsubPayments = onValue(ref(database, 'payment_requests'), (snap) => {
+            const data = snap.val();
+            let revenue = 0, todayRev = 0, pending = 0;
+            const todayStr = new Date().toDateString();
+            if (data) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                Object.values(data).forEach((userVal: any) => {
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    Object.values(data).forEach((userVal: any) => {
-                        // UserVal is the request object itself now (since we use set)
-                        // OR UserVal is { REQUEST_ID: ... } (if push was used historically)
-                        // We support both structures by checking properties.
-
-                        // Helper to process a single request
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const processReq = (r: any) => {
-                            if (r.status === 'approved') {
-                                revenue += Number(r.amount || 0);
-                                if (new Date(r.approvedAt || r.createdAt).toDateString() === todayStr) {
-                                    todayRev += Number(r.amount || 0);
-                                }
-                            }
-                            if (r.status === 'pending') {
-                                pending++;
-                            }
-                        };
-
-                        if (userVal.amount && userVal.status) {
-                            // Direct object (set)
-                            processReq(userVal);
-                        } else {
-                            // Nested list (push)
-                            Object.values(userVal).forEach((r: any) => processReq(r));
+                    const processReq = (r: any) => {
+                        if (r.status === 'approved') {
+                            revenue += Number(r.amount || 0);
+                            if (new Date(r.approvedAt || r.createdAt).toDateString() === todayStr)
+                                todayRev += Number(r.amount || 0);
                         }
-                    });
-                }
-                setStats(prev => ({ ...prev, totalRevenue: revenue, todayRevenue: todayRev, pendingPayments: pending }));
-            });
+                        if (r.status === 'pending') pending++;
+                    };
+                    if (userVal.amount && userVal.status) processReq(userVal);
+                    else if (userVal && typeof userVal === 'object')
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        Object.values(userVal).forEach((r: any) => processReq(r));
+                });
+            }
+            setStats(prev => ({ ...prev, totalRevenue: revenue, todayRevenue: todayRev, pendingPayments: pending }));
+        }, (error) => {
+            console.error('Payments read error:', error.message);
+        });
 
-            // 3. Subscriptions
-            const subsRef = ref(database, 'subscriptions');
-            onValue(subsRef, (snap) => {
-                let premiumCount = 0;
-                const data = snap.val();
-                if (data) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    Object.values(data).forEach((sub: any) => {
-                        if (sub.status === 'Premium' || sub.isPremium === true) premiumCount++;
-                    });
-                }
-                setStats(prev => ({ ...prev, premiumUsers: premiumCount }));
-                setLoading(false);
-            });
+        // 3. Subscriptions
+        const unsubSubs = onValue(ref(database, 'subscriptions'), (snap) => {
+            let premiumCount = 0;
+            const data = snap.val();
+            if (data) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                Object.values(data).forEach((sub: any) => {
+                    if (sub.status === 'Premium' || sub.isPremium === true) premiumCount++;
+                });
+            }
+            setStats(prev => ({ ...prev, premiumUsers: premiumCount }));
+            setLoading(false);
+        }, (error) => {
+            console.error('Subscriptions read error:', error.message);
+            setLoading(false);
+        });
+
+        // Fix 5: Cleanup all listeners on unmount
+        return () => {
+            unsubUsers();
+            unsubPayments();
+            unsubSubs();
         };
-
-        loadStats();
     }, []);
 
     if (loading) return <div className="p-8 text-center text-gray-500">Loading Analytics...</div>;
