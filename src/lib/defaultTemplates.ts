@@ -370,6 +370,16 @@ export const defaultTemplates = [
     },
 
     {
+        name: "Typhi Dot (IgG/IgM) Test",
+        category: "Serology",
+        subtests: [
+            { name: "Typhi Dot IgG", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 200 },
+            { name: "Typhi Dot IgM", unit: "", type: "text", ranges: { male: { min: 0, max: 0 }, female: { min: 0, max: 0 } }, price: 200 }
+        ],
+        totalPrice: 400
+    },
+
+    {
         name: "Rheumatoid Factor (RF)",
         category: "Serology",
         subtests: [

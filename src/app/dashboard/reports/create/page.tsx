@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { ref, onValue, push, get, update } from 'firebase/database';
+import { ref, onValue, push, get, update, set } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { generateReportId } from '@/lib/idGenerator';
+import { calculateBilling } from '@/lib/billingCalculator';
 import { createReportReadyNotification } from '@/lib/notificationManager';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -34,6 +35,7 @@ interface Template {
     name: string;
     category?: string;
     rate?: string;
+    price?: number | string;
     totalPrice?: number;
     parameters?: Parameter[];
     subtests?: any[];
@@ -336,6 +338,69 @@ export default function CreateReportPage() {
             };
 
             await push(ref(database, `reports/${dataSourceId}`), reportData);
+
+            // ---------------------------------------------------------
+            // AUTO-INVOICE GENERATION on Report Generation
+            // ---------------------------------------------------------
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                const invoiceKey = `inv_${patient.id}_${today}`;
+                const invRef = ref(database, `invoices/${dataSourceId}/${invoiceKey}`);
+                const invSnapshot = await get(invRef);
+                
+                let newlyAddedPrice = 0;
+                const newItemsToAdd = testDetails.map(td => {
+                    // template is already found above as `template`
+                    const price = parseFloat(String(template.totalPrice || template.price || template.rate || 0)) || 0;
+                    newlyAddedPrice += price;
+                    return {
+                        id: Math.random().toString(36).substr(2, 9),
+                        name: td?.testName || template.name || 'Lab Test',
+                        quantity: 1,
+                        rate: price,
+                        amount: price
+                    };
+                }).filter(Boolean);
+
+                if (invSnapshot.exists()) {
+                    const existingInv = invSnapshot.val();
+                    const updatedItems = [...(existingInv.items || []), ...newItemsToAdd];
+                    
+                    const b = calculateBilling(
+                        updatedItems,
+                        existingInv.discountPercent || 0,
+                        existingInv.gstPercent || 0,
+                        existingInv.paid || 0
+                    );
+                    
+                    await update(invRef, {
+                        ...b,
+                        items: updatedItems,
+                        updatedAt: new Date().toISOString()
+                    });
+                } else {
+                    const invNum = `INV-${Math.floor(Date.now() / 1000) % 10000}`;
+                    const b = calculateBilling(newItemsToAdd, 0, 0, 0);
+                    
+                    const invData = {
+                        invoiceId: invoiceKey,
+                        invoiceNumber: invNum,
+                        patientId: patient.id,
+                        patientName: patient.name,
+                        ...b,
+                        items: newItemsToAdd,
+                        paymentMode: 'Cash',
+                        includeGST: false,
+                        visitDate: today,
+                        createdAt: new Date().toISOString(),
+                        createdBy: user.uid
+                    };
+                    await set(invRef, invData);
+                }
+            } catch (invErr) {
+                console.error("Auto Invoice Error:", invErr);
+            }
+            // ---------------------------------------------------------
 
             // Update Sample status if applicable
             if (sampleIdQuery) {

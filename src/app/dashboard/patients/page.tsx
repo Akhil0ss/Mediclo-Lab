@@ -96,6 +96,7 @@ export default function PatientsPage() {
     // Billing Modal states
     const [showBillingModal, setShowBillingModal] = useState(false);
     const [billingPatient, setBillingPatient] = useState<any>(null);
+    const [billingDate, setBillingDate] = useState(new Date().toISOString().split('T')[0]);
     const [billingItems, setBillingItems] = useState([createBillingItem('', 1, 0)]);
     const [discount, setDiscount] = useState(0);
     const [paid, setPaid] = useState(0);
@@ -139,7 +140,32 @@ export default function PatientsPage() {
 
     // Auto-load billing items when modal opens
     useEffect(() => {
-        if (showBillingModal && billingPatient) {
+        const loadBillingData = async () => {
+            if (!showBillingModal || !billingPatient) return;
+
+            const latestDate = new Date().toISOString().split('T')[0];
+            setBillingDate(latestDate);
+
+            // Attempt to load existing invoice first
+            const dataSourceId = userProfile?.ownerId || user?.uid;
+            if (dataSourceId) {
+                try {
+                    const invRef = ref(database, `invoices/${dataSourceId}/inv_${billingPatient.id}_${latestDate}`);
+                    const invSnap = await get(invRef);
+                    if (invSnap.exists()) {
+                        const existInv = invSnap.val();
+                        if (existInv.items && existInv.items.length > 0) {
+                            setBillingItems(existInv.items);
+                            setDiscount(existInv.discount || 0);
+                            setPaid(existInv.paid || 0);
+                            setPaymentMode(existInv.paymentMode || 'Cash');
+                            setIncludeGST(existInv.includeGST || false);
+                            return; 
+                        }
+                    }
+                } catch (e) { console.error("Failed to load invoice:", e); }
+            }
+
             // Get reports for this patient
             const patientReports = reports.filter(r => r.patientId === billingPatient.id);
 
@@ -163,7 +189,6 @@ export default function PatientsPage() {
                     return new Date(b).getTime() - new Date(a).getTime();
                 });
 
-                const latestDate = uniqueDates[0];
                 const rp = patientReports.filter(r => getDate(r) === latestDate);
 
                 const ni: any[] = [];
@@ -222,8 +247,10 @@ export default function PatientsPage() {
                 });
                 setBillingItems(ni.length > 0 ? ni : [createBillingItem('No items found', 1, 0)]);
             }
-        }
-    }, [showBillingModal, billingPatient, reports, templates]);
+        };
+        loadBillingData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showBillingModal, billingPatient, reports, templates, userProfile, user]);
 
     useEffect(() => {
         if (!user || !userProfile) return;
@@ -1237,17 +1264,30 @@ export default function PatientsPage() {
                         <label className="text-sm font-bold mb-1 block">Visit Date</label>
                         <select
                             className="w-full px-3 py-2 border rounded"
-                            defaultValue={(() => {
-                                const vd = new Set<string>();
-                                reports.filter(r => r.patientId === billingPatient?.id).forEach(r => {
-                                    const d = r.createdAt || r.reportDate;
-                                    if (d) vd.add(d.split('T')[0]);
-                                });
-                                const dates = Array.from(vd).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
-                                return dates[0] || new Date().toISOString().split('T')[0];
-                            })()}
-                            onChange={(e) => {
+                            value={billingDate}
+                            onChange={async (e) => {
                                 const d = e.target.value;
+                                setBillingDate(d);
+                                
+                                const dataSourceId = userProfile?.ownerId || user?.uid;
+                                if (dataSourceId) {
+                                    try {
+                                        const invRef = ref(database, `invoices/${dataSourceId}/inv_${billingPatient.id}_${d}`);
+                                        const invSnap = await get(invRef);
+                                        if (invSnap.exists()) {
+                                            const existInv = invSnap.val();
+                                            if (existInv.items && existInv.items.length > 0) {
+                                                setBillingItems(existInv.items);
+                                                setDiscount(existInv.discount || 0);
+                                                setPaid(existInv.paid || 0);
+                                                setPaymentMode(existInv.paymentMode || 'Cash');
+                                                setIncludeGST(existInv.includeGST || false);
+                                                return;
+                                            }
+                                        }
+                                    } catch (err) {}
+                                }
+
                                 const rp = reports.filter(r => r.patientId === billingPatient?.id && (r.createdAt?.startsWith(d) || r.reportDate?.startsWith(d)));
                                 const ni = [];
                                 rp.forEach(r => {
@@ -1306,12 +1346,14 @@ export default function PatientsPage() {
                         >
                             {(() => {
                                 const vd = new Set<string>();
+                                const today = new Date().toISOString().split('T')[0];
+                                vd.add(today); // Always include today
                                 reports.filter(r => r.patientId === billingPatient?.id).forEach(r => {
                                     const d = r.createdAt || r.reportDate;
                                     if (d) vd.add(d.split('T')[0]);
                                 });
                                 return Array.from(vd).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).map(dt => (
-                                    <option key={dt} value={dt}>{new Date(dt).toLocaleDateString('en-IN')}</option>
+                                    <option key={dt} value={dt}>{dt === today ? `Today (${new Date(dt).toLocaleDateString('en-IN')})` : new Date(dt).toLocaleDateString('en-IN')}</option>
                                 ));
                             })()}
                         </select>
@@ -1476,8 +1518,23 @@ export default function PatientsPage() {
                             }
                             const dataSourceId = userProfile?.ownerId || user.uid;
                             const b = calculateBilling(validItems, discount, includeGST ? 18 : 0, paid);
-                            const invNum = generateInvoiceNumber('INV', Math.floor(Date.now() / 1000) % 10000);
+                            const invoiceKey = `inv_${billingPatient.id}_${billingDate}`;
+                            
+                            // Check if invoice already exists to preserve its Original ID and Date
+                            const invRef = ref(database, `invoices/${dataSourceId}/${invoiceKey}`);
+                            const invSnap = await get(invRef);
+                            
+                            let invNum = generateInvoiceNumber('INV', Math.floor(Date.now() / 1000) % 10000);
+                            let createdAt = new Date().toISOString();
+                            
+                            if (invSnap.exists()) {
+                                const existingData = invSnap.val();
+                                if (existingData.invoiceNumber) invNum = existingData.invoiceNumber;
+                                if (existingData.createdAt) createdAt = existingData.createdAt;
+                            }
+                            
                             const invData = {
+                                invoiceId: invoiceKey,
                                 invoiceNumber: invNum,
                                 patientId: billingPatient.patientId || billingPatient.id,
                                 patientName: billingPatient.name,
@@ -1485,10 +1542,11 @@ export default function PatientsPage() {
                                 items: validItems, // Store items in invoice
                                 paymentMode,
                                 includeGST,
-                                createdAt: new Date().toISOString(),
+                                visitDate: billingDate,
+                                createdAt: createdAt,
                                 createdBy: user.uid
                             };
-                            await push(ref(database, `invoices/${dataSourceId}`), invData);
+                            await update(invRef, invData);
                             window.open(`/print/invoice/${invNum}?data=${encodeURIComponent(JSON.stringify(invData))}`, '_blank');
                             setShowBillingModal(false);
                         }} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">

@@ -11,6 +11,7 @@ import AIReportAnalysis from './AIReportAnalysis';
 import { defaultTemplates } from '@/lib/defaultTemplates';
 import { getParameterTrend } from '@/lib/trendAnalysis';
 import { mergeTemplates } from '@/lib/templateUtils';
+import { calculateBilling } from '@/lib/billingCalculator';
 
 interface QuickReportModalProps {
     onClose: () => void;
@@ -464,6 +465,69 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             };
 
             await set(ref(database, `reports/${ownerId}/${reportId}`), reportData);
+
+            // ---------------------------------------------------------
+            // AUTO-INVOICE GENERATION on Report Generation
+            // ---------------------------------------------------------
+            try {
+                const today = new Date().toISOString().split('T')[0];
+                const invoiceKey = `inv_${selectedPatientId}_${today}`;
+                const invRef = ref(database, `invoices/${ownerId}/${invoiceKey}`);
+                const invSnapshot = await get(invRef);
+                
+                let newlyAddedPrice = 0;
+                const newItemsToAdd = testDetails.map(td => {
+                    const t = templates.find(temp => temp.id === td?.testId);
+                    const price = parseFloat(t?.totalPrice || t?.price || t?.rate || 0) || 0;
+                    newlyAddedPrice += price;
+                    return {
+                        id: Math.random().toString(36).substr(2, 9),
+                        name: td?.testName || 'Lab Test',
+                        quantity: 1,
+                        rate: price,
+                        amount: price
+                    };
+                }).filter(Boolean);
+
+                if (invSnapshot.exists()) {
+                    const existingInv = invSnapshot.val();
+                    const updatedItems = [...(existingInv.items || []), ...newItemsToAdd];
+                    
+                    const b = calculateBilling(
+                        updatedItems,
+                        existingInv.discountPercent || 0,
+                        existingInv.gstPercent || 0,
+                        existingInv.paid || 0
+                    );
+                    
+                    await update(invRef, {
+                        ...b,
+                        items: updatedItems,
+                        updatedAt: new Date().toISOString()
+                    });
+                } else {
+                    const invNum = `INV-${Math.floor(Date.now() / 1000) % 10000}`;
+                    const b = calculateBilling(newItemsToAdd, 0, 0, 0);
+                    
+                    const invData = {
+                        invoiceId: invoiceKey,
+                        invoiceNumber: invNum,
+                        patientId: selectedPatientId,
+                        patientName: patientData.name,
+                        ...b,
+                        items: newItemsToAdd,
+                        paymentMode: 'Cash',
+                        includeGST: false,
+                        visitDate: today,
+                        createdAt: new Date().toISOString(),
+                        createdBy: user.uid
+                    };
+                    await set(invRef, invData);
+                }
+            } catch (invErr) {
+                console.error("Auto Invoice Error:", invErr);
+            }
+            // ---------------------------------------------------------
 
             // Update sample status to Completed
             await update(ref(database, `samples/${ownerId}/${selectedSampleId}`), {
