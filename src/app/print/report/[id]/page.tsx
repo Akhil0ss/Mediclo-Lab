@@ -469,8 +469,7 @@ export default function PrintReportPage() {
             transform: translate(-50%, -50%) rotate(-45deg);
             font-size: 80px;
             font-weight: 900;
-            color: #d1d5db !important; /* Fixed hex color for reliable printing */
-            opacity: 0.12 !important; /* Slightly more visible but still faint */
+            color: rgba(209, 213, 219, 0.35) !important; /* Using rgba avoids rasterization (grainy print) */
             z-index: 999999; /* Top absolute layer */
             white-space: nowrap;
             pointer-events: none;
@@ -481,10 +480,13 @@ export default function PrintReportPage() {
 
         .report-container {
             width: 210mm; 
+            min-height: 297mm; /* Simulate A4 height */
             margin: 0 auto; 
             background: white;
             padding: 0;
             position: relative; 
+            display: flex;
+            flex-direction: column;
         }
         
         @media print {
@@ -655,8 +657,8 @@ export default function PrintReportPage() {
             z-index: 10;
         }
 
-        /* Purple Footer - fixed to every page bottom */
-        .footer { 
+        /* Footer fixed to physical bottom in print, layout bottom on screen */
+        .fixed-print-footer {
             background: ${theme.gradient} !important; 
             color: white !important; 
             padding: 10px 20px; 
@@ -664,19 +666,17 @@ export default function PrintReportPage() {
             justify-content: space-between; 
             align-items: center; 
             font-size: 9px; 
-            position: fixed; 
-            bottom: 0px; 
-            left: 50%; 
-            transform: translateX(-50%); 
-            width: 210mm; 
-            z-index: 200000; 
+            width: 100%;
+            box-sizing: border-box;
+            margin-top: auto; /* Push to bottom on A4 screen layout */
             -webkit-print-color-adjust: exact !important; 
             print-color-adjust: exact !important; 
+            z-index: 200000;
         }
-        .footer-left p { margin: 1px 0; }
-        .footer-left strong { font-size: 10px; }
-        .footer-right { text-align: right; }
-        .footer-right p { margin: 1px 0; }
+        .fixed-print-footer p { margin: 1px 0; }
+        .fixed-print-footer strong { font-size: 10px; }
+
+        .main-table { width: 100%; border-collapse: collapse; position: relative; z-index: 1; margin-bottom: 0px; }
 
         /* End of Report Marker */
         .end-of-report {
@@ -695,27 +695,49 @@ export default function PrintReportPage() {
             top: -5px;
             left: 50%;
             transform: translateX(-50%) rotate(-10deg);
-            border: 3px solid #10b981;
-            color: #10b981;
+            border: 3px solid rgba(16, 185, 129, 0.3);
+            color: rgba(16, 185, 129, 0.3);
             padding: 4px 12px;
             font-weight: 900;
             font-size: 14px;
             text-transform: uppercase;
             border-radius: 4px;
-            opacity: 0.15;
             letter-spacing: 1px;
             pointer-events: none;
-            mix-blend-mode: multiply;
         }
 
         thead { display: table-header-group; } 
         @media print {
             body, html { margin: 0 !important; padding: 0 !important; background: white !important; }
-            .report-container { box-shadow: none; border: none; width: 100%; margin: 0; padding: 0 !important; }
+            .report-container { 
+                box-shadow: none !important; 
+                border: none !important; 
+                width: 100% !important; 
+                margin: 0 !important; 
+                padding: 0 !important; 
+                display: block !important; /* CRITICAL: Prevent flex print clipping */
+                min-height: auto !important;
+                position: static !important; /* CRITICAL: Prevent coordinate fragmentation for fixed children */
+            }
+            .main-table {
+                position: static !important; /* Prevent coordinate fragmentation */
+            }
             .no-print { display: none !important; }
-            .footer { left: 0 !important; width: 100% !important; transform: none !important; bottom: 0 !important; position: fixed !important; z-index: 999999 !important; display: flex !important; visibility: visible !important; }
-            .watermark { display: block !important; opacity: 0.1 !important; z-index: 1000000 !important; color: #d1d5db !important; }
+            .watermark { display: block !important; z-index: 1000000 !important; }
             .print-btn { display: none !important; }
+            .fixed-print-footer { 
+                position: fixed !important; 
+                bottom: 0 !important; 
+                left: 0 !important; 
+                right: 0 !important;
+                width: 100% !important; 
+                transform: none !important;
+                z-index: 999999 !important; 
+                margin-top: 0 !important;
+                display: flex !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
         }
         .print-btn { position: fixed; bottom: 60px; right: 20px; background: ${theme.gradient}; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 700; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 200000; transition: all 0.2s; }
         .print-btn:hover { transform: translateY(-2px); }
@@ -725,7 +747,7 @@ export default function PrintReportPage() {
     <div class="watermark">CONFIDENTIAL</div>
     <div class="report-container">
         <!-- Main Table Structure for Repeating Headers/Footers -->
-        <table style="width: 100%; border-collapse: collapse; position: relative; z-index: 1;">
+        <table class="main-table">
             <!-- REPEATING HEADER -->
             <thead style="display: table-header-group;">
                 <tr>
@@ -772,17 +794,15 @@ export default function PrintReportPage() {
                                 </div>
                             </div>
                         </div>
-                        <!-- Spacer for visual separation -->
-                        <div style="height: 10px;"></div>
                     </td>
                 </tr>
             </thead>
 
-            <!-- FOOTER SPACER (forces data to avoid the floating purple footer padding constraints) -->
+            <!-- REPEATING FOOTER SPACER -->
             <tfoot style="display: table-footer-group;">
                  <tr>
                     <td style="border: none; padding: 0;">
-                        <div style="height: 50px;"></div>
+                        <div style="height: 40px;"></div> <!-- Matches your footer height exactly, strictly placed before tbody for Chrome print parser -->
                     </td>
                 </tr>
             </tfoot>
@@ -894,11 +914,10 @@ export default function PrintReportPage() {
         </tr>
     </tbody>
 </table>
-</div>
 
-    <!-- Purple Footer perfectly fixed to absolute bottom -->
-    <div class="footer">
-        <div class="footer-left">
+    <!-- Visual Footer: Forced to layout bottom on screen, and absolute physical fixed bottom in print -->
+    <div class="fixed-print-footer">
+        <div style="text-align: left;">
             <strong>${branding.labName || 'Spotnet MedOS'}</strong>
             <p>Report Generated: ${new Date().toLocaleString()}</p>
         </div>
@@ -906,11 +925,13 @@ export default function PrintReportPage() {
             <p style="font-size: 9px; font-weight: 700;">Sample ID: ${sampleId}</p>
             <p style="font-size: 8px; margin-top: 2px;">Powered by Spotnet MedOS</p>
         </div>
-        <div class="footer-right">
+        <div style="text-align: right;">
             <div style="font-weight: 800; font-size: 10px; margin-bottom: 2px;">${formattedReportId}</div>
             <p>Computer Generated Report</p>
         </div>
     </div>
+
+</div>
 
     <button onclick="window.print()" class="print-btn no-print">🖨️ Print / Save PDF</button>
 </body>
