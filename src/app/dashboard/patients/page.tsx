@@ -460,20 +460,54 @@ export default function PatientsPage() {
         if (!confirm('Are you sure you want to update this patient details?')) return;
         const dataSourceId = userProfile?.ownerId || user.uid;
 
-        await update(ref(database, `patients/${dataSourceId}/${selectedPatient.id}`), {
-            title: formData.title,
-            name: formData.name,
-            age: parseInt(formData.age),
-            gender: formData.gender,
-            mobile: formData.mobile,
-            address: formData.address,
-            refDoctor: formData.refDoctor,
-            updatedAt: new Date().toISOString()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updates: any = {};
+
+        // 1. Update patient record
+        updates[`patients/${dataSourceId}/${selectedPatient.id}/title`] = formData.title;
+        updates[`patients/${dataSourceId}/${selectedPatient.id}/name`] = formData.name;
+        updates[`patients/${dataSourceId}/${selectedPatient.id}/age`] = parseInt(formData.age);
+        updates[`patients/${dataSourceId}/${selectedPatient.id}/gender`] = formData.gender;
+        updates[`patients/${dataSourceId}/${selectedPatient.id}/mobile`] = formData.mobile;
+        updates[`patients/${dataSourceId}/${selectedPatient.id}/address`] = formData.address;
+        updates[`patients/${dataSourceId}/${selectedPatient.id}/refDoctor`] = formData.refDoctor;
+        updates[`patients/${dataSourceId}/${selectedPatient.id}/updatedAt`] = new Date().toISOString();
+
+        // 2. Sync patient data to all related reports
+        const relatedReports = reports.filter(r => r.patientId === selectedPatient.id);
+        relatedReports.forEach(r => {
+            updates[`reports/${dataSourceId}/${r.id}/patientName`] = formData.name;
+            updates[`reports/${dataSourceId}/${r.id}/patientAge`] = parseInt(formData.age);
+            updates[`reports/${dataSourceId}/${r.id}/patientGender`] = formData.gender;
+            updates[`reports/${dataSourceId}/${r.id}/patientMobile`] = formData.mobile;
+            updates[`reports/${dataSourceId}/${r.id}/patientRefDoctor`] = formData.refDoctor;
+            updates[`reports/${dataSourceId}/${r.id}/refDoctor`] = formData.refDoctor;
         });
+
+        // 3. Sync patient data to all related samples
+        const relatedSamples = samples.filter(s => s.patientId === selectedPatient.id);
+        relatedSamples.forEach(s => {
+            updates[`samples/${dataSourceId}/${s.id}/patientName`] = formData.name;
+            updates[`samples/${dataSourceId}/${s.id}/patientAge`] = parseInt(formData.age);
+            updates[`samples/${dataSourceId}/${s.id}/patientGender`] = formData.gender;
+            updates[`samples/${dataSourceId}/${s.id}/patientMobile`] = formData.mobile;
+        });
+
+        try {
+            console.log('[PATIENT SYNC] Patient ID:', selectedPatient.id);
+            console.log('[PATIENT SYNC] Total reports in state:', reports.length);
+            console.log('[PATIENT SYNC] Related reports found:', relatedReports.length, relatedReports.map(r => ({id: r.id, patientId: r.patientId})));
+            console.log('[PATIENT SYNC] Related samples found:', relatedSamples.length);
+            console.log('[PATIENT SYNC] Update paths:', Object.keys(updates));
+            await update(ref(database), updates);
+            showToast(`Patient updated! ${relatedReports.length} reports & ${relatedSamples.length} samples synced.`, 'success');
+        } catch (error) {
+            console.error('Sync error:', error);
+            showToast('Patient updated but sync failed. Try again.', 'error');
+        }
 
         setShowEditModal(false);
         resetForm();
-        showToast('Patient updated!', 'success');
     };
 
     const handleDeletePatient = async (patientId: string, patientName: string) => {

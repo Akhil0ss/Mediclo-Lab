@@ -429,7 +429,7 @@ export default function PrintReportPage() {
 
             return `
                 <div style="margin-top: ${catIndex === 0 ? '0' : '20px'}; page-break-before: ${catIndex === 0 ? 'auto' : 'avoid'};">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 4px 0; border-bottom: 2px solid #e2e8f0;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 4px 0; border-bottom: 2px solid #e2e8f0; page-break-after: avoid; break-after: avoid;">
                          <div style="width: 4px; height: 18px; background: ${theme.primary}; border-radius: 2px;"></div>
                          <h2 style="font-size: 14px; font-weight: 900; color: ${theme.primary}; text-transform: uppercase; letter-spacing: 1px;">DEPARTMENT: ${category}</h2>
                     </div>
@@ -447,7 +447,7 @@ export default function PrintReportPage() {
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         @page { 
-            margin: 0mm 0mm 10px 0mm; /* Top 0, Right 0, Bottom 10px, Left 0 */
+            margin: 0mm;
             size: A4; 
         }
         
@@ -459,23 +459,24 @@ export default function PrintReportPage() {
             line-height: 1.3;
             color: #1e293b;
             -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
             color-adjust: exact !important;
         }
-        
+
         .watermark {
             position: fixed;
-            top: 50%;
-            left: 50%; 
+            top: 55%;
+            left: 50%;
             transform: translate(-50%, -50%) rotate(-45deg);
             font-size: 80px;
-            font-weight: 800;
-            color: rgba(0,0,0,0.03);
-            z-index: 0;
+            font-weight: 900;
+            color: #d1d5db !important; /* Fixed hex color for reliable printing */
+            opacity: 0.12 !important; /* Slightly more visible but still faint */
+            z-index: 999999; /* Top absolute layer */
             white-space: nowrap;
             pointer-events: none;
             user-select: none;
             text-transform: uppercase;
+            display: block !important;
         }
 
         .report-container {
@@ -484,8 +485,6 @@ export default function PrintReportPage() {
             background: white;
             padding: 0;
             position: relative; 
-            display: flex;
-            flex-direction: column;
         }
         
         @media print {
@@ -494,53 +493,14 @@ export default function PrintReportPage() {
                print-color-adjust: exact !important;
                color-adjust: exact !important;
            }
-           
-           body { 
-               background: white; 
-               margin: 0; 
-               padding: 0;
-               color: #000 !important;
-           }
-           
-           .report-container {
-               width: 100%;
-               margin: 0;
-               box-shadow: none;
-           }
-           
-            .no-print { display: none !important; }
-            thead { display: table-header-group; }
-            tfoot { display: table-footer-group; }
-            
-            /* Darker text for print */
-            p, span, div, td, th, label {
-                color: #000 !important;
-            }
-            
-            /* Stronger borders */
-            .border, [class*="border-"], table, th, td {
-                border-color: #333 !important;
-            }
-            
-            /* Darker backgrounds */
-            .bg-gray-50, .bg-gray-100 {
-                background-color: #e5e5e5 !important;
-            }
-            
-            /* Ensure gradients print */
-            [style*="gradient"] {
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-            }
-            
-            /* Font weights for visibility */
-            .font-medium {
-                font-weight: 600 !important;
-            }
-            
-            .font-semibold, strong, b {
-                font-weight: 700 !important;
-            }
+           body { background: white; margin: 0; padding: 0; }
+           .report-container { width: 100%; margin: 0; box-shadow: none; }
+           .no-print { display: none !important; }
+           thead { display: table-header-group; }
+           tfoot { display: table-footer-group; }
+           [style*="gradient"] { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+           .font-medium { font-weight: 600 !important; }
+           .font-semibold, strong, b { font-weight: 700 !important; }
         }
 
         /* HEADER */
@@ -598,12 +558,11 @@ export default function PrintReportPage() {
         .header-qr { 
             width: 80px; 
             height: 80px; 
-            background: rgba(255, 255, 255, 0.25); /* Glossy transparent white */
+            background: rgba(255, 255, 255, 0.25);
             border-radius: 10px;
             padding: 4px;
-            backdrop-filter: blur(4px);
             border: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05); /* Subtle depth */
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         }
         .header-qr img {
             width: 100%;
@@ -692,32 +651,32 @@ export default function PrintReportPage() {
 
         /* Last Page Footer System */
         .last-section {
-            margin-top: auto; /* Push to bottom in flex container */
-            background: white;
+            margin-top: 30px;
             z-index: 10;
-            break-inside: avoid;
         }
 
-        .footer { background: ${theme.gradient}; color: white; padding: 12px 20px; display: flex; justify-content: space-between; font-size: 9px; }
+        /* Purple Footer - fixed to every page bottom */
+        .footer { 
+            background: ${theme.gradient} !important; 
+            color: white !important; 
+            padding: 10px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            font-size: 9px; 
+            position: fixed; 
+            bottom: 0px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            width: 210mm; 
+            z-index: 200000; 
+            -webkit-print-color-adjust: exact !important; 
+            print-color-adjust: exact !important; 
+        }
         .footer-left p { margin: 1px 0; }
         .footer-left strong { font-size: 10px; }
         .footer-right { text-align: right; }
-        .footer-right p { margin: 1px 0; opacity: 0.9; }
-
-        /* Watermark */
-        .watermark { 
-            position: fixed; 
-            top: 50%; 
-            left: 50%; 
-            transform: translate(-50%, -50%) rotate(-45deg); 
-            font-size: 80px; 
-            font-weight: 800; 
-            color: rgba(0,0,0,0.02); 
-            z-index: 0; 
-            white-space: nowrap; 
-            pointer-events: none; 
-            text-transform: uppercase;
-        }
+        .footer-right p { margin: 1px 0; }
 
         /* End of Report Marker */
         .end-of-report {
@@ -727,11 +686,7 @@ export default function PrintReportPage() {
             color: #cbd5e1;
             letter-spacing: 1px;
             text-transform: uppercase;
-            align-self: center;
             margin-bottom: 20px;
-        }
-        .end-of-report::before, .end-of-report::after {
-            content: none; 
         }
 
         /* Verified Stamp */
@@ -740,7 +695,7 @@ export default function PrintReportPage() {
             top: -5px;
             left: 50%;
             transform: translateX(-50%) rotate(-10deg);
-            border: 3px solid #10b981; /* Green Verified Stamp */
+            border: 3px solid #10b981;
             color: #10b981;
             padding: 4px 12px;
             font-weight: 900;
@@ -753,20 +708,16 @@ export default function PrintReportPage() {
             mix-blend-mode: multiply;
         }
 
-        /* Repeating Header & Footer Logic */
         thead { display: table-header-group; } 
-        tfoot { display: table-footer-group; }
-        
-        /* Ensure content doesn't overlap fixed elements if used, but table method handles this naturally */
-
-
         @media print {
-            body { padding: 0; background: white; }
-            .report-container { box-shadow: none; border: none; }
+            body, html { margin: 0 !important; padding: 0 !important; background: white !important; }
+            .report-container { box-shadow: none; border: none; width: 100%; margin: 0; padding: 0 !important; }
             .no-print { display: none !important; }
+            .footer { left: 0 !important; width: 100% !important; transform: none !important; bottom: 0 !important; position: fixed !important; z-index: 999999 !important; display: flex !important; visibility: visible !important; }
+            .watermark { display: block !important; opacity: 0.1 !important; z-index: 1000000 !important; color: #d1d5db !important; }
+            .print-btn { display: none !important; }
         }
-
-        .print-btn { position: fixed; bottom: 20px; right: 20px; background: ${theme.gradient}; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 700; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 1000; }
+        .print-btn { position: fixed; bottom: 60px; right: 20px; background: ${theme.gradient}; color: white; padding: 12px 24px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 700; box-shadow: 0 4px 15px rgba(0,0,0,0.2); z-index: 200000; transition: all 0.2s; }
         .print-btn:hover { transform: translateY(-2px); }
     </style>
 </head>
@@ -774,11 +725,12 @@ export default function PrintReportPage() {
     <div class="watermark">CONFIDENTIAL</div>
     <div class="report-container">
         <!-- Main Table Structure for Repeating Headers/Footers -->
-        <table style="width: 100%; border-collapse: collapse;">
+        <table style="width: 100%; border-collapse: collapse; position: relative; z-index: 1;">
             <!-- REPEATING HEADER -->
             <thead style="display: table-header-group;">
                 <tr>
-                    <td>
+                    <td style="position: relative;">
+                        <!-- Repeating Header Content -->
                         <div class="header">
                             <!-- Left: Logo -->
                             <div class="header-logo-container">
@@ -826,12 +778,11 @@ export default function PrintReportPage() {
                 </tr>
             </thead>
 
-            <!-- FOOTER SPACER -->
+            <!-- FOOTER SPACER (forces data to avoid the floating purple footer padding constraints) -->
             <tfoot style="display: table-footer-group;">
                  <tr>
-                    <td>
-                        <!-- This spacer is important for intermediate pages -->
-                        <div style="height: 10px;"></div>
+                    <td style="border: none; padding: 0;">
+                        <div style="height: 50px;"></div>
                     </td>
                 </tr>
             </tfoot>
@@ -906,68 +857,59 @@ export default function PrintReportPage() {
                     <!-- Test Results -->
                     ${testResultsHTML}
                 </div>
+
+                <!-- LAST SECTION: Notes + Signature (appears only after content, on last page) -->
+                <div class="last-section" style="margin-top: 15px;">
+                    <div style="padding: 0 20px;">
+                        <!-- Notes and Disclaimer combined into a single visual block -->
+                        <div class="notes-section" style="margin-bottom: 12px;">
+                            <h4>📋 CLINICAL NOTES & IMPRESSION</h4>
+                            <p>${branding.footerNotes || 'These results should be clinically correlated with the patient\'s history and examination findings. The reported values depend on the sample quality and testing methodology. Isolated abnormal results may require repeat testing or further evaluation. Please consult your physician for interpretation and management.'}</p>
+                        </div>
+                        
+                        <div class="disclaimer-box" style="margin-bottom: 20px;">
+                            <strong>DISCLAIMER:</strong> This report is for diagnostic reference only and not a final diagnosis. Methodological limitations exist for all laboratory tests. In case of unexpected results, a fresh sample repeat is recommended. This digitally generated document acts as a preliminary report; the final authorized version requires a physical or valid digital signature.
+                        </div>
+
+                        <div class="signature-section" style="margin-bottom: 10px;">
+                            <div class="digital-sign">
+                                <p><span style="color: #10b981; font-size: 10px;">✔</span> 🔐 Digital Signature</p>
+                                <div class="hash">SHA256: ${report.id.replace(/-/g, '').substring(0, 24)}...</div>
+                                <p style="margin-top: 3px;">Electronically Verified</p>
+                            </div>
+                            <div class="end-of-report">~ END OF REPORT ~</div>
+                            <div class="auth-sign">
+                                <div class="stamp-box">VERIFIED</div>
+                                <div class="sign-space"></div>
+                                <div>
+                                    <strong>${branding.director || 'Dr. Authorized Pathologist'}</strong>
+                                    <span> - Chief Pathologist</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
             </td>
         </tr>
     </tbody>
 </table>
+</div>
 
-<!-- THE LAST SECTION (Pushed to bottom by margin-top: auto) -->
-<div class="last-section">
-    <div style="padding: 0 20px;">
-        <!-- Clinical Notes -->
-        <div class="notes-section" style="margin-top: 20px;">
-            <h4>📋 CLINICAL NOTES & IMPRESSION</h4>
-            <p>${branding.footerNotes || 'These results should be clinically correlated with the patient\'s history and examination findings. The reported values depend on the sample quality and testing methodology. Isolated abnormal results may require repeat testing or further evaluation. Please consult your physician for interpretation and management.'}</p>
-        </div>
-
-        <!-- Disclaimer -->
-        <div class="disclaimer-box">
-            <strong>DISCLAIMER:</strong> This report is for diagnostic reference only and not a final diagnosis. Methodological limitations exist for all laboratory tests. In case of unexpected results, a fresh sample repeat is recommended. This digitally generated document acts as a preliminary report; the final authorized version requires a physical or valid digital signature.
-        </div>
-
-        <!-- Signature -->
-        <div class="signature-section" style="margin-bottom: 20px;">
-            <div class="digital-sign">
-                <p><span style="color: #10b981; font-size: 10px;">✔</span> 🔐 Digital Signature</p>
-                <div class="hash">SHA256: ${report.id.replace(/-/g, '').substring(0, 24)}...</div>
-                <p style="margin-top: 3px;">Electronically Verified</p>
-            </div>
-            
-            <div class="end-of-report">~ END OF REPORT ~</div>
-
-            <div class="auth-sign">
-                <div class="stamp-box">VERIFIED</div>
-                <div class="sign-space"></div>
-                <div>
-                    <strong>${branding.director || 'Dr. Authorized Pathologist'}</strong>
-                    <span> - Chief Pathologist</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- The Purple Bar -->
+    <!-- Purple Footer perfectly fixed to absolute bottom -->
     <div class="footer">
         <div class="footer-left">
             <strong>${branding.labName || 'Spotnet MedOS'}</strong>
             <p>Report Generated: ${new Date().toLocaleString()}</p>
         </div>
         <div style="flex: 1; text-align: center;">
-            <p style="font-size: 9px; opacity: 0.9; font-weight: 700;">Sample ID: ${sampleId}</p>
-            <p style="font-size: 8px; opacity: 0.6; margin-top: 2px;">Powered by Spotnet MedOS</p>
+            <p style="font-size: 9px; font-weight: 700;">Sample ID: ${sampleId}</p>
+            <p style="font-size: 8px; margin-top: 2px;">Powered by Spotnet MedOS</p>
         </div>
         <div class="footer-right">
             <div style="font-weight: 800; font-size: 10px; margin-bottom: 2px;">${formattedReportId}</div>
             <p>Computer Generated Report</p>
         </div>
-    </div>
-</div>
-</div>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-
     </div>
 
     <button onclick="window.print()" class="print-btn no-print">🖨️ Print / Save PDF</button>
