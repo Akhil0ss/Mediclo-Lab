@@ -27,6 +27,9 @@ export default function PatientsPage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [reports, setReports] = useState<any[]>([]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [visits, setVisits] = useState<any[]>([]);
+    const [assignedPatientIds, setAssignedPatientIds] = useState<Set<string>>(new Set());
+    const [loading, setLoading] = useState(true);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [doctors, setDoctors] = useState<any[]>([]);
@@ -261,8 +264,9 @@ export default function PatientsPage() {
         const reportsRef = ref(database, `reports/${dataSourceId}`);
         const commonTemplatesRef = ref(database, 'common_templates');
         const doctorsRef = ref(database, `doctors/${dataSourceId}`);
-        const templatesRef = ref(database, `templates/${dataSourceId}`); // Added templatesRef
-        const samplesRef = ref(database, `samples/${dataSourceId}`); // Added samplesRef
+        const templatesRef = ref(database, `templates/${dataSourceId}`);
+        const samplesRef = ref(database, `samples/${dataSourceId}`);
+        const opdRef = ref(database, `opd/${dataSourceId}`);
 
         const unsubPatients = onValue(patientsRef, (snapshot) => {
             const data: any[] = [];
@@ -304,6 +308,14 @@ export default function PatientsPage() {
             setSamples(data);
         });
 
+        const unsubVisits = onValue(opdRef, (snapshot) => {
+            const data: any[] = [];
+            snapshot.forEach((child) => {
+                data.push({ id: child.key, ...child.val() });
+            });
+            setVisits(data);
+        });
+
         const unsubReports = onValue(reportsRef, (snapshot) => {
             const data: any[] = [];
             snapshot.forEach((child) => { data.push({ id: child.key, ...child.val() }); });
@@ -318,13 +330,34 @@ export default function PatientsPage() {
             setDoctors(data);
         });
 
+        // Fetch OPD visits to determine assigned patients for Doctor
+        let unsubOPD = () => {};
+        if (userProfile.role === 'doctor') {
+            const opdRef = ref(database, `opd/${dataSourceId}`);
+            unsubOPD = onValue(opdRef, (snapshot) => {
+                const ids = new Set<string>();
+                const doctorId = user.uid;
+                snapshot.forEach((child) => {
+                    const visit = child.val();
+                    if (visit.doctorId === doctorId) {
+                        ids.add(visit.patientId);
+                    }
+                });
+                setAssignedPatientIds(ids);
+            });
+        }
+
+        setLoading(false);
+
         return () => {
             unsubPatients();
             unsubTemplates();
             unsubCommon();
             unsubSamples();
+            unsubVisits();
             unsubReports();
             unsubDoctors();
+            unsubOPD();
         };
     }, [user, userProfile]);
 
@@ -347,10 +380,11 @@ export default function PatientsPage() {
         let basePatients = patients;
 
         if (userProfile?.role === 'doctor') {
-            const doctorId = userProfile?.doctorId || user?.uid;
             const doctorName = userProfile?.name;
-
-            basePatients = patients.filter(p => p.refDoctor === doctorName);
+            basePatients = patients.filter(p => 
+                p.refDoctor === doctorName || 
+                assignedPatientIds.has(p.id)
+            );
         }
 
         if (!searchQuery.trim()) {
@@ -361,12 +395,13 @@ export default function PatientsPage() {
                 basePatients.filter(p =>
                     p.name.toLowerCase().includes(query) ||
                     p.mobile.includes(query) ||
-                    (p.address && p.address.toLowerCase().includes(query))
+                    (p.address && p.address.toLowerCase().includes(query)) ||
+                    (p.patientId && p.patientId.toLowerCase().includes(query))
                 )
             );
         }
         setCurrentPage(1);
-    }, [searchQuery, patients, userProfile, user]);
+    }, [searchQuery, patients, userProfile, user, assignedPatientIds]);
 
     const handleFilterByDate = () => {
         if (!fromDate || !toDate) {
@@ -1214,6 +1249,54 @@ export default function PatientsPage() {
                                                         >
                                                             <i className="fas fa-print"></i> <span className="hidden sm:inline">PDF</span>
                                                         </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Clinical History (Rx) */}
+                        <div className="mb-4">
+                            <h4 className="font-bold text-lg mb-2 text-blue-700 flex items-center">
+                                <i className="fas fa-stethoscope mr-2"></i>
+                                Clinical Visits (Rx) ({visits.filter(v => v.patientId === selectedPatient.id).length})
+                            </h4>
+                            {visits.filter(v => v.patientId === selectedPatient.id).length === 0 ? (
+                                <p className="text-gray-500 text-sm italic pl-6">No clinical visits recorded</p>
+                            ) : (
+                                <div className="space-y-2 max-h-60 overflow-y-auto">
+                                    {visits
+                                        .filter(v => v.patientId === selectedPatient.id)
+                                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                                        .map(visit => (
+                                            <div key={visit.id} className="bg-white border border-blue-200 rounded-lg p-3 hover:shadow-md transition">
+                                                <div className="flex justify-between items-start gap-4">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <span className="text-xs font-black bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-tighter">Token #{visit.token}</span>
+                                                            <span className="text-gray-400 text-[10px] truncate max-w-[150px]">ID: {visit.id.slice(-6).toUpperCase()}</span>
+                                                        </div>
+                                                        <div className="text-sm font-black text-gray-800">Dr. {visit.doctorName}</div>
+                                                        <div className="text-[10px] text-gray-500 line-clamp-1 italic">{visit.complaints || 'No complaints recorded'}</div>
+                                                    </div>
+                                                    <div className="flex flex-col items-end gap-2 shrink-0">
+                                                        <span className="text-[9px] font-bold text-gray-400 uppercase">{new Date(visit.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+                                                        <div className="flex gap-1">
+                                                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${visit.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                                {visit.status === 'completed' ? 'Prescribed' : 'Waiting'}
+                                                            </span>
+                                                            {visit.status === 'completed' && (
+                                                                <button 
+                                                                    onClick={() => window.open(`/print/opd/${visit.id}`, '_blank')}
+                                                                    className="bg-blue-50 text-blue-700 p-1 rounded hover:bg-blue-100 transition shadow-sm"
+                                                                    title="Print Prescription"
+                                                                >
+                                                                    <i className="fas fa-print text-[10px]"></i>
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>

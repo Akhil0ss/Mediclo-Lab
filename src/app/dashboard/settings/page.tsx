@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ref, onValue, set, update, push, remove, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import GoogleDriveBackup from '@/components/GoogleDriveBackup';
-import { hashPassword, generatePassword } from '@/lib/userUtils';
+import { hashPassword, generatePassword, type UserRole } from '@/lib/userUtils';
 import { formatIdFromDate } from '@/lib/idGenerator';
 
 import { useSubscription } from '@/contexts/SubscriptionContext';
@@ -73,7 +73,7 @@ export default function SettingsPage() {
     const [staffList, setStaffList] = useState<any[]>([]);
     const [showStaffModal, setShowStaffModal] = useState(false);
     const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
-    const [staffForm, setStaffForm] = useState({ username: '', password: '', role: 'lab', name: '', isActive: true });
+    const [staffForm, setStaffForm] = useState({ username: '', password: '', role: 'lab' as UserRole, name: '', isActive: true, specialization: '', registrationNumber: '' });
     const [showPassword, setShowPassword] = useState(false);
 
     useEffect(() => {
@@ -136,10 +136,16 @@ export default function SettingsPage() {
                 id: staffId,
                 username: finalUsername,
                 name: staffForm.name,
-                role: 'lab', 
+                role: staffForm.role, 
                 isActive: staffForm.isActive,
                 updatedAt: new Date().toISOString()
             };
+
+            // Add Doctor specific fields
+            if (staffForm.role === 'doctor') {
+                staffData.specialization = staffForm.specialization;
+                staffData.registrationNumber = staffForm.registrationNumber;
+            }
 
             // ONLY update password if a new one was provided OR it was auto-generated for NEW staff
             if (finalPassword) {
@@ -160,7 +166,7 @@ export default function SettingsPage() {
                 alert('Staff member updated successfully!');
             }
             
-            setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true });
+            setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true, specialization: '', registrationNumber: '' });
             setEditingStaffId(null);
             setShowPassword(false);
         } catch (error) {
@@ -555,7 +561,7 @@ export default function SettingsPage() {
                                     <p className="text-[10px] text-gray-500">Only your staff uses this prefix to login.</p>
                                 </div>
                             </div>
-                            <button onClick={() => { setEditingStaffId(null); setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true }); setShowStaffModal(true); }} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm flex items-center gap-2">
+                            <button onClick={() => { setEditingStaffId(null); setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true, specialization: '', registrationNumber: '' }); setShowStaffModal(true); }} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm flex items-center gap-2">
                                 <i className="fas fa-plus"></i> Add Staff
                             </button>
                         </div>
@@ -1019,11 +1025,43 @@ export default function SettingsPage() {
                                 )}
                             </div>
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Designation</label>
-                                <div className="p-2 bg-purple-50 text-purple-700 rounded-lg border border-purple-100 font-bold text-sm flex items-center gap-2">
-                                    <i className="fas fa-flask"></i> Lab Technician
-                                </div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Role / Designation</label>
+                                <select 
+                                    value={staffForm.role}
+                                    onChange={e => setStaffForm({...staffForm, role: e.target.value as UserRole})}
+                                    className="w-full p-2.5 border-2 border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-white"
+                                >
+                                    <option value="lab">Lab Technician</option>
+                                    <option value="doctor">Doctor / Consultant</option>
+                                    <option value="receptionist">Receptionist</option>
+                                    <option value="pharmacy">Pharmacist</option>
+                                </select>
                             </div>
+
+                            {staffForm.role === 'doctor' && (
+                                <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-1">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Specialization</label>
+                                        <input 
+                                            type="text" 
+                                            value={staffForm.specialization} 
+                                            onChange={e => setStaffForm({...staffForm, specialization: e.target.value})} 
+                                            className="w-full p-2.5 border-2 border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+                                            placeholder="MBBS, MD..." 
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Reg. Number</label>
+                                        <input 
+                                            type="text" 
+                                            value={staffForm.registrationNumber} 
+                                            onChange={e => setStaffForm({...staffForm, registrationNumber: e.target.value})} 
+                                            className="w-full p-2.5 border-2 border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" 
+                                            placeholder="MC-1234..." 
+                                        />
+                                    </div>
+                                </div>
+                            )}
                             <div className="flex items-center gap-2 mt-4">
                                 <input type="checkbox" id="isActiveStaff" checked={staffForm.isActive} onChange={e => setStaffForm({...staffForm, isActive: e.target.checked})} className="w-4 h-4 text-blue-600 rounded" />
                                 <label htmlFor="isActiveStaff" className="text-sm font-bold text-gray-700">Account Active</label>

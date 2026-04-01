@@ -70,8 +70,8 @@ export default function NotificationBell() {
         return () => unsubscribe();
     }, [user]);
 
-    // Only show notification bell for receptionist role - CHECK AT THE END AFTER ALL HOOKS
-    if (!user || (userProfile && userProfile.role !== 'receptionist')) {
+    // Show for receptionist, doctor, or owner
+    if (!user || (userProfile && !['receptionist', 'doctor', 'admin'].includes(userProfile.role))) {
         return null;
     }
 

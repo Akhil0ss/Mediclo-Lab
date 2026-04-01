@@ -26,11 +26,18 @@ export default function PrintReportPage() {
                 let reportData = null;
                 let ownerId = null;
 
-                // Get ownerId from multiple sources (localStorage persists across tabs)
+                // Get ownerId from multiple sources
                 if (user) {
                     ownerId = userProfile?.ownerId || user.uid;
                 }
-                // Fallback: check localStorage (critical for new-tab print)
+                
+                // 1. Fallback: URL Search Parameters (Highest Priority for Public Links)
+                if (!ownerId && typeof window !== 'undefined') {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    ownerId = urlParams.get('ownerId');
+                }
+
+                // 2. Fallback: localStorage (for staff in new tabs)
                 if (!ownerId && typeof window !== 'undefined') {
                     ownerId = localStorage.getItem('ownerId') || localStorage.getItem('patient_owner_id') || null;
                 }
@@ -890,6 +897,19 @@ export default function PrintReportPage() {
                         <div class="disclaimer-box" style="margin-bottom: 20px;">
                             <strong>DISCLAIMER:</strong> This report is for diagnostic reference only and not a final diagnosis. Methodological limitations exist for all laboratory tests. In case of unexpected results, a fresh sample repeat is recommended. This digitally generated document acts as a preliminary report; the final authorized version requires a physical or valid digital signature.
                         </div>
+                        ${report.aiPatientSummary ? `
+                        <div style="margin: 20px 0; padding: 15px; background: #f0fdf4; border-radius: 8px; border: 1px solid #bbf7d0; page-break-inside: avoid;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: #15803d; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">
+                                <span style="font-size: 14px;">🤖</span> Patient-Friendly interpretation
+                            </div>
+                            <p style="font-size: 10px; line-height: 1.5; color: #166534; margin: 0; font-family: 'Outfit', sans-serif;">
+                                ${report.aiPatientSummary}
+                            </p>
+                            <p style="font-size: 8px; color: #166534; opacity: 0.7; margin-top: 8px; font-style: italic;">
+                                * This is an AI-generated summary for educational purposes. Please consult your physician for clinical decisions.
+                            </p>
+                        </div>
+                        ` : ''}
 
                         <div class="signature-section" style="margin-bottom: 10px;">
                             <div class="digital-sign">

@@ -37,31 +37,41 @@ export default function SamplesPage() {
     // Handle Quick Add from Dashboard / Patient Success Flow
     useEffect(() => {
         const triggerQuickAdd = async () => {
-            if (searchParams.get('add') === 'true' && user) {
+            if (searchParams.get('add') === 'true' && user && templates.length > 0) {
                 const dataSourceId = userProfile?.ownerId || user.uid;
-                // Generate Auto Sample ID
                 const sampleId = await generateSampleId(dataSourceId, userProfile?.labName || 'CLINIC');
 
                 const pId = searchParams.get('patientId') || '';
+                const referredNames = searchParams.get('referredTests')?.split(',') || [];
+                
+                // Match referred names to template IDs
+                const matchedIds: string[] = [];
+                referredNames.forEach(name => {
+                    const t = templates.find(temp => temp.name.toLowerCase() === name.toLowerCase());
+                    if (t) matchedIds.push(t.id);
+                });
 
                 setFormData({
                     sampleNumber: sampleId,
                     patientId: pId,
                     sampleType: '',
                     containerType: 'Plain Vial',
-                    priority: 'Routine',
+                    priority: matchedIds.length > 0 ? 'Urgent' : 'Routine',
                     collectedBy: '',
-                    remarks: '',
+                    remarks: matchedIds.length > 0 ? `Referred by Doctor: ${referredNames.join(', ')}` : '',
                     date: new Date().toISOString().slice(0, 16),
                     status: 'Pending',
                     collectionCondition: 'Random',
-                    selectedTests: []
+                    selectedTests: matchedIds
                 });
                 setShowAddModal(true);
+                
+                // Clear URL params to prevent re-opening on refresh
+                router.replace('/dashboard/samples');
             }
         };
         triggerQuickAdd();
-    }, [searchParams, user, userProfile]);
+    }, [searchParams, user, userProfile, templates, router]);
 
     // Modal states
     const [showAddModal, setShowAddModal] = useState(false);
@@ -490,12 +500,6 @@ export default function SamplesPage() {
                                                                     ))}
                                                                 </div>
                                                             )}
-                                                            {sample.containerType && (
-                                                                <div className="text-xs text-gray-500">{sample.containerType}</div>
-                                                            )}
-                                                            {sample.collectionCondition && (
-                                                                <div className="text-xs text-blue-500">{sample.collectionCondition}</div>
-                                                            )}
                                                         </div>
                                                     );
                                                 })()}
@@ -505,11 +509,6 @@ export default function SamplesPage() {
                                                     <span>{new Date(sample.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
                                                     <i className="far fa-clock text-blue-400 cursor-help text-xs cursor-pointer hover:text-blue-600 transition-colors"></i>
                                                 </div>
-                                                {sample.collectedBy && (
-                                                    <div className="text-xs text-gray-500 mt-0.5">
-                                                        <i className="fas fa-user-nurse mr-1"></i>{sample.collectedBy}
-                                                    </div>
-                                                )}
                                             </td>
                                             <td className="px-4 py-2 text-sm whitespace-nowrap">
                                                 <span className={`status-badge ${statusColors[sample.status as keyof typeof statusColors]}`}>

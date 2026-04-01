@@ -80,17 +80,45 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         }
     };
 
-    const tabs = [
-        { id: 'dashboard', label: 'Dashboard', icon: 'fa-home', path: '/dashboard' },
-        { id: 'patients', label: 'Patients', icon: 'fa-users', path: '/dashboard/patients' },
-        { id: 'samples', label: 'Samples', icon: 'fa-vial', path: '/dashboard/samples' },
-        { id: 'reports', label: 'Reports', icon: 'fa-file-medical', path: '/dashboard/reports' },
-        ...(userProfile?.role !== 'lab' ? [
-            { id: 'templates', label: 'Templates', icon: 'fa-flask-vial', path: '/dashboard/templates' },
-            { id: 'analytics', label: 'Analytics', icon: 'fa-chart-bar', path: '/dashboard/analytics' },
-            { id: 'settings', label: 'Settings', icon: 'fa-cog', path: '/dashboard/settings' },
-        ] : [])
-    ];
+    const isDoctor = userProfile?.role === 'doctor';
+    const isLab = userProfile?.role === 'lab';
+    const isOwner = userProfile?.role === 'owner';
+
+    const tabs = useMemo(() => {
+        const baseTabs = [
+            { id: 'dashboard', label: 'Dashboard', icon: 'fa-home', path: '/dashboard', group: 'General' },
+            { id: 'patients', label: 'Patients', icon: 'fa-users', path: '/dashboard/patients', group: 'Medical' },
+            { id: 'opd', label: isDoctor ? 'Rx Management' : 'OPD', icon: 'fa-stethoscope', path: '/dashboard/opd', group: 'Medical' },
+        ];
+
+        if (!isDoctor) {
+            baseTabs.push({ id: 'samples', label: 'Samples', icon: 'fa-vial', path: '/dashboard/samples', group: 'Laboratory' });
+        }
+
+        if (!isDoctor) {
+            baseTabs.push({ id: 'reports', label: 'Reports', icon: 'fa-file-medical', path: '/dashboard/reports', group: 'Laboratory' });
+        }
+
+        if (isOwner) {
+            baseTabs.push({ id: 'templates', label: 'Templates', icon: 'fa-flask-vial', path: '/dashboard/templates', group: 'Laboratory' });
+            baseTabs.push({ id: 'analytics', label: 'Analytics', icon: 'fa-chart-bar', path: '/dashboard/analytics', group: 'Admin' });
+        }
+
+        if (!isDoctor) {
+            baseTabs.push({ id: 'settings', label: 'Settings', icon: 'fa-cog', path: '/dashboard/settings', group: 'Admin' });
+        }
+
+        return baseTabs;
+    }, [isDoctor, isOwner]);
+
+    const groupedTabs = useMemo(() => {
+        const groups: { [key: string]: any[] } = {};
+        tabs.forEach(tab => {
+            if (!groups[tab.group]) groups[tab.group] = [];
+            groups[tab.group].push(tab);
+        });
+        return groups;
+    }, [tabs]);
 
     if (loading) return <div className='min-h-screen flex items-center justify-center'>Loading...</div>;
     if (!user) return null;
@@ -196,39 +224,38 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
             <div className="container-pc w-full mx-auto p-6 lg:px-8 flex flex-col lg:flex-row gap-6">
                 <aside className="w-full lg:w-52 flex-shrink-0 flex flex-col gap-2 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-120px)] lg:overflow-y-auto pr-2">
-                    <div className="space-y-2">
-                        {tabs.map(tab => {
-                        const isTemplates = tab.id === 'templates';
-                        return (
-                            <div
-                                key={tab.id}
-                                onClick={(e) => {
-                                    if (isTemplates) {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        // Use e.detail to check for double click (more reliable in some browsers)
-                                        if (e.detail === 2) {
-                                            router.push(tab.path);
-                                        } else if (e.detail === 1) {
-                                            showToast('This is a secure tab. Double click to open.', 'info');
-                                        }
-                                        return;
-                                    }
-                                    router.push(tab.path);
-                                }}
-                                onDoubleClick={(e) => {
-                                    if (isTemplates) {
-                                        e.stopPropagation();
-                                        router.push(tab.path);
-                                    }
-                                }}
-                                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all cursor-pointer select-none ` + (activeTab === tab.id ? 'gradient-colorful text-white shadow-lg' : 'bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 shadow-sm')}>
-                                <i className={`fas ` + tab.icon + ` w-6`}></i> {tab.label}
-                                {isTemplates && <i className="fas fa-lock text-[8px] ml-auto opacity-40" title="Double Click to Open"></i>}
+                    <div className="space-y-4">
+                        {Object.entries(groupedTabs).map(([groupName, groupItems]) => (
+                            <div key={groupName} className="space-y-1">
+                                <h3 className="px-4 text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">{groupName}</h3>
+                                {groupItems.map(tab => {
+                                    const isTemplates = tab.id === 'templates';
+                                    return (
+                                        <div
+                                            key={tab.id}
+                                            onClick={(e) => {
+                                                if (isTemplates) {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    if (e.detail === 2) {
+                                                        router.push(tab.path);
+                                                    } else if (e.detail === 1) {
+                                                        showToast('This is a secure tab. Double click to open.', 'info');
+                                                    }
+                                                    return;
+                                                }
+                                                router.push(tab.path);
+                                            }}
+                                            className={`flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium transition-all cursor-pointer select-none ` + (activeTab === tab.id ? 'gradient-colorful text-white shadow-lg' : 'bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 shadow-sm border border-transparent')}>
+                                            <i className={`fas ` + tab.icon + ` w-5 text-center`}></i> 
+                                            <span className="text-sm">{tab.label}</span>
+                                            {isTemplates && <i className="fas fa-lock text-[8px] ml-auto opacity-40" title="Double Click to Open"></i>}
+                                        </div>
+                                    );
+                                })}
                             </div>
-                        );
-                    })}
-                </div>
+                        ))}
+                    </div>
                 {userProfile?.role !== 'lab' && (
                     <a href="https://wa.me/917619948657?text=Hi%2C%20I%20need%20help%20with%20Mediclo%20Lab" target="_blank" rel="noopener noreferrer" className="block mt-4 p-3 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 text-center hover:shadow-md transition-shadow cursor-pointer">
                         <i className="fas fa-headset text-2xl text-blue-300 mb-1"></i>
@@ -243,8 +270,17 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                             dataOwnerId={dataOwnerId} 
                             userRole={userProfile.role} 
                             userName={userProfile.name || 'Lab Staff'} 
+                            channel="lab"
                         />
                     </>
+                )}
+                {userProfile?.role === 'doctor' && (
+                    <DashboardChat 
+                        dataOwnerId={dataOwnerId} 
+                        userRole={userProfile.role} 
+                        userName={userProfile.name || 'Doctor'} 
+                        channel="doctor"
+                    />
                 )}
             </aside>
                 <main className="flex-1 w-full min-h-[500px]">
@@ -252,11 +288,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </main>
             </div>
             
-            {userProfile?.role === 'owner' && (
+            {(userProfile?.role === 'owner' || userProfile?.role === 'receptionist' || userProfile?.role === 'admin') && (
                 <DashboardChat 
                     dataOwnerId={dataOwnerId} 
-                    userRole={userProfile.role} 
-                    userName={userProfile.name || 'Owner'} 
+                    userRole="owner" 
+                    userName={userProfile.name || 'Reception'} 
                 />
             )}
         </div>

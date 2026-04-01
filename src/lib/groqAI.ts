@@ -218,6 +218,34 @@ Suggest prescription (JSON):
 }
 
 /**
+ * 3.1 AI Lifestyle & Diet Advice
+ */
+export async function suggestLifestyleAdvice(
+    diagnosis: string,
+    symptoms: string
+): Promise<string> {
+    const prompt = `Diagnosis: ${diagnosis}, Symptoms: ${symptoms}. Give 3-4 bulleted lifestyle and diet advice points for the patient. Be concise and professional.`;
+    const result = await callGroq([{ role: 'system', content: 'Medical clinical advisor AI. Be concise.' }, { role: 'user', content: prompt }], 200, 0.3);
+    return result.response;
+}
+
+/**
+ * 3.2 AI Dosage Prediction
+ */
+export async function predictDosage(
+    medicineName: string,
+    patientAge: number
+): Promise<{ dosage: string; frequency: string; duration: string }> {
+    const prompt = `Medicine: ${medicineName}, Age: ${patientAge}Y. Standard dosage frequency/duration (JSON): {"dosage": "500mg", "frequency": "1-0-1", "duration": "5 days"}`;
+    const result = await callGroq([{ role: 'system', content: 'Pharmacology dosage AI. Output JSON only.' }, { role: 'user', content: prompt }], 150, 0.1);
+    try {
+        return JSON.parse(result.response);
+    } catch {
+        return { dosage: '', frequency: '1-0-1', duration: '5 days' };
+    }
+}
+
+/**
  * 4. Intelligent Patient Triage - Priority scoring
  */
 export async function triagePatient(

@@ -11,12 +11,14 @@ export default function LabDashboard() {
     const { user, userProfile } = useAuth();
     const router = useRouter();
     const [pendingSamples, setPendingSamples] = useState<any[]>([]);
+    const [clinicalReferrals, setClinicalReferrals] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showQuickReportModal, setShowQuickReportModal] = useState(false);
     const [expandedTestsRow, setExpandedTestsRow] = useState<string | null>(null);
 
     useEffect(() => {
-        if (userProfile && userProfile.role !== 'lab' && userProfile.role !== 'receptionist') {
+        const allowedRoles = ['lab', 'owner'];
+        if (userProfile && !allowedRoles.includes(userProfile.role)) {
             router.push('/dashboard');
         }
     }, [userProfile, router]);
@@ -28,35 +30,44 @@ export default function LabDashboard() {
         const dataSourceId = userProfile.ownerId || user.uid;
         const samplesRef = ref(database, `samples/${dataSourceId}`);
         const unsubscribe = onValue(samplesRef, (snapshot) => {
+            // ... (Existing samples logic)
             if (snapshot.exists()) {
                 const samplesData = snapshot.val();
                 const pending: any[] = [];
-
                 for (const sampleId in samplesData) {
                     const sample = samplesData[sampleId];
-                    // Show samples that don't have a report yet AND have status not equal to 'Completed' OR 'Report Generated'
-                    // Sometimes status might be updated but reportGenerated flag missing or vice versa
                     if (!sample.reportId && sample.status !== 'Completed') {
-                        pending.push({
-                            id: sampleId,
-                            ...sample
-                        });
+                        pending.push({ id: sampleId, ...sample });
                     }
                 }
-
-                // Sort by created date (newest first)
-                pending.sort((a, b) =>
-                    new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-                );
-
+                pending.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
                 setPendingSamples(pending);
             } else {
                 setPendingSamples([]);
             }
+        });
+
+        // Clinical Referrals (via OPD node)
+        const opdRef = ref(database, `opd/${dataSourceId}`);
+        const unsubOpd = onValue(opdRef, (snapshot) => {
+            const today = new Date().toISOString().split('T')[0];
+            const referrals: any[] = [];
+            if (snapshot.exists()) {
+                snapshot.forEach(child => {
+                    const val = child.val();
+                    if (val.visitDate === today && val.status === 'referred' && val.prescription?.referredTests?.length > 0) {
+                        referrals.push({ id: child.key, ...val });
+                    }
+                });
+            }
+            setClinicalReferrals(referrals.sort((a,b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()));
             setLoading(false);
         });
 
-        return () => unsubscribe();
+        return () => {
+            unsubscribe();
+            unsubOpd();
+        };
     }, [user, userProfile]);
 
     return (
@@ -66,16 +77,17 @@ export default function LabDashboard() {
                 Lab Dashboard
             </h1>
 
-            {/* Quick Report Button */}
-            <div className="mb-6">
-                <button
-                    onClick={() => setShowQuickReportModal(true)}
-                    className="bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white px-6 py-3 rounded-lg font-bold shadow-lg hover:shadow-xl transition transform hover:scale-105 flex items-center gap-2"
-                >
-                    <i className="fas fa-flask text-lg"></i>
-                    <span>Quick Report</span>
-                </button>
-            </div>
+            {(userProfile?.role === 'lab' || userProfile?.role === 'owner') && (
+                <div className="mb-6">
+                    <button
+                        onClick={() => setShowQuickReportModal(true)}
+                        className="bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700 text-white px-6 py-3 rounded-lg font-bold shadow-lg hover:shadow-xl transition transform hover:scale-105 flex items-center gap-2"
+                    >
+                        <i className="fas fa-flask text-lg"></i>
+                        <span>Quick Report</span>
+                    </button>
+                </div>
+            )}
 
             {/* Quick Actions */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -115,6 +127,50 @@ export default function LabDashboard() {
                     <p className="text-sm text-gray-600">View all reports</p>
                 </button>
             </div>
+
+            {/* Clinical Referrals Monitor (Real-time sync with Doctor) */}
+            {clinicalReferrals.length > 0 && (
+                <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
+                        <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center text-2xl backdrop-blur-md">
+                                    <i className="fas fa-bullhorn animate-bounce"></i>
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold">In-Clinic Referrals</h3>
+                                    <p className="text-orange-100 text-xs opacity-80">Doctors are currently referring these patients to lab.</p>
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2 transition-all">
+                                {clinicalReferrals.map((r, i) => (
+                                    <div key={r.id} className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl px-4 py-3 flex items-center gap-4 group transition-all">
+                                        <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-orange-600 font-black shadow-lg">
+                                            {r.patientName.charAt(0)}
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="font-black text-sm">{r.patientName}</span>
+                                            <div className="flex flex-wrap gap-1 mt-1">
+                                                {r.prescription?.referredTests?.map((t: string, ti: number) => (
+                                                    <span key={ti} className="text-[8px] font-black bg-orange-600/50 text-white px-1.5 py-0.5 rounded border border-orange-400/30 uppercase tracking-tighter">
+                                                        {t}
+                                                    </span>
+                                                )) || <span className="text-[8px] opacity-60">No specific tests listed</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <button onClick={() => router.push('/dashboard/samples?action=add')} className="px-6 py-2 bg-white text-orange-600 rounded-xl font-bold text-sm hover:bg-orange-50 transition-all shadow-lg active:scale-95">
+                                REGISTER SAMPLES
+                            </button>
+                        </div>
+                        <div className="absolute top-0 right-0 p-8 opacity-10">
+                            <i className="fas fa-flask text-8xl -rotate-12"></i>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Pending Samples - Quick Report Flow */}
             <div className="bg-white rounded-xl shadow-lg p-6">
@@ -219,14 +275,21 @@ export default function LabDashboard() {
                                         </div>
                                     </div>
 
-                                    {/* Quick Action Button */}
-                                    <button
-                                        onClick={() => router.push(`/dashboard/reports/create?sampleId=${sample.id}`)}
-                                        className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-bold transition shadow-lg"
-                                    >
-                                        <i className="fas fa-file-medical mr-2"></i>
-                                        Generate Report
-                                    </button>
+                                    {/* Action - Restricted to Lab Staff */}
+                                    {userProfile?.role === 'lab' ? (
+                                        <button
+                                            onClick={() => router.push(`/dashboard/reports/create?sampleId=${sample.id}`)}
+                                            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-bold transition shadow-lg shrink-0"
+                                        >
+                                            <i className="fas fa-file-medical mr-2"></i>
+                                            Generate Report
+                                        </button>
+                                    ) : (
+                                        <div className="inline-flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-lg border border-amber-100 animate-pulse shrink-0">
+                                            <div className="w-2 h-2 bg-amber-500 rounded-full"></div>
+                                            <span className="text-xs text-amber-700 font-bold uppercase tracking-wider">In Process</span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}

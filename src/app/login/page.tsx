@@ -230,7 +230,7 @@ export default function LoginPage() {
                         <div>
                             <h1 className="text-4xl font-bold leading-tight">Spotnet MedOS</h1>
                             <p className="text-lg text-purple-200 font-light mt-1">
-                                Laboratory Management System
+                                Clinic & Lab Management System
                             </p>
                         </div>
                     </div>
@@ -290,14 +290,14 @@ export default function LoginPage() {
                             className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold rounded-lg transition-all duration-300 ${activeTab === 'owner' ? 'bg-white shadow-md text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
                         >
                             <i className={`fas fa-crown ${activeTab === 'owner' ? 'text-indigo-600' : 'text-gray-400'}`}></i>
-                            Laboratory Owner
+                            Clinic & Lab
                         </button>
                         <button 
                             onClick={() => { setActiveTab('staff'); setError(''); setIsSignup(false); }}
                             className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold rounded-lg transition-all duration-300 ${activeTab === 'staff' ? 'bg-white shadow-md text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
                         >
                             <i className={`fas fa-id-card-clip ${activeTab === 'staff' ? 'text-blue-600' : 'text-gray-400'}`}></i>
-                            Lab Staff
+                            Staff
                         </button>
                     </div>
 
@@ -355,7 +355,7 @@ export default function LoginPage() {
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1.5 ml-1">
-                                {activeTab === 'owner' ? 'Email Address' : 'Lab Username'}
+                                {activeTab === 'owner' ? 'Email Address' : 'Staff Username'}
                             </label>
                             <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -367,7 +367,7 @@ export default function LoginPage() {
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
                                     className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-xl leading-5 bg-gray-50 placeholder-gray-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-purple-500 focus:border-purple-500 sm:text-sm transition duration-150 ease-in-out"
-                                    placeholder={activeTab === 'owner' ? 'email@example.com' : 'username@lab'}
+                                    placeholder={activeTab === 'owner' ? 'email@example.com' : 'username@staff'}
                                 />
                             </div>
                         </div>
@@ -414,7 +414,7 @@ export default function LoginPage() {
                                 <i className="fas fa-circle-notch fa-spin"></i>
                             ) : (
                                 <>
-                                    {isSignup ? 'Register Laboratory' : 'Enter Dashboard'} 
+                                    {isSignup ? 'Register Clinic / Lab' : 'Enter Dashboard'} 
                                     <i className="fas fa-arrow-right-long ml-3 opacity-60"></i>
                                 </>
                             )}
@@ -438,7 +438,7 @@ export default function LoginPage() {
                     {activeTab === 'staff' && (
                         <div className="mt-6 text-center p-3 bg-blue-50 rounded-xl border border-blue-100">
                             <p className="text-[10px] text-blue-700 font-medium">
-                                <i className="fas fa-info-circle mr-1"></i> Staff accounts are managed by the Laboratory Owner.
+                                <i className="fas fa-info-circle mr-1"></i> Staff accounts are managed by the Clinic & Lab Owner.
                             </p>
                         </div>
                     )}
