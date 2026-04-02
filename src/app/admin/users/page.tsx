@@ -16,6 +16,9 @@ export default function AdminUsers() {
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'premium' | 'free' | 'expiring'>('all');
     const [search, setSearch] = useState('');
+    const [roleLimits, setRoleLimits] = useState<Record<string, any>>({});
+    const [selectedUserForLimits, setSelectedUserForLimits] = useState<any>(null);
+    const [limitForm, setLimitForm] = useState({ lab: 1, pharmacy: 1, receptionist: 1, doctor: 1 });
 
     useEffect(() => {
         // Fix 5: Use get() for subscriptions (one-time read) to avoid nested listener memory leak
@@ -26,6 +29,10 @@ export default function AdminUsers() {
                 // One-time read for subscriptions — no leak
                 const snapSubs = await get(ref(database, 'subscriptions'));
                 const subsData = snapSubs.val() || {};
+
+                // Fetch Staff Limits
+                const snapLimits = await get(ref(database, 'staff_limits'));
+                setRoleLimits(snapLimits.val() || {});
 
                 if (usersData) {
                     const now = new Date();
@@ -148,6 +155,19 @@ export default function AdminUsers() {
         }
     };
 
+    const handleUpdateLimits = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedUserForLimits) return;
+        try {
+            await update(ref(database, `staff_limits/${selectedUserForLimits.uid}`), limitForm);
+            setRoleLimits(prev => ({ ...prev, [selectedUserForLimits.uid]: limitForm }));
+            setSelectedUserForLimits(null);
+            alert('Staff limits updated successfully!');
+        } catch (e) {
+            alert('Error updating limits: ' + e);
+        }
+    };
+
     if (loading) return <div className="p-12 text-center text-gray-500 font-mono">Loading God Mode Data...</div>;
 
     return (
@@ -253,6 +273,17 @@ export default function AdminUsers() {
                                                     <i className="fas fa-ban"></i> Revoke
                                                 </button>
                                             )}
+                                            <button
+                                                onClick={() => {
+                                                    const currentLimits = roleLimits[u.uid] || { lab: 1, pharmacy: 1, receptionist: 1, doctor: 1 };
+                                                    setSelectedUserForLimits(u);
+                                                    setLimitForm(currentLimits);
+                                                }}
+                                                className="bg-blue-50 text-blue-600 border border-blue-100 px-2 py-1 rounded hover:bg-blue-100 text-[11px] font-bold transition flex items-center gap-1"
+                                                title="Manage Staff Limits"
+                                            >
+                                                <i className="fas fa-shield-halved"></i> Limits
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
@@ -268,6 +299,44 @@ export default function AdminUsers() {
                     </table>
                 </div>
             </div>
+
+            {/* Limits Modal */}
+            {selectedUserForLimits && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
+                        <div className="bg-blue-600 px-6 py-4 text-white flex justify-between items-center">
+                            <h3 className="font-bold text-lg">Staff Capacity: {selectedUserForLimits.name}</h3>
+                            <button onClick={() => setSelectedUserForLimits(null)} className="text-white/80 hover:text-white">
+                                <i className="fas fa-times text-xl"></i>
+                            </button>
+                        </div>
+                        <form onSubmit={handleUpdateLimits} className="p-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Lab Staff</label>
+                                    <input type="number" min={1} value={limitForm.lab} onChange={e => setLimitForm({...limitForm, lab: parseInt(e.target.value)})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Pharmacy</label>
+                                    <input type="number" min={1} value={limitForm.pharmacy} onChange={e => setLimitForm({...limitForm, pharmacy: parseInt(e.target.value)})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Receptionist</label>
+                                    <input type="number" min={1} value={limitForm.receptionist} onChange={e => setLimitForm({...limitForm, receptionist: parseInt(e.target.value)})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Doctors</label>
+                                    <input type="number" min={1} value={limitForm.doctor} onChange={e => setLimitForm({...limitForm, doctor: parseInt(e.target.value)})} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+                                </div>
+                            </div>
+                            <div className="pt-4 flex gap-2">
+                                <button type="button" onClick={() => setSelectedUserForLimits(null)} className="flex-1 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold">Cancel</button>
+                                <button type="submit" className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-200 transition-all active:scale-95">Update Quota</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

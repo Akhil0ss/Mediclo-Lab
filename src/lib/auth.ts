@@ -178,7 +178,7 @@ export async function completeProfileSetup(
             setupCompleted: true,
             labName,
             brandPrefix, // Store the unique prefix for future reference
-            name: 'Lab Admin', // Default name
+            name: 'Reception', // Default name
             createdAt: new Date().toISOString()
         });
 

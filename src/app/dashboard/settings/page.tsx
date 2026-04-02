@@ -75,6 +75,26 @@ export default function SettingsPage() {
     const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
     const [staffForm, setStaffForm] = useState({ username: '', password: '', role: 'lab' as UserRole, name: '', isActive: true, specialization: '', registrationNumber: '' });
     const [showPassword, setShowPassword] = useState(false);
+    const [staffLimits, setStaffLimits] = useState<{ [role: string]: number }>({ lab: 1, pharmacy: 1, receptionist: 1, doctor: 1, 'dr-staff': 1 });
+
+    useEffect(() => {
+        if (!user) return;
+        const ownerId = userProfile?.ownerId || user.uid;
+        const limitsRef = ref(database, `staff_limits/${ownerId}`);
+        const unsubLimits = onValue(limitsRef, (snap) => {
+            const data = snap.val();
+            if (data) {
+                setStaffLimits({
+                    lab: data.lab || 1,
+                    pharmacy: data.pharmacy || 1,
+                    receptionist: data.receptionist || 1,
+                    doctor: data.doctor || 1,
+                    'dr-staff': data.doctor || 1
+                });
+            }
+        });
+        return () => unsubLimits();
+    }, [user, userProfile]);
 
     useEffect(() => {
         if (!user) return;
@@ -110,8 +130,16 @@ export default function SettingsPage() {
             let finalUsername = staffForm.username;
             let finalPassword = staffForm.password;
             
-            // 1. New Staff Handling
+            // Limit Check for NEW staff
             if (!editingStaffId) {
+                const currentCount = staffList.filter(s => s.role === staffForm.role || (staffForm.role === 'doctor' && s.role === 'dr-staff') || (staffForm.role === 'dr-staff' && s.role === 'doctor')).length;
+                const limit = staffLimits[staffForm.role] || 1;
+                
+                if (currentCount >= limit) {
+                    alert(`⚠️ STACK LIMIT REACHED!\n\nYour current plan allows only ${limit} ${staffForm.role.toUpperCase()} account(s).\n\nPlease contact administration to upgrade your staff capacity.`);
+                    return;
+                }
+
                 const cleanName = staffForm.name.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 10);
                 let baseStaffUsername = `${brandPrefix}_${cleanName}`;
                 finalUsername = baseStaffUsername;
@@ -142,10 +170,15 @@ export default function SettingsPage() {
             };
 
             // Add Doctor specific fields
-            if (staffForm.role === 'doctor') {
-                staffData.specialization = staffForm.specialization;
-                staffData.registrationNumber = staffForm.registrationNumber;
+            if (staffForm.role === 'doctor' || staffForm.role === 'dr-staff') {
+                staffData.specialization = staffForm.specialization || '';
+                staffData.registrationNumber = staffForm.registrationNumber || '';
             }
+
+            // Final safety check: remove any undefined values to prevent Firebase errors
+            Object.keys(staffData).forEach(key => {
+                if (staffData[key] === undefined) delete staffData[key];
+            });
 
             // ONLY update password if a new one was provided OR it was auto-generated for NEW staff
             if (finalPassword) {
@@ -284,6 +317,35 @@ export default function SettingsPage() {
                         // Note: r.sampleId is usually the Firebase key, check mapping
                         if (r.sampleId && sampleIdMap[r.sampleId]) {
                             updates[`${reportPath}/sampleId`] = sampleIdMap[r.sampleId];
+                        }
+                    });
+                });
+            }
+
+            // 4. MIGRATE OPD VISITS
+            const opdSnap = await get(ref(database, `opd/${ownerId}`));
+            if (opdSnap.exists()) {
+                const visits: any[] = [];
+                opdSnap.forEach(child => { visits.push({ key: child.childKey || child.key, ...child.val() }); });
+                
+                const groupedByDate: Record<string, any[]> = {};
+                visits.forEach(v => {
+                    const date = new Date(v.createdAt || v.visitDate || Date.now()).toISOString().split('T')[0];
+                    if (!groupedByDate[date]) groupedByDate[date] = [];
+                    groupedByDate[date].push(v);
+                });
+
+                Object.keys(groupedByDate).forEach(date => {
+                    const sorted = groupedByDate[date].sort((a, b) => new Date(a.createdAt || a.visitDate).getTime() - new Date(b.createdAt || b.visitDate).getTime());
+                    sorted.forEach((v, index) => {
+                        const newOpdId = formatIdFromDate(labName, new Date(v.createdAt || v.visitDate || Date.now()), index + 1, 'O');
+                        const newRxId = formatIdFromDate(labName, new Date(v.createdAt || v.visitDate || Date.now()), index + 1, 'X');
+                        
+                        const opdPath = `opd/${ownerId}/${v.key}`;
+                        updates[`${opdPath}/opdId`] = newOpdId;
+                        
+                        if (v.prescription) {
+                            updates[`${opdPath}/prescription/rxId`] = newRxId;
                         }
                     });
                 });
@@ -507,12 +569,12 @@ export default function SettingsPage() {
                                         <i className="fas fa-sync-alt text-blue-600"></i> Sync Legacy Data IDs
                                     </h4>
                                     <div className="text-sm text-gray-600 space-y-4 mb-8 leading-relaxed">
-                                        <p>This automated tool will scan all your old records and rename them to your new professional format:</p>
+                                        <p>This automated tool will scan all your old records (Patients, Reports, **OPD Visits**, and **Prescriptions**) and rename them to your new professional format:</p>
                                         <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 font-mono text-center text-blue-800 font-bold">
-                                            {(userProfile as any)?.labName?.replace(/[^A-Za-z0-9]/g,'').substring(0,3).toUpperCase() || 'TES'}-2603-2900P
+                                            {(userProfile as any)?.labName?.replace(/[^A-Za-z0-9]/g,'').substring(0,3).toUpperCase() || 'TES'}-2603-2900P/O/X
                                         </div>
-                                        <p className="p-3 bg-red-50 text-red-700 rounded-lg border border-red-100">
-                                            <i className="fas fa-info-circle mr-2"></i> <strong>Note:</strong> Old QR codes on printed reports will still work, but the "Patient ID" and "Report ID" text on your dashboard will change to the new format.
+                                        <p className="p-3 bg-red-50 text-red-700 rounded-lg border border-red-100 italic">
+                                            <i className="fas fa-info-circle mr-2"></i> <strong>Note:</strong> This fixes full clinic ID visibility across dashboards and history modals.
                                         </p>
                                     </div>
 
@@ -551,17 +613,24 @@ export default function SettingsPage() {
                 {settingsTab === 'staff' && (
                     <div className="p-6 animate-in fade-in slide-in-from-bottom-2">
                         <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100">
-                            <div>
+                            <div className="flex-1">
                                 <h3 className="font-bold text-lg text-gray-800">Staff Management</h3>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md text-[10px] font-bold border border-blue-100 flex items-center gap-1">
-                                        <i className="fas fa-shield-halved"></i> 
-                                        LOGIN PREFIX: {(userProfile as any)?.brandPrefix || '...'}
-                                    </span>
-                                    <p className="text-[10px] text-gray-500">Only your staff uses this prefix to login.</p>
+                                <div className="flex flex-wrap items-center gap-3 mt-2">
+                                    {['lab', 'doctor', 'receptionist', 'pharmacy'].map(role => {
+                                        const count = staffList.filter(s => s.role === role || (role === 'doctor' && s.role === 'dr-staff')).length;
+                                        const limit = staffLimits[role] || 1;
+                                        const isFull = count >= limit;
+                                        return (
+                                            <div key={role} className={`px-2 py-1 rounded-lg border text-[10px] font-black uppercase flex items-center gap-2 ${isFull ? 'bg-red-50 border-red-100 text-red-600' : 'bg-gray-50 border-gray-100 text-gray-500'}`}>
+                                                <i className={`fas ${role === 'lab' ? 'fa-vial' : role === 'doctor' ? 'fa-user-md' : role === 'receptionist' ? 'fa-user-tie' : 'fa-pills'}`}></i>
+                                                {role}: {count} / {limit}
+                                                {isFull && <i className="fas fa-lock ml-1 text-[8px]"></i>}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
-                            <button onClick={() => { setEditingStaffId(null); setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true, specialization: '', registrationNumber: '' }); setShowStaffModal(true); }} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm flex items-center gap-2">
+                            <button onClick={() => { setEditingStaffId(null); setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true, specialization: '', registrationNumber: '' }); setShowStaffModal(true); }} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm flex items-center gap-2 h-fit">
                                 <i className="fas fa-plus"></i> Add Staff
                             </button>
                         </div>
@@ -589,7 +658,20 @@ export default function SettingsPage() {
                                                 </span>
                                             </td>
                                             <td className="px-6 py-2 text-right flex justify-end gap-1">
-                                                <button onClick={() => { setEditingStaffId(staff.id); setStaffForm({ username: staff.username, password: staff.password || '', role: staff.role, name: staff.name, isActive: staff.isActive }); setShowStaffModal(true); setShowPassword(false); }} className="text-blue-600 hover:text-blue-800 p-2" title="Edit Staff"><i className="fas fa-edit"></i></button>
+                                                <button onClick={() => { 
+                                                    setEditingStaffId(staff.id); 
+                                                    setStaffForm({ 
+                                                        username: staff.username, 
+                                                        password: staff.password || '', 
+                                                        role: staff.role, 
+                                                        name: staff.name, 
+                                                        isActive: staff.isActive,
+                                                        specialization: staff.specialization || '',
+                                                        registrationNumber: staff.registrationNumber || ''
+                                                    }); 
+                                                    setShowStaffModal(true); 
+                                                    setShowPassword(false); 
+                                                }} className="text-blue-600 hover:text-blue-800 p-2" title="Edit Staff"><i className="fas fa-edit"></i></button>
                                                 <button onClick={() => handleDeleteStaff(staff.id)} className="text-red-600 hover:text-red-800 p-2" title="Delete Staff"><i className="fas fa-trash"></i></button>
                                             </td>
                                         </tr>

@@ -17,17 +17,17 @@ interface DashboardChatProps {
     dataOwnerId: string;
     userRole: string;
     userName: string;
-    channel?: 'lab' | 'doctor';
+    channel?: 'lab' | 'doctor' | 'pharmacy';
 }
 
 export default function DashboardChat({ dataOwnerId, userRole, userName, channel = 'lab' }: DashboardChatProps) {
     const isOwner = userRole === 'owner';
-    const [activeChannel, setActiveChannel] = useState<'lab' | 'doctor'>(isOwner ? 'lab' : channel);
+    const [activeChannel, setActiveChannel] = useState<'lab' | 'doctor' | 'pharmacy'>(isOwner ? 'lab' : channel);
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputText, setInputText] = useState('');
     const [isOpen, setIsOpen] = useState(false);
     
-    const [unreadCounts, setUnreadCounts] = useState<{ lab: number; doctor: number }>({ lab: 0, doctor: 0 });
+    const [unreadCounts, setUnreadCounts] = useState<{ lab: number; doctor: number; pharmacy: number }>({ lab: 0, doctor: 0, pharmacy: 0 });
     const [staffUnreadCount, setStaffUnreadCount] = useState(0);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -84,14 +84,14 @@ export default function DashboardChat({ dataOwnerId, userRole, userName, channel
     useEffect(() => {
         if (!dataOwnerId || !isOwner) return;
 
-        const channels: ('lab' | 'doctor')[] = ['lab', 'doctor'];
+        const channels: ('lab' | 'doctor' | 'pharmacy')[] = ['lab', 'doctor', 'pharmacy'];
         const unsubscribes = channels.map(ch => {
             const chatRef = ref(database, `chats/v2/${dataOwnerId}/${ch}`);
             return onValue(chatRef, (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.val();
                     const msgs: Message[] = Object.values(data);
-                    const unread = msgs.filter((m: any) => m.senderRole !== 'owner' && !m.isRead).length;
+                    const unread = msgs.filter((m: any) => m.senderRole !== userRole && !m.isRead).length;
                     setUnreadCounts(prev => ({ ...prev, [ch]: unread }));
                 } else {
                     setUnreadCounts(prev => ({ ...prev, [ch]: 0 }));
@@ -154,7 +154,7 @@ export default function DashboardChat({ dataOwnerId, userRole, userName, channel
         }
     };
 
-    const totalUnread = unreadCounts.lab + unreadCounts.doctor;
+    const totalUnread = unreadCounts.lab + unreadCounts.doctor + unreadCounts.pharmacy;
 
     return (
         <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end">
@@ -190,6 +190,13 @@ export default function DashboardChat({ dataOwnerId, userRole, userName, channel
                             >
                                 <i className="fas fa-user-md text-[10px]"></i> PHYSICIAN
                                 {unreadCounts.doctor > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
+                            </button>
+                            <button 
+                                onClick={() => setActiveChannel('pharmacy')}
+                                className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 ${activeChannel === 'pharmacy' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                                <i className="fas fa-pills text-[10px]"></i> PHARMACY
+                                {unreadCounts.pharmacy > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
                             </button>
                         </div>
                     )}

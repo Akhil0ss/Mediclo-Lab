@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ref, push, onValue } from 'firebase/database';
+import { ref, push, onValue, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import Modal from './Modal';
 import { useToast } from '@/contexts/ToastContext';
+import { generatePatientId } from '@/lib/idGenerator';
+import { getBrandingData } from '@/lib/dataUtils';
 
 interface QuickPatientModalProps {
     isOpen: boolean;
@@ -80,15 +82,20 @@ export default function QuickPatientModal({ isOpen, onClose, ownerId }: QuickPat
                 finalRefDoctor = newDrName.trim();
             }
 
+            const branding = await getBrandingData(ownerId, { ownerId });
+            const labName = branding?.labName || 'CLINIC';
+            const patientReadableId = await generatePatientId(ownerId, labName);
+
             const patientData = {
                 ...form,
+                patientId: patientReadableId,
                 refDoctor: finalRefDoctor,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
             };
 
             await push(ref(database, `patients/${ownerId}`), patientData);
-            showToast('Patient Registered Successfully!', 'success');
+            showToast(`Patient Registered: ${patientReadableId}`, 'success');
             onClose();
             // Reset
             setForm({ title: 'Mr.', name: '', mobile: '', gender: 'Male', age: '', address: '', refDoctor: 'Self' });

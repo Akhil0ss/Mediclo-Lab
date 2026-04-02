@@ -7,9 +7,10 @@ interface ModalProps {
     onClose: () => void;
     children: React.ReactNode;
     title?: string;
+    maxWidth?: string;
 }
 
-export default function Modal({ isOpen, onClose, children, title }: ModalProps) {
+export default function Modal({ isOpen, onClose, children, title, maxWidth = 'max-w-3xl' }: ModalProps) {
     useEffect(() => {
         if (isOpen) {
             document.body.style.overflow = 'hidden';
@@ -25,7 +26,7 @@ export default function Modal({ isOpen, onClose, children, title }: ModalProps) 
 
     return (
         <div className="modal-backdrop" onClick={onClose}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className={`modal-content ${maxWidth}`} onClick={(e) => e.stopPropagation()}>
                 {title && (
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="text-2xl font-bold">{title}</h3>

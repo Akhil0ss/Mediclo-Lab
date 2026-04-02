@@ -5,6 +5,8 @@ import { ref, onValue, push, get, update } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import Modal from './Modal';
 import { useToast } from '@/contexts/ToastContext';
+import { generateOpdId } from '@/lib/idGenerator';
+import { getBrandingData } from '@/lib/dataUtils';
 
 interface QuickOPDModalProps {
     isOpen: boolean;
@@ -21,12 +23,14 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
     const [searchQuery, setSearchQuery] = useState('');
     const [showDropdown, setShowDropdown] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const [labName, setLabName] = useState('CLINIC');
 
     const [form, setForm] = useState({
         patientId: '',
         patientName: '',
         patientAge: '',
         patientGender: '',
+        patientPhone: '',
         doctorId: '',
         doctorName: '',
         vitals: {
@@ -48,6 +52,7 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
                 patientName: editData.patientName || '',
                 patientAge: editData.patientAge || '',
                 patientGender: editData.patientGender || '',
+                patientPhone: editData.patientPhone || '',
                 doctorId: editData.doctorId || '',
                 doctorName: editData.doctorName || '',
                 vitals: editData.vitals || { bp: '', pulse: '', weight: '', temp: '', spo2: '' },
@@ -59,6 +64,7 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
             // Reset for new entry
             setForm({
                 patientId: '', patientName: '', patientAge: '', patientGender: '',
+                patientPhone: '',
                 doctorId: '', doctorName: '',
                 vitals: { bp: '', pulse: '', weight: '', temp: '', spo2: '' },
                 complaints: '',
@@ -106,6 +112,11 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
             setDoctors(data);
         });
 
+        // Fetch Branding for Clinic Name
+        getBrandingData(ownerId, { ownerId }).then(data => {
+            if (data?.labName) setLabName(data.labName);
+        });
+
         return () => {
             unsubPatients();
             unsubStaff();
@@ -119,10 +130,11 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
     const selectPatient = (p: any) => {
         setForm({
             ...form, 
-            patientId: p.patientId || p.id, // Use human-readable ID if available
+            patientId: p.id, 
             patientName: p.name,
             patientAge: p.age || '',
-            patientGender: p.gender || ''
+            patientGender: p.gender || '',
+            patientPhone: p.mobile || ''
         });
         setSearchQuery(p.name);
         setShowDropdown(false);
@@ -138,9 +150,15 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
         setIsSaving(true);
         try {
             if (editData?.id) {
-                // Update existing
+                // Ensure OPD ID exists for legacy records during edit
+                let opdId = editData.opdId;
+                if (!opdId) {
+                    opdId = await generateOpdId(ownerId, labName);
+                }
+
                 await update(ref(database, `opd/${ownerId}/${editData.id}`), {
                     ...form,
+                    opdId,
                     updatedAt: new Date().toISOString()
                 });
                 showToast('OPD Entry Updated', 'success');
@@ -157,16 +175,20 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
                     tokenCount = visits.filter((v: any) => v.visitDate === today).length + 1;
                 }
 
+                const visitDate = today;
+                const opdId = await generateOpdId(ownerId, labName);
+
                 const visitData = {
                     ...form,
+                    opdId,
                     status: 'pending',
-                    visitDate: today,
+                    visitDate,
                     token: tokenCount,
                     createdAt: new Date().toISOString()
                 };
 
                 await push(ref(database, `opd/${ownerId}`), visitData);
-                showToast(`OPD Created (Token #${tokenCount})`, 'success');
+                showToast(`OPD Created: ${opdId} (Token #${tokenCount})`, 'success');
             }
             
             onClose();

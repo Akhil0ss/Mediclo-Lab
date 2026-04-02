@@ -12,6 +12,7 @@ import { mergeTemplates } from '@/lib/templateUtils';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Modal from '@/components/Modal';
+import PatientHistoryModal from '@/components/PatientHistoryModal';
 
 export default function PatientsPage() {
     const { user, userProfile } = useAuth();
@@ -60,7 +61,7 @@ export default function PatientsPage() {
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [newPatientCreds, setNewPatientCreds] = useState<any>(null);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [historyPatient, setHistoryPatient] = useState<{ id: string, name: string } | null>(null);
     const [selectedPatient, setSelectedPatient] = useState<any>(null);
     const [externalDoctors, setExternalDoctors] = useState<any[]>([]);
     const [showExternalDoctorInput, setShowExternalDoctorInput] = useState(false);
@@ -788,9 +789,9 @@ export default function PatientsPage() {
                                         <td className="px-4 py-2 text-sm">
                                             <div className="flex items-center gap-3">
                                                 <button
-                                                    onClick={() => openViewModal(patient)}
+                                                    onClick={() => setHistoryPatient({ id: patient.id, name: patient.name })}
                                                     className="text-blue-600 hover:text-blue-800 transition-colors p-1"
-                                                    title="View"
+                                                    title="View Clinical History"
                                                 >
                                                     <i className="fas fa-eye"></i>
                                                 </button>
@@ -1185,193 +1186,17 @@ export default function PatientsPage() {
                 </form>
             </Modal>
 
-            {/* View Patient History Modal */}
-            <Modal isOpen={showViewModal} onClose={() => setShowViewModal(false)}>
-                <h3 className="text-2xl font-bold mb-4 text-gray-800 border-b pb-3">
-                    <i className="fas fa-user-circle mr-2 text-blue-600"></i>
-                    Patient Complete History
-                </h3>
-                {selectedPatient && (
-                    <div className="max-h-[70vh] overflow-y-auto">
-                        {/* Patient Basic Info */}
-                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg mb-4 border border-blue-200">
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-                                <div><strong className="text-gray-700">Name:</strong> <span className="text-gray-900">{selectedPatient.name}</span></div>
-                                <div><strong className="text-gray-700">Age/Gender:</strong> <span className="text-gray-900">{selectedPatient.age} / {selectedPatient.gender}</span></div>
-                                <div><strong className="text-gray-700">Contact:</strong> <span className="text-gray-900">{selectedPatient.mobile}</span></div>
-                                <div><strong className="text-gray-700">Patient ID:</strong> <span className="font-mono text-purple-600">{selectedPatient.patientId || 'N/A'}</span></div>
-                                <div><strong className="text-gray-700">Ref. Doctor:</strong> <span className="text-gray-900">{selectedPatient.refDoctor || 'N/A'}</span></div>
-                                <div><strong className="text-gray-700">Address:</strong> <span className="text-gray-900">{selectedPatient.address || 'N/A'}</span></div>
-                            </div>
-                        </div>
-
-                        {/* Lab Reports History */}
-                        <div className="mb-4">
-                            <h4 className="font-bold text-lg mb-2 text-purple-700 flex items-center">
-                                <i className="fas fa-file-medical mr-2"></i>
-                                Lab Reports ({reports.filter(r => r.patientId === selectedPatient.id).length})
-                            </h4>
-                            {reports.filter(r => r.patientId === selectedPatient.id).length === 0 ? (
-                                <p className="text-gray-500 text-sm italic pl-6">No lab reports found</p>
-                            ) : (
-                                <div className="space-y-2 max-h-60 overflow-y-auto">
-                                    {reports
-                                        .filter(r => r.patientId === selectedPatient.id)
-                                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                                        .map(report => (
-                                            <div key={report.id} className="bg-white border border-purple-200 rounded-lg p-3 hover:shadow-md transition">
-                                                <div className="flex justify-between items-center text-sm gap-4">
-                                                    <div className="flex-1 flex items-center gap-4 min-w-0">
-                                                        <div className="font-semibold text-purple-600 truncate flex-shrink-0 max-w-[40%]" title={report.testName}>
-                                                            {report.testName || 'Report'} <span className="text-gray-400 text-xs font-mono">({report.reportId})</span>
-                                                        </div>
-                                                        <div className="text-gray-600 truncate min-w-0" title={`Sample: ${report.sampleId}`}>
-                                                            Smpl: {report.sampleId}
-                                                        </div>
-                                                        <div className="text-gray-500 text-xs whitespace-nowrap hidden sm:block">
-                                                            {new Date(report.createdAt).toLocaleString('en-IN', {
-                                                                day: '2-digit', month: 'short', year: '2-digit'
-                                                            })}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 flex-shrink-0">
-                                                        <span className={`px-2 py-1 rounded text-xs font-semibold ${report.threatLevel === 'Critical' ? 'bg-red-100 text-red-700' :
-                                                            report.threatLevel === 'High' ? 'bg-orange-100 text-orange-700' :
-                                                                report.threatLevel === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
-                                                                    'bg-green-100 text-green-700'
-                                                            }`}>
-                                                            {report.threatLevel || 'Normal'}
-                                                        </span>
-                                                        <button
-                                                            onClick={() => window.open(`/print/report/${report.id}`, '_blank')}
-                                                            className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-2.5 py-1 rounded text-xs font-bold hover:shadow-lg transition flex items-center gap-1"
-                                                            title="Print PDF"
-                                                        >
-                                                            <i className="fas fa-print"></i> <span className="hidden sm:inline">PDF</span>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Clinical History (Rx) */}
-                        <div className="mb-4">
-                            <h4 className="font-bold text-lg mb-2 text-blue-700 flex items-center">
-                                <i className="fas fa-stethoscope mr-2"></i>
-                                Clinical Visits (Rx) ({visits.filter(v => v.patientId === selectedPatient.id).length})
-                            </h4>
-                            {visits.filter(v => v.patientId === selectedPatient.id).length === 0 ? (
-                                <p className="text-gray-500 text-sm italic pl-6">No clinical visits recorded</p>
-                            ) : (
-                                <div className="space-y-2 max-h-60 overflow-y-auto">
-                                    {visits
-                                        .filter(v => v.patientId === selectedPatient.id)
-                                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                                        .map(visit => (
-                                            <div key={visit.id} className="bg-white border border-blue-200 rounded-lg p-3 hover:shadow-md transition">
-                                                <div className="flex justify-between items-start gap-4">
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <span className="text-xs font-black bg-blue-600 text-white px-2 py-0.5 rounded-full uppercase tracking-tighter">Token #{visit.token}</span>
-                                                            <span className="text-gray-400 text-[10px] truncate max-w-[150px]">ID: {visit.id.slice(-6).toUpperCase()}</span>
-                                                        </div>
-                                                        <div className="text-sm font-black text-gray-800">Dr. {visit.doctorName}</div>
-                                                        <div className="text-[10px] text-gray-500 line-clamp-1 italic">{visit.complaints || 'No complaints recorded'}</div>
-                                                    </div>
-                                                    <div className="flex flex-col items-end gap-2 shrink-0">
-                                                        <span className="text-[9px] font-bold text-gray-400 uppercase">{new Date(visit.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
-                                                        <div className="flex gap-1">
-                                                            <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${visit.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                                {visit.status === 'completed' ? 'Prescribed' : 'Waiting'}
-                                                            </span>
-                                                            {visit.status === 'completed' && (
-                                                                <button 
-                                                                    onClick={() => window.open(`/print/opd/${visit.id}`, '_blank')}
-                                                                    className="bg-blue-50 text-blue-700 p-1 rounded hover:bg-blue-100 transition shadow-sm"
-                                                                    title="Print Prescription"
-                                                                >
-                                                                    <i className="fas fa-print text-[10px]"></i>
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Samples History */}
-                        <div className="mb-4">
-                            <h4 className="font-bold text-lg mb-2 text-orange-700 flex items-center">
-                                <i className="fas fa-vial mr-2"></i>
-                                Lab Samples ({samples.filter(s => s.patientId === selectedPatient.id).length})
-                            </h4>
-                            {samples.filter(s => s.patientId === selectedPatient.id).length === 0 ? (
-                                <p className="text-gray-500 text-sm italic pl-6">No samples found</p>
-                            ) : (
-                                <div className="space-y-2 max-h-60 overflow-y-auto">
-                                    {samples
-                                        .filter(s => s.patientId === selectedPatient.id)
-                                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                                        .map(sample => (
-                                            <div key={sample.id} className="bg-white border border-orange-200 rounded-lg p-2 hover:shadow-md transition text-sm">
-                                                <div className="flex justify-between items-start gap-2">
-                                                    <div className="flex-1 flex flex-col gap-1.5 min-w-0">
-                                                        {/* Top Row: IDs & Secondary Details */}
-                                                        <div className="flex flex-wrap items-center gap-2 md:gap-3 text-[11px] text-gray-500">
-                                                            <span className="font-bold text-orange-600 whitespace-nowrap text-sm">Smpl: {sample.sampleNumber}</span>
-                                                            
-                                                            {sample.sampleType && (
-                                                                <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full whitespace-nowrap">
-                                                                    <i className="fas fa-vial mr-1"></i> {sample.sampleType}
-                                                                </span>
-                                                            )}
-                                                            <span className="whitespace-nowrap"><i className="far fa-calendar-alt mr-1"></i>{new Date(sample.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
-                                                            {sample.collectedBy && <span className="whitespace-nowrap truncate max-w-[120px]"><i className="fas fa-user-nurse mr-1"></i>{sample.collectedBy}</span>}
-                                                            {selectedPatient.refDoctor && <span className="whitespace-nowrap truncate max-w-[120px]"><i className="fas fa-user-md mr-1"></i>{selectedPatient.refDoctor}</span>}
-                                                        </div>
-
-                                                        {/* Bottom Row: Selected Tests */}
-                                                        {sample.tests && Array.isArray(sample.tests) && sample.tests.length > 0 && (
-                                                            <div className="flex flex-wrap gap-1 mt-0.5">
-                                                                {sample.tests.map((t: string, i: number) => (
-                                                                    <span key={i} className="bg-orange-50 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-orange-200 whitespace-nowrap">
-                                                                        {t}
-                                                                    </span>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    
-                                                    <div className="flex items-center flex-shrink-0 mt-1">
-                                                        <span className={`px-2 py-1 rounded text-[11px] font-semibold ${sample.status === 'Completed' ? 'bg-green-100 text-green-700' :
-                                                            sample.status === 'Processing' ? 'bg-blue-100 text-blue-700' :
-                                                                'bg-yellow-100 text-yellow-700'
-                                                            }`}>
-                                                            {sample.status}
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-                <button
-                    onClick={() => setShowViewModal(false)}
-                    className="w-full bg-gradient-to-r from-gray-500 to-gray-600 text-white py-3 rounded-lg hover:from-gray-600 hover:to-gray-700 transition font-semibold mt-4"
-                >
-                    <i className="fas fa-times mr-2"></i>
-                    Close
-                </button>
-            </Modal>
+            {/* Patient History Modal */}
+            {historyPatient && (
+                <PatientHistoryModal 
+                    isOpen={!!historyPatient} 
+                    onClose={() => setHistoryPatient(null)} 
+                    patientId={historyPatient.id} 
+                    patientName={historyPatient.name} 
+                    ownerId={userProfile?.ownerId || user?.uid || ''}
+                    role={userProfile?.role}
+                />
+            )}
 
             {/* Billing Modal */}
             <Modal isOpen={showBillingModal} onClose={() => setShowBillingModal(false)}>

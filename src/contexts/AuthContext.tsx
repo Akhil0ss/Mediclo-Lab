@@ -7,11 +7,12 @@ import { ref, onValue, get } from 'firebase/database';
 import { useRouter } from 'next/navigation';
 
 interface UserProfile {
-    role: 'receptionist' | 'doctor' | 'pharmacy' | 'lab' | 'patient' | 'admin' | 'owner';
+    role: 'receptionist' | 'doctor' | 'dr-staff' | 'pharmacy' | 'lab' | 'patient' | 'admin' | 'owner';
     name: string;
     email: string;
     doctorId?: string;
     labName?: string;
+    hospitalName?: string;
     setupCompleted?: boolean;
     ownerId?: string;
 }

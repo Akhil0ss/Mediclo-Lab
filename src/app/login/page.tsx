@@ -296,8 +296,12 @@ export default function LoginPage() {
                             onClick={() => { setActiveTab('staff'); setError(''); setIsSignup(false); }}
                             className={`relative z-10 flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold rounded-lg transition-all duration-300 ${activeTab === 'staff' ? 'bg-white shadow-md text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}
                         >
-                            <i className={`fas fa-id-card-clip ${activeTab === 'staff' ? 'text-blue-600' : 'text-gray-400'}`}></i>
-                            Staff
+                            <div className="flex flex-col items-center leading-none">
+                                <div className="flex items-center gap-2">
+                                    <i className={`fas fa-user-md ${activeTab === 'staff' ? 'text-blue-600' : 'text-gray-400'}`}></i>
+                                    <span>Staff & Doctors</span>
+                                </div>
+                            </div>
                         </button>
                     </div>
 
@@ -436,9 +440,12 @@ export default function LoginPage() {
                     )}
                     
                     {activeTab === 'staff' && (
-                        <div className="mt-6 text-center p-3 bg-blue-50 rounded-xl border border-blue-100">
-                            <p className="text-[10px] text-blue-700 font-medium">
-                                <i className="fas fa-info-circle mr-1"></i> Staff accounts are managed by the Clinic & Lab Owner.
+                        <div className="mt-6 text-center p-3 bg-blue-50/50 rounded-xl border border-blue-100/50 backdrop-blur-sm">
+                            <p className="text-[10px] text-blue-700 font-bold uppercase tracking-widest mb-1">
+                                <i className="fas fa-shield-halved mr-1"></i> Authorized Access ONLY
+                            </p>
+                            <p className="text-[9px] text-blue-600/70 font-medium">
+                                Doctors, Receptionists, and Technicians must use credentials provided by the Lab Administrator.
                             </p>
                         </div>
                     )}

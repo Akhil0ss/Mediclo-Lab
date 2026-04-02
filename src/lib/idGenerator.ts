@@ -16,9 +16,9 @@ export async function generatePatientId(ownerId: string, clinicName: string = 'C
     try {
         const prefix = clinicName
             .replace(/[^A-Za-z0-9]/g, '')
-            .substring(0, 3)
+            .substring(0, 4)
             .toUpperCase()
-            .padEnd(3, 'X');
+            .padEnd(4, 'X');
 
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);
@@ -45,9 +45,9 @@ export async function generateReportId(ownerId: string, clinicName: string = 'CL
     try {
         const prefix = (branchPrefix || clinicName)
             .replace(/[^A-Za-z0-9]/g, '')
-            .substring(0, 3)
+            .substring(0, 4)
             .toUpperCase()
-            .padEnd(3, 'X');
+            .padEnd(4, 'X');
 
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);
@@ -72,9 +72,9 @@ export async function generateSampleId(ownerId: string, clinicName: string = 'CL
     try {
         const prefix = (branchPrefix || clinicName)
             .replace(/[^A-Za-z0-9]/g, '')
-            .substring(0, 3)
+            .substring(0, 4)
             .toUpperCase()
-            .padEnd(3, 'X');
+            .padEnd(4, 'X');
 
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);
@@ -95,15 +95,69 @@ export async function generateSampleId(ownerId: string, clinicName: string = 'CL
     }
 }
 
+export async function generateOpdId(ownerId: string, clinicName: string = 'CLINIC', branchPrefix?: string): Promise<string> {
+    try {
+        const prefix = (branchPrefix || clinicName)
+            .replace(/[^A-Za-z0-9]/g, '')
+            .substring(0, 4)
+            .toUpperCase()
+            .padEnd(4, 'X');
+
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const yymm = `${yy}${mm}`;
+
+        const counterRef = ref(database, `counters/${ownerId}/opdIds/${yymm}${dd}`);
+        const newCount = await runTransaction(counterRef, (currentCount) => {
+            return (currentCount || 0) + 1;
+        });
+
+        const sequence = String(newCount.snapshot.val()).padStart(2, '0');
+        return `${prefix}-${yymm}-${dd}${sequence}O`;
+    } catch (error) {
+        console.error('Error generating OPD ID:', error);
+        return `O-${Date.now()}`;
+    }
+}
+
+export async function generateRxId(ownerId: string, clinicName: string = 'CLINIC', branchPrefix?: string): Promise<string> {
+    try {
+        const prefix = (branchPrefix || clinicName)
+            .replace(/[^A-Za-z0-9]/g, '')
+            .substring(0, 4)
+            .toUpperCase()
+            .padEnd(4, 'X');
+
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const yymm = `${yy}${mm}`;
+
+        const counterRef = ref(database, `counters/${ownerId}/rxIds/${yymm}${dd}`);
+        const newCount = await runTransaction(counterRef, (currentCount) => {
+            return (currentCount || 0) + 1;
+        });
+
+        const sequence = String(newCount.snapshot.val()).padStart(2, '0');
+        return `${prefix}-${yymm}-${dd}${sequence}X`;
+    } catch (error) {
+        console.error('Error generating RX ID:', error);
+        return `X-${Date.now()}`;
+    }
+}
+
 /**
  * Helper to format ID from a specific date and sequence (for migration)
  */
 export function formatIdFromDate(labName: string, date: Date, sequence: number, type: 'P' | 'S' | 'R'): string {
     const prefix = labName
         .replace(/[^A-Za-z0-9]/g, '')
-        .substring(0, 3)
+        .substring(0, 4)
         .toUpperCase()
-        .padEnd(3, 'X');
+        .padEnd(4, 'X');
 
     const yy = String(date.getFullYear()).slice(-2);
     const mm = String(date.getMonth() + 1).padStart(2, '0');

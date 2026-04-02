@@ -28,45 +28,36 @@ interface GroqResponse {
 }
 
 /**
- * Core Groq API call with token optimization
+ * Core Groq API call - Redirected through Secure Server-Side Proxy
  */
 async function callGroq(
     messages: GroqMessage[],
     maxTokens: number = 500,
     temperature: number = 0.3
 ): Promise<{ response: string; tokens: number }> {
-    if (!GROQ_API_KEY) {
-        console.error('Groq AI Error: Missing API Key');
-        throw new Error('Groq API Key is missing. Please add NEXT_PUBLIC_GROQ_API_KEY to your .env file.');
-    }
-
     try {
-        const response = await fetch(GROQ_API_URL, {
+        const response = await fetch('/api/ai/proxy', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${GROQ_API_KEY}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: MODEL,
                 messages,
                 max_tokens: maxTokens,
-                temperature, // Lower = more focused, less creative
-                top_p: 0.9,
+                temperature,
             }),
         });
 
         if (!response.ok) {
             const errorBody = await response.text();
-            console.error('Groq API Error Detail:', errorBody);
-            throw new Error(`Groq API error: ${response.status} ${response.statusText} - ${errorBody}`);
+            console.error('AI Proxy Error:', errorBody);
+            throw new Error(`AI service error: ${response.status}`);
         }
 
-        const data: GroqResponse = await response.json();
-
+        const data = await response.json();
         return {
-            response: data.choices[0].message.content,
-            tokens: data.usage.total_tokens,
+            response: data.response,
+            tokens: data.tokens || 0,
         };
     } catch (error) {
         console.error('Groq AI error:', error);
@@ -217,16 +208,30 @@ Suggest prescription (JSON):
     }
 }
 
-/**
- * 3.1 AI Lifestyle & Diet Advice
- */
 export async function suggestLifestyleAdvice(
     diagnosis: string,
     symptoms: string
 ): Promise<string> {
-    const prompt = `Diagnosis: ${diagnosis}, Symptoms: ${symptoms}. Give 3-4 bulleted lifestyle and diet advice points for the patient. Be concise and professional.`;
-    const result = await callGroq([{ role: 'system', content: 'Medical clinical advisor AI. Be concise.' }, { role: 'user', content: prompt }], 200, 0.3);
-    return result.response;
+    const prompt = `Diagnosis: ${diagnosis}, Symptoms: ${symptoms}.
+    Provide EXACTLY 3 short, professional clinical advice bullet points.
+    Rules:
+    - Use "-" for bullets
+    - NO markdown stars (** or *)
+    - NO bold or headers
+    - Max 10 words per point
+    - Clinical tone only
+    
+    Format example:
+    - Advice point one
+    - Advice point two
+    - Advice point three`;
+    
+    const result = await callGroq([
+        { role: 'system', content: 'Professional Medical Advisor. Clean text output only, no formatting.' },
+        { role: 'user', content: prompt }
+    ], 150, 0.2);
+    
+    return result.response.trim();
 }
 
 /**
@@ -366,6 +371,59 @@ ${reports.slice(0, 3).map(r => `${r.date}: ${r.type} - ${r.findings}`).join('\n'
     ], 150, 0.3);
 
     return result.response;
+}
+
+/**
+ * 6. Longitudinal Clinical History Insight - Processes all past visits + reports
+ */
+export async function generateClinicalHistoryInsight(
+    visits: Array<{ date: string; diagnosis: string; medicines: string[]; vitals: any }>,
+    reports: Array<{ date: string; test: string; threatLevel: string; findings?: string }>
+): Promise<{
+    narrative: string;
+    trends: string[];
+    riskFactors: string[];
+    recommendations: string[];
+}> {
+    const prompt = `Analyze patient longitudinal data:
+
+Visit History (Diagnoses & Medication):
+${visits.slice(0, 10).map(v => `${v.date}: ${v.diagnosis} (Medicines: ${v.medicines.join(', ')})`).join('\n')}
+
+Lab History (Critical Patterns):
+${reports.slice(0, 10).map(r => `${r.date}: ${r.test} - Status: ${r.threatLevel}`).join('\n')}
+
+Output JSON ONLY:
+{
+  "narrative": "3-sentence medical history summary",
+  "trends": ["up to 3 clinical trends spotted (e.g., BP rising, repeat infections)"],
+  "riskFactors": ["up to 2 lifestyle/clinical risks identified"],
+  "recommendations": ["up to 2 next-step clinical recommendations"]
+}`;
+
+    const result = await callGroq([
+        {
+            role: 'system',
+            content: 'You are a senior Clinical Informatics AI. Synthesize long-term patient data. Be precise, medical, and evidence-based. Output raw JSON only.'
+        },
+        {
+            role: 'user',
+            content: prompt
+        }
+    ], 450, 0.2);
+
+    try {
+        const cleanResponse = result.response.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(cleanResponse);
+    } catch (e) {
+        console.warn('Clinical Insight Parse Error:', e);
+        return {
+            narrative: "Unable to synthesize clinical history automatically. Please review visits and reports manually.",
+            trends: [],
+            riskFactors: [],
+            recommendations: []
+        };
+    }
 }
 
 /**

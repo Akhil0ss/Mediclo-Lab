@@ -128,6 +128,43 @@ export async function cleanupOldAppointments(ownerId: string) {
 }
 
 /**
+ * Clean up stale OPD queue items (pending/in-consultation) from previous days.
+ * This keeps the queue fresh and prevents yesterday's missed patients from
+ * cluttering today's workspace.
+ */
+export async function cleanupStaleOPDQueues(ownerId: string) {
+    try {
+        const opdRef = ref(database, `opd/${ownerId}`);
+        const snapshot = await get(opdRef);
+
+        if (!snapshot.exists()) return;
+
+        const visits = snapshot.val();
+        const today = new Date().toISOString().split('T')[0];
+        let cleanedCount = 0;
+
+        for (const visitId in visits) {
+            const visit = visits[visitId];
+            const visitDate = visit.visitDate || (visit.createdAt ? visit.createdAt.split('T')[0] : '');
+
+            // If visit is from a previous day AND still in queue (not finished)
+            if (visitDate && visitDate < today) {
+                if (visit.status === 'pending' || visit.status === 'in-consultation') {
+                    await remove(ref(database, `opd/${ownerId}/${visitId}`));
+                    cleanedCount++;
+                }
+            }
+        }
+
+        if (cleanedCount > 0) {
+            console.log(`🧹 Purged ${cleanedCount} stale OPD queue items from previous days`);
+        }
+    } catch (error) {
+        console.error('OPD cleanup error:', error);
+    }
+}
+
+/**
  * Run all cleanup tasks
  * Call this periodically (e.g., on login or once per day)
  */
@@ -138,7 +175,8 @@ export async function runDataCleanup(userId: string, ownerId: string) {
         await Promise.all([
             cleanupNotifications(ownerId),
             archiveOldChats(ownerId),
-            cleanupOldAppointments(ownerId)
+            cleanupOldAppointments(ownerId),
+            cleanupStaleOPDQueues(ownerId)
         ]);
 
         console.log('✅ Data cleanup completed');

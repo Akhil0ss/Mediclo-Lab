@@ -153,7 +153,7 @@ export function verifyPassword(password: string, hash: string): boolean {
 /**
  * User role type
  */
-export type UserRole = 'receptionist' | 'doctor' | 'pharmacy' | 'lab';
+export type UserRole = 'receptionist' | 'doctor' | 'dr-staff' | 'pharmacy' | 'lab' | 'patient' | 'admin' | 'owner';
 
 /**
  * Staff user interface

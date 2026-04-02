@@ -3,9 +3,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { ref, onValue, push, update, remove, get } from 'firebase/database';
+import { ref, onValue, push, update, remove, get, query, orderByChild, equalTo } from 'firebase/database';
 import { database } from '@/lib/firebase';
-import { formatIdFromDate } from '@/lib/idGenerator';
+import { formatIdFromDate, generateRxId } from '@/lib/idGenerator';
 import Modal from '@/components/Modal';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -30,6 +30,7 @@ export default function OPDPage() {
 
     // UI State
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedDoctorId, setSelectedDoctorId] = useState('');
     const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const [currentPage, setCurrentPage] = useState(1);
@@ -38,11 +39,14 @@ export default function OPDPage() {
     const [showEditModal, setShowEditModal] = useState(false);
     const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
     const [selectedVisit, setSelectedVisit] = useState<any>(null);
-    const itemsPerPage = 10;
+    const itemsPerPage = 20;
 
     // AI Clinical State
     const [aiDiagnosis, setAiDiagnosis] = useState<any>(null);
     const [drugWarnings, setDrugWarnings] = useState<any>(null);
+    const [patientHistory, setPatientHistory] = useState<any[]>([]);
+    const [prescTemplates, setPrescTemplates] = useState<any[]>([]);
+    const [templateName, setTemplateName] = useState('');
     const [isAiLoading, setIsAiLoading] = useState(false);
 
     // visitForm state removed as it is now handled by QuickOPDModal
@@ -150,19 +154,44 @@ export default function OPDPage() {
         };
     }, [ownerId]);
 
+    // Fetch Patient History when a visit is selected
+    useEffect(() => {
+        if (!selectedVisit || !ownerId) return;
+
+        const historyRef = query(ref(database, `opd/${ownerId}`), orderByChild('patientId'), equalTo(selectedVisit.patientId));
+        get(historyRef).then(snap => {
+            if (snap.exists()) {
+                const data: any[] = [];
+                snap.forEach(c => {
+                    const v = c.val();
+                    if (c.key !== selectedVisit.id && v.status === 'completed') {
+                        data.push({ id: c.key, ...v });
+                    }
+                });
+                setPatientHistory(data.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5));
+            }
+        });
+    }, [selectedVisit, ownerId]);
+
+    // Fetch Prescription Templates
+    useEffect(() => {
+        if (!ownerId || !user?.uid) return;
+        const ptRef = ref(database, `prescription_templates/${ownerId}/${user.uid}`);
+        onValue(ptRef, (snap) => {
+            const data: any[] = [];
+            snap.forEach(c => { data.push({ id: c.key, ...c.val() }); });
+            setPrescTemplates(data);
+        });
+    }, [ownerId, user]);
+
     // Filtering & Sorting
     const filteredVisits = useMemo(() => {
-        const sorted = [...visits].sort((a, b) => {
+        // Only show Completed or Referred visits in the archive
+        const archiveVisits = visits.filter(v => v.status === 'completed' || v.status === 'referred');
+
+        const sorted = [...archiveVisits].sort((a, b) => {
             const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
             const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            
-            // 1. Prioritize Pending Emergencies (Only for the 'Pending' queue top)
-            if (a.status === 'pending' && b.status === 'pending') {
-                if (a.isEmergency && !b.isEmergency) return -1;
-                if (!a.isEmergency && b.isEmergency) return 1;
-            }
-
-            // 2. Main Chronological Sort: Newest to Oldest
             return timeB - timeA;
         });
 
@@ -171,9 +200,10 @@ export default function OPDPage() {
                                  v.patientId?.toLowerCase().includes(searchQuery.toLowerCase());
             const visitDate = v.createdAt?.split('T')[0];
             const matchesDate = (!fromDate || visitDate >= fromDate) && (!toDate || visitDate <= toDate);
-            return matchesSearch && matchesDate;
+            const matchesDoctor = !selectedDoctorId || v.doctorId === selectedDoctorId;
+            return matchesSearch && matchesDate && matchesDoctor;
         });
-    }, [visits, searchQuery, fromDate, toDate]);
+    }, [visits, searchQuery, fromDate, toDate, selectedDoctorId]);
 
     // Pagination
     const totalPages = Math.ceil(filteredVisits.length / itemsPerPage);
@@ -260,6 +290,34 @@ export default function OPDPage() {
         }
     };
 
+    const handleSaveTemplate = async () => {
+        if (!templateName || prescriptionForm.medicines.length === 0 || !prescriptionForm.medicines[0].name) {
+            showToast('Enter template name and at least one medicine', 'warning');
+            return;
+        }
+        try {
+            await push(ref(database, `prescription_templates/${ownerId}/${user.uid}`), {
+                name: templateName,
+                ...prescriptionForm,
+                createdAt: new Date().toISOString()
+            });
+            showToast('Prescription Template Saved!', 'success');
+            setTemplateName('');
+        } catch (e) {
+            showToast('Failed to save template', 'error');
+        }
+    };
+
+    const handleLoadTemplate = (temp: any) => {
+        setPrescriptionForm({
+            ...prescriptionForm,
+            diagnosis: temp.diagnosis || prescriptionForm.diagnosis,
+            medicines: temp.medicines || [],
+            advice: temp.advice || prescriptionForm.advice
+        });
+        showToast(`Applied template: ${temp.name}`, 'success');
+    };
+
     const handleDeleteVisit = async (id: string) => {
         if (window.confirm("NOTICE: Are you sure you want to permanently delete this OPD visit record? This action cannot be undone.")) {
             try {
@@ -280,15 +338,21 @@ export default function OPDPage() {
         setIsSaving(true);
 
         try {
+            let rxId = selectedVisit.prescription?.rxId;
+            if (!rxId) {
+                rxId = await generateRxId(ownerId, userProfile?.labName || 'CLINIC');
+            }
+
             await update(ref(database, `opd/${ownerId}/${selectedVisit.id}`), {
                 prescription: {
                     ...prescriptionForm,
+                    rxId,
                     updatedAt: new Date().toISOString()
                 },
                 status: status, // This marks the visit as 'completed' or 'referred'
                 updatedAt: new Date().toISOString()
             });
-            showToast(status === 'completed' ? 'Prescription Saved! Visit Completed.' : 'Patient Referred & Rx on Hold', 'success');
+            showToast(status === 'completed' ? `Prescription Saved (${rxId})! Visit Completed.` : `Patient Referred (${rxId}) & Rx on Hold`, 'success');
             setShowPrescriptionModal(false);
             router.push('/dashboard/opd');
         } catch (error) {
@@ -317,51 +381,72 @@ export default function OPDPage() {
     };
 
     return (
-        <div className="space-y-6">
-            {/* Header Area */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                            <i className="fas fa-stethoscope text-blue-600"></i>
-                            OPD Management
-                        </h2>
-                        <p className="text-sm text-gray-500 mt-1">Manage patient tokens, vitals and doctor consultations</p>
+        <div className="space-y-4">
+            {/* Ultra-Compact Unified Header & Filters */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-2 sticky top-0 z-20">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    {/* Inline Title & Action */}
+                    <div className="flex items-center gap-3 shrink-0">
+                        <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 rounded-lg text-blue-600 border border-blue-100/50">
+                            <i className="fas fa-stethoscope text-[10px]"></i>
+                            <h2 className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
+                                OPD RECORDS
+                            </h2>
+                        </div>
                     </div>
-                    <button 
-                        onClick={() => setShowRegisterModal(true)}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-blue-200 transition-all flex items-center gap-2 active:scale-95"
-                    >
-                        <i className="fas fa-plus"></i> New OPD Visit
-                    </button>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-8">
-                    <div className="relative">
-                        <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                        <input 
-                            type="text" 
-                            placeholder="Search Patient Name / ID..." 
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                        />
-                    </div>
-                    <input 
-                        type="date" 
-                        value={fromDate}
-                        onChange={e => setFromDate(e.target.value)}
-                        className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    />
-                    <input 
-                        type="date" 
-                        value={toDate}
-                        onChange={e => setToDate(e.target.value)}
-                        className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                    />
-                    <div className="flex items-center gap-2 text-xs font-bold text-gray-400 bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
-                        <i className="fas fa-info-circle"></i>
-                        {filteredVisits.length} Records Found
+                    {/* Inline Filter Battery */}
+                    <div className="flex flex-wrap items-center gap-2 flex-1 justify-end">
+                        <div className="relative shrink-0">
+                            <i className="fas fa-user-md absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[9px]"></i>
+                            <select 
+                                value={selectedDoctorId}
+                                onChange={(e) => setSelectedDoctorId(e.target.value)}
+                                className="pl-7 pr-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[10px] font-black outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer"
+                            >
+                                <option value="">ALL DOCTORS</option>
+                                {doctors.map(dr => (
+                                    <option key={dr.id} value={dr.id}>DR. {dr.name.toUpperCase()}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="relative flex-1 max-w-[180px]">
+                            <i className="fas fa-search absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-[9px]"></i>
+                            <input 
+                                type="text" 
+                                placeholder="SEARCH PATIENT..." 
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                className="w-full pl-7 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[10px] font-black outline-none focus:ring-1 focus:ring-blue-500 shadow-inner uppercase"
+                            />
+                        </div>
+                        
+                        <div className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 shadow-inner">
+                            <div className="flex items-center gap-1">
+                                <span className="text-[8px] font-black text-gray-400">FROM</span>
+                                <input 
+                                    type="date" 
+                                    value={fromDate}
+                                    onChange={e => setFromDate(e.target.value)}
+                                    className="bg-transparent text-[10px] font-black text-gray-700 outline-none w-[90px]"
+                                />
+                            </div>
+                            <div className="w-[1px] h-3 bg-gray-300"></div>
+                            <div className="flex items-center gap-1">
+                                <span className="text-[8px] font-black text-gray-400">TO</span>
+                                <input 
+                                    type="date" 
+                                    value={toDate}
+                                    onChange={e => setToDate(e.target.value)}
+                                    className="bg-transparent text-[10px] font-black text-gray-700 outline-none w-[90px]"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="hidden sm:flex items-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded-lg text-[9px] font-black shadow-md shadow-blue-100">
+                            {filteredVisits.length} RECS
+                        </div>
                     </div>
                 </div>
             </div>
@@ -370,128 +455,97 @@ export default function OPDPage() {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                        <thead className="bg-gray-50 text-[10px] uppercase tracking-wider font-bold text-gray-500 border-b border-gray-100">
+                        <thead className="bg-gray-50 text-[9px] uppercase tracking-widest font-black text-gray-400 border-b border-gray-100">
                             <tr>
-                                <th className="px-6 py-4">Token / ID</th>
-                                <th className="px-6 py-4">Patient Details</th>
-                                <th className="px-6 py-4">Vitals Summary</th>
-                                <th className="px-6 py-4">Assigned Doctor</th>
-                                <th className="px-6 py-4">Status</th>
-                                <th className="px-6 py-4 text-right">Actions</th>
+                                <th className="px-3 py-2">Token / ID</th>
+                                <th className="px-3 py-2">Patient Profile</th>
+                                <th className="px-3 py-2">Clinical Evidence</th>
+                                <th className="px-3 py-2">Physician</th>
+                                <th className="px-3 py-2 text-center">Pharmacy</th>
+                                <th className="px-3 py-2">Status</th>
+                                <th className="px-3 py-2 text-right">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-gray-50">
                             {paginatedVisits.map((visit) => (
-                                <tr key={visit.id} className="hover:bg-blue-50/30 transition-colors group">
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <div className="flex flex-col">
-                                                <span className={`text-xl font-black ${visit.isEmergency && visit.status === 'pending' ? 'text-red-600 animate-pulse' : 'text-blue-600'}`}>
-                                                    #{visit.token}
-                                                </span>
-                                            </div>
-                                            {visit.isEmergency && visit.status === 'pending' && (
-                                                <div className="flex items-center gap-1.5 bg-red-600 text-white px-2.5 py-1 rounded-full animate-bounce shadow-lg shadow-red-200">
-                                                    <i className="fas fa-exclamation-triangle text-[10px]"></i>
-                                                    <span className="text-[9px] font-bold tracking-widest leading-none">URGENT</span>
-                                                </div>
-                                            )}
+                                <tr key={visit.id} className="hover:bg-indigo-50/20 transition-colors group">
+                                    <td className="px-3 py-1.5 whitespace-nowrap">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[11px] font-black text-blue-600">#{visit.token}</span>
+                                            <span className="text-gray-300">|</span>
+                                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter" title={visit.opdId || visit.id}>
+                                                {visit.opdId || visit.id}
+                                            </span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4 truncate max-w-[200px]">
+                                    <td className="px-3 py-1.5 truncate max-w-[150px]">
                                         <div className="flex items-center gap-2">
-                                            <span className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors uppercase whitespace-nowrap overflow-hidden text-ellipsis">
+                                            <span className="font-extrabold text-gray-900 group-hover:text-blue-600 transition-colors uppercase whitespace-nowrap overflow-hidden text-ellipsis text-[11px]">
                                                 {visit.patientName}
                                             </span>
-                                            {visit.patientId && !visit.patientId.startsWith('-') && (
-                                                <span className="text-[10px] font-black text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded tracking-tighter shrink-0">
-                                                    ({visit.patientId})
-                                                </span>
-                                            )}
+                                            <span className="text-[8px] font-black text-gray-400 bg-gray-50 px-1 py-0.5 rounded tracking-tighter shrink-0 uppercase">
+                                                {visit.patientAge}{visit.patientGender?.[0]}
+                                            </span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex flex-wrap gap-1">
-                                            {visit.vitals.bp && <span className="px-2 py-0.5 bg-red-50 text-red-600 rounded text-[10px] font-bold border border-red-100">BP: {visit.vitals.bp}</span>}
-                                            {visit.vitals.pulse && <span className="px-2 py-0.5 bg-orange-50 text-orange-600 rounded text-[10px] font-bold border border-orange-100">P: {visit.vitals.pulse}</span>}
-                                            {visit.vitals.spo2 && <span className="px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-bold border border-blue-100">SpO2: {visit.vitals.spo2}%</span>}
+                                    <td className="px-3 py-1.5">
+                                        <p className="text-[10px] text-gray-500 italic line-clamp-1 max-w-[180px]" title={visit.complaints || 'No specific complaints'}>
+                                            {visit.complaints || 'Routine Checkup'}
+                                        </p>
+                                    </td>
+                                    <td className="px-3 py-1.5">
+                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-600">
+                                            <i className="fas fa-user-md text-indigo-400 text-[9px]"></i>
+                                            <span className="truncate max-w-[80px]">DR. {visit.doctorName?.split(' ')[0]}</span>
                                         </div>
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">
-                                                {visit.doctorName?.[0] || 'D'}
+                                    <td className="px-3 py-1.5 text-center">
+                                        {visit.prescription ? (
+                                            <div className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase inline-flex items-center gap-1 ${
+                                                visit.pharmacyStatus === 'dispensed' 
+                                                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
+                                                : 'bg-orange-100 text-orange-700 border border-orange-200 animate-pulse'
+                                            }`}>
+                                                <i className={`fas ${visit.pharmacyStatus === 'dispensed' ? 'fa-check-double' : 'fa-mortar-pestle'} text-[7px]`}></i>
+                                                {visit.pharmacyStatus === 'dispensed' ? 'Dispensed' : 'Pending'}
                                             </div>
-                                            <span className="text-sm font-medium text-gray-700">{visit.doctorName}</span>
-                                        </div>
+                                        ) : (
+                                            <span className="text-[10px] text-gray-300 font-bold">-</span>
+                                        )}
                                     </td>
-                                    <td className="px-6 py-4">
-                                        <span className={`px-3 py-1 rounded-full text-[10px] font-bold border ${
-                                            visit.status === 'pending' 
-                                            ? 'bg-yellow-50 text-yellow-700 border-yellow-200' 
-                                            : 'bg-green-50 text-green-700 border-green-200'
+                                    <td className="px-3 py-1.5">
+                                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-black border uppercase tracking-widest ${
+                                            visit.status === 'completed' 
+                                            ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
+                                            : 'bg-amber-50 text-amber-600 border-amber-100 shadow-sm'
                                         }`}>
-                                            {visit.status === 'pending' ? 'WAITING' : 'CHECKED'}
+                                            {visit.status === 'completed' ? 'CONSULTED' : 'PENDING'}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            {userProfile?.role === 'doctor' && (
-                                                <>
-                                                    <button 
-                                                        onClick={() => {
-                                                            if (userProfile?.role !== 'doctor') return;
-                                                            setSelectedVisit(visit);
-                                                            if (visit.prescription) {
-                                                                setPrescriptionForm({
-                                                                    ...prescriptionForm,
-                                                                    ...visit.prescription,
-                                                                    medicines: visit.prescription.medicines || [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
-                                                                    referredTests: visit.prescription.referredTests || []
-                                                                });
-                                                            } else {
-                                                                setPrescriptionForm({
-                                                                    diagnosis: '',
-                                                                    advice: '',
-                                                                    medicines: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
-                                                                    nextVisit: '',
-                                                                    referredTests: []
-                                                                });
-                                                            }
-                                                            setShowPrescriptionModal(true);
-                                                        }}
-                                                        className="p-1.5 text-green-600 hover:bg-green-100 rounded-lg transition-colors scale-90" title="Consultation"
-                                                    >
-                                                        <i className="fas fa-file-signature"></i>
-                                                    </button>
-                                                    <button 
-                                                        disabled={visit.status !== 'completed'}
-                                                        onClick={() => window.open(`/print/opd/${visit.id}`, '_blank')}
-                                                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-20 scale-90" title="Print"
-                                                    >
-                                                        <i className="fas fa-print"></i>
-                                                    </button>
-                                                </>
-                                            )}
-                                            
-                                            {/* Administrative Actions - Edit/Delete */}
-                                            {userProfile?.role !== 'doctor' && visit.status === 'pending' && (
-                                                <button 
-                                                    onClick={() => {
-                                                        setEditVisit(visit);
-                                                        setShowEditModal(true);
-                                                    }}
-                                                    className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors scale-90" title="Edit Patient Details"
-                                                >
-                                                    <i className="fas fa-edit"></i>
-                                                </button>
-                                            )}
-                                            
+                                    <td className="px-3 py-1.5 text-right">
+                                        <div className="flex justify-end gap-1.5">
                                             <button 
-                                                onClick={() => handleDeleteVisit(visit.id)}
-                                                className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors scale-90" title="Delete Entry"
+                                                onClick={() => {
+                                                    setSelectedVisit(visit);
+                                                    if (visit.prescription) {
+                                                        setPrescriptionForm({
+                                                            ...prescriptionForm,
+                                                            ...visit.prescription,
+                                                            medicines: visit.prescription.medicines || [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
+                                                            referredTests: visit.prescription.referredTests || []
+                                                        });
+                                                    }
+                                                    setShowPrescriptionModal(true);
+                                                }}
+                                                className="p-1.5 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors" title="View Patient Details"
                                             >
-                                                <i className="fas fa-trash-alt"></i>
+                                                <i className="fas fa-eye text-[10px]"></i>
+                                            </button>
+                                            <button 
+                                                onClick={() => window.open(`/print/opd/${visit.id}`, '_blank')}
+                                                className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Print Prescription"
+                                            >
+                                                <i className="fas fa-print text-[10px]"></i>
                                             </button>
                                         </div>
                                     </td>
@@ -531,7 +585,11 @@ export default function OPDPage() {
             />
 
             {/* Prescription Modal */}
-            <Modal isOpen={showPrescriptionModal} onClose={() => { setShowPrescriptionModal(false); router.push('/dashboard/opd'); }} title="Medical Consultation & Prescription">
+            <Modal 
+                isOpen={showPrescriptionModal} 
+                onClose={() => { setShowPrescriptionModal(false); router.push('/dashboard/opd'); }} 
+                title={(selectedVisit?.status === 'completed' || selectedVisit?.status === 'referred') ? "Prescription Verification Record" : "Medical Consultation & Prescription"}
+            >
                 <div className="flex flex-col lg:flex-row gap-6 max-h-[85vh] overflow-hidden">
                     {/* Left: Consultation Form */}
                     <form onSubmit={(e) => handleSavePrescription(e)} className="flex-[2] space-y-6 overflow-y-auto pr-4 custom-scrollbar">
@@ -554,198 +612,375 @@ export default function OPDPage() {
                             </div>
                         )}
 
+                        {/* Prescription Templates Section (DOCTOR ONLY & ACTIVE ONLY) */}
+                        {userProfile?.role === 'doctor' && (selectedVisit?.status === 'pending' || selectedVisit?.status === 'in-consultation') && (
+                            <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100/50 mb-4 backdrop-blur-sm shadow-sm">
+                                <div className="flex flex-col md:flex-row gap-4 items-end">
+                                    <div className="flex-1 space-y-1.5 w-full">
+                                        <label className="text-[10px] font-black text-blue-700 uppercase tracking-widest flex items-center gap-2">
+                                            <i className="fas fa-file-import"></i> Load Standard Protocol
+                                        </label>
+                                        <select 
+                                            onChange={(e) => {
+                                                const t = prescTemplates.find(x => x.id === e.target.value);
+                                                if (t) handleLoadTemplate(t);
+                                            }}
+                                            className="w-full p-2.5 bg-white border border-blue-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                        >
+                                            <option value="">-- Apply Rx Template --</option>
+                                            {prescTemplates.map(t => (
+                                                <option key={t.id} value={t.id}>{t.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="flex-[1.2] space-y-1.5 w-full">
+                                        <label className="text-[10px] font-black text-blue-700 uppercase tracking-widest flex items-center gap-2">
+                                            <i className="fas fa-save"></i> Create New Template
+                                        </label>
+                                        <div className="flex gap-2">
+                                            <input 
+                                                type="text" 
+                                                placeholder="Ex: Viral Fever Pack" 
+                                                value={templateName}
+                                                onChange={e => setTemplateName(e.target.value)}
+                                                className="flex-1 p-2.5 bg-white border border-blue-200 rounded-xl text-xs font-medium outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                            />
+                                            <button 
+                                                type="button" 
+                                                onClick={handleSaveTemplate}
+                                                className="px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-blue-700 transition-all active:scale-95 shadow-md shadow-blue-100"
+                                            >
+                                                Save
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-2">Provisional Diagnosis / Chief Complaints</label>
-                            <textarea 
-                                value={prescriptionForm.diagnosis}
-                                onChange={(e) => setPrescriptionForm({...prescriptionForm, diagnosis: e.target.value})}
-                                required
-                                className="w-full p-3 border rounded-xl bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="Enter diagnosis and complaints..."
-                                rows={3}
-                            ></textarea>
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="text-sm font-bold text-gray-700 uppercase tracking-tight">Clinical Evidence & Diagnosis</label>
+                            </div>
+                            {selectedVisit?.status === 'completed' || selectedVisit?.status === 'referred' ? (
+                                <div className="relative p-6 bg-white border-2 border-dashed border-blue-100 rounded-3xl text-[15px] font-bold text-gray-800 shadow-sm leading-relaxed italic border-l-8 border-l-blue-600 overflow-hidden group">
+                                    <i className="fas fa-file-medical absolute -right-6 -bottom-6 text-9xl text-blue-50/30 -rotate-12 group-hover:scale-110 transition-transform"></i>
+                                    <span className="relative z-10">{prescriptionForm.diagnosis || "Provisional diagnosis recorded."}</span>
+                                </div>
+                            ) : (
+                                <textarea 
+                                    value={prescriptionForm.diagnosis}
+                                    onChange={(e) => setPrescriptionForm({...prescriptionForm, diagnosis: e.target.value})}
+                                    required
+                                    className="w-full p-4 border rounded-2xl bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium leading-relaxed shadow-inner"
+                                    placeholder="Consultation notes, symptoms, and provisional diagnosis..."
+                                    rows={3}
+                                ></textarea>
+                            )}
                         </div>
 
                         <div>
                             <div className="flex justify-between items-center mb-2">
-                                <label className="text-sm font-bold text-gray-700">Medicines & Instructions</label>
-                                <button type="button" onClick={() => setPrescriptionForm({...prescriptionForm, medicines: [...prescriptionForm.medicines, { name: '', dosage: '', frequency: '', duration: '', instructions: '' }]})} className="text-xs font-bold text-blue-600 hover:underline">+ Add Medicine</button>
+                                <label className="text-sm font-bold text-gray-700 uppercase tracking-tight">Prescribed Medication</label>
+                                {userProfile?.role === 'doctor' && (selectedVisit?.status === 'pending' || selectedVisit?.status === 'in-consultation') && (
+                                    <button type="button" onClick={() => setPrescriptionForm({...prescriptionForm, medicines: [...prescriptionForm.medicines, { name: '', dosage: '', frequency: '', duration: '', instructions: '' }]})} className="text-xs font-black text-blue-600 hover:text-blue-800 flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-xl transition-all shadow-sm border border-blue-100">
+                                        <i className="fas fa-plus"></i> ADD DRUG
+                                    </button>
+                                )}
                             </div>
-                            <div className="space-y-3">
-                                {prescriptionForm.medicines.map((med: any, idx: number) => (
-                                    <div key={idx} className="p-4 bg-gray-50 rounded-xl border border-gray-200 relative group">
-                                        <button type="button" onClick={() => {
-                                            const newM = [...prescriptionForm.medicines];
-                                            newM.splice(idx, 1);
-                                            setPrescriptionForm({...prescriptionForm, medicines: newM});
-                                        }} className="absolute -top-2 -right-2 w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><i className="fas fa-times text-[10px]"></i></button>
-                                        <div className="grid grid-cols-2 gap-3 mb-3">
-                                            <input 
-                                                type="text" placeholder="Medicine Name" 
-                                                value={med.name}
-                                                onChange={e => {
-                                                    const newM = [...prescriptionForm.medicines];
-                                                    newM[idx].name = e.target.value;
-                                                    setPrescriptionForm({...prescriptionForm, medicines: newM});
-                                                }}
-                                                onBlur={(e) => handleMedDosagePredict(idx, e.target.value)}
-                                                className="p-2 text-sm border rounded-lg bg-white outline-none focus:ring-1 focus:ring-blue-400"
-                                            />
-                                            <div className="relative">
-                                                <input 
-                                                    type="text" placeholder="Dosage (e.g. 500mg)" 
-                                                    value={med.dosage}
-                                                    onChange={e => {
+                            <div className="space-y-4">
+                                {selectedVisit?.status === 'completed' || selectedVisit?.status === 'referred' ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {prescriptionForm.medicines.map((med: any, idx: number) => (
+                                            <div key={idx} className="bg-white p-5 rounded-[2.5rem] border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group relative overflow-hidden ring-1 ring-blue-50">
+                                                <div className="absolute top-0 right-0 w-24 h-24 bg-blue-50/30 rounded-bl-[4rem] -mr-10 -mt-10 group-hover:scale-110 transition-transform"></div>
+                                                <div className="flex items-start gap-4 relative z-10">
+                                                    <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-2xl flex items-center justify-center font-black text-sm shrink-0 shadow-lg shadow-blue-200">
+                                                        {idx + 1}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <h4 className="text-sm font-black text-gray-900 uppercase tracking-tighter truncate leading-none mb-1 group-hover:text-blue-700 transition-colors uppercase">{med.name || 'Unnamed Drug'}</h4>
+                                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 mt-3">
+                                                            <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-50 rounded-lg border border-slate-100" title="Frequency">
+                                                                <i className="fas fa-clock text-[9px] text-blue-500"></i>
+                                                                <span className="text-[10px] font-black text-slate-600 tracking-tighter">{med.frequency}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-50 rounded-lg border border-slate-100" title="Dosage">
+                                                                <i className="fas fa-prescription-bottle text-[9px] text-blue-500"></i>
+                                                                <span className="text-[10px] font-black text-slate-600 tracking-tighter">{med.dosage}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 px-2 py-1 bg-indigo-50 rounded-lg border border-indigo-100" title="Duration">
+                                                                <i className="fas fa-calendar-day text-[9px] text-indigo-500"></i>
+                                                                <span className="text-[10px] font-black text-indigo-700 tracking-tighter">{med.duration}</span>
+                                                            </div>
+                                                        </div>
+                                                        {med.instructions && (
+                                                            <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-amber-50 rounded-full border border-amber-100 shadow-sm">
+                                                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-ping"></span>
+                                                                <span className="text-[9px] font-black text-amber-700 uppercase tracking-widest">{med.instructions}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    prescriptionForm.medicines.map((med: any, idx: number) => (
+                                        <div key={idx} className="p-5 bg-gray-50/50 rounded-2xl border border-gray-200 relative group animate-in fade-in slide-in-from-top-2 shadow-sm">
+                                            <button type="button" onClick={() => {
+                                                const newM = [...prescriptionForm.medicines];
+                                                newM.splice(idx, 1);
+                                                setPrescriptionForm({...prescriptionForm, medicines: newM});
+                                            }} className="absolute -top-2 -right-2 w-7 h-7 bg-white text-red-600 rounded-full flex items-center justify-center border border-red-100 shadow-md opacity-0 group-hover:opacity-100 transition-all hover:bg-red-600 hover:text-white"><i className="fas fa-times text-xs"></i></button>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Molecule / Brand</label>
+                                                    <div className="relative">
+                                                        <i className="fas fa-capsules absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                                                        <input 
+                                                            type="text" placeholder="Search drug..." 
+                                                            value={med.name}
+                                                            onChange={e => {
+                                                                const newM = [...prescriptionForm.medicines];
+                                                                newM[idx].name = e.target.value;
+                                                                setPrescriptionForm({...prescriptionForm, medicines: newM});
+                                                            }}
+                                                            onBlur={(e) => handleMedDosagePredict(idx, e.target.value)}
+                                                            className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Dosage Logic</label>
+                                                    <div className="relative">
+                                                        <i className="fas fa-vial absolute left-3 top-1/2 -translate-y-1/2 text-blue-400 text-xs"></i>
+                                                        <input 
+                                                            type="text" placeholder="e.g. 500mg (BID)" 
+                                                            value={med.dosage}
+                                                            onChange={e => {
+                                                                const newM = [...prescriptionForm.medicines];
+                                                                newM[idx].dosage = e.target.value;
+                                                                setPrescriptionForm({...prescriptionForm, medicines: newM});
+                                                            }}
+                                                            className="w-full pl-9 pr-10 py-2.5 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                                                        />
+                                                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                                            <i className="fas fa-robot text-[11px] text-blue-500 animate-pulse bg-blue-50 p-1 rounded" title="AI Assisted Dosage"></i>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-3">
+                                                <div className="space-y-1">
+                                                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-tighter ml-1">Frequency</label>
+                                                    <input type="text" placeholder="1-0-1" value={med.frequency} onChange={e => {
                                                         const newM = [...prescriptionForm.medicines];
-                                                        newM[idx].dosage = e.target.value;
+                                                        newM[idx].frequency = e.target.value;
                                                         setPrescriptionForm({...prescriptionForm, medicines: newM});
-                                                    }}
-                                                    className="p-2 text-sm border rounded-lg bg-white w-full pr-8"
-                                                />
-                                                <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                                                    <i className="fas fa-magic text-[10px] text-blue-400 animate-pulse" title="AI Predicted"></i>
+                                                    }} className="w-full p-2.5 text-[11px] border border-gray-100 rounded-xl bg-white font-bold outline-none focus:ring-1 focus:ring-blue-300" />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-tighter ml-1">Duration</label>
+                                                    <input type="text" placeholder="5 Days" value={med.duration} onChange={e => {
+                                                        const newM = [...prescriptionForm.medicines];
+                                                        newM[idx].duration = e.target.value;
+                                                        setPrescriptionForm({...prescriptionForm, medicines: newM});
+                                                    }} className="w-full p-2.5 text-[11px] border border-gray-100 rounded-xl bg-white font-bold outline-none focus:ring-1 focus:ring-blue-300" />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-tighter ml-1">Usage</label>
+                                                    <input type="text" placeholder="After Food" value={med.instructions} onChange={e => {
+                                                        const newM = [...prescriptionForm.medicines];
+                                                        newM[idx].instructions = e.target.value;
+                                                        setPrescriptionForm({...prescriptionForm, medicines: newM});
+                                                    }} className="w-full p-2.5 text-[11px] border border-gray-100 rounded-xl bg-white font-bold outline-none focus:ring-1 focus:ring-blue-300" />
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <input type="text" placeholder="Freq (1-0-1)" value={med.frequency} onChange={e => {
-                                                const newM = [...prescriptionForm.medicines];
-                                                newM[idx].frequency = e.target.value;
-                                                setPrescriptionForm({...prescriptionForm, medicines: newM});
-                                            }} className="p-2 text-[11px] border rounded bg-white" />
-                                            <input type="text" placeholder="Dur (5 days)" value={med.duration} onChange={e => {
-                                                const newM = [...prescriptionForm.medicines];
-                                                newM[idx].duration = e.target.value;
-                                                setPrescriptionForm({...prescriptionForm, medicines: newM});
-                                            }} className="p-2 text-[11px] border rounded bg-white" />
-                                            <input type="text" placeholder="Inst (After Food)" value={med.instructions} onChange={e => {
-                                                const newM = [...prescriptionForm.medicines];
-                                                newM[idx].instructions = e.target.value;
-                                                setPrescriptionForm({...prescriptionForm, medicines: newM});
-                                            }} className="p-2 text-[11px] border rounded bg-white" />
-                                        </div>
-                                    </div>
-                                ))}
+                                    ))
+                                )}
                             </div>
                         </div>
 
                         {/* Lab Referral Engine */}
-                        <div className="bg-orange-50/50 p-5 rounded-2xl border border-orange-100 mt-6">
-                            <h5 className="flex items-center gap-2 text-sm font-black text-orange-700 uppercase tracking-widest mb-4">
-                                <i className="fas fa-vial"></i> Refer to Laboratory
-                            </h5>
-                            <div className="space-y-3">
-                                {aiDiagnosis?.recommendedTests?.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 mb-3 px-1">
-                                        <p className="w-full text-[10px] font-bold text-orange-400 uppercase tracking-tighter mb-1">AI Recommended Tests:</p>
-                                        {aiDiagnosis.recommendedTests.map((test: string, i: number) => (
-                                            <button 
-                                                key={i} 
-                                                type="button" 
-                                                onClick={() => {
-                                                    if (!prescriptionForm.referredTests.includes(test)) {
-                                                        setPrescriptionForm({...prescriptionForm, referredTests: [...prescriptionForm.referredTests, test]});
-                                                    }
-                                                }}
-                                                className={`text-[10px] px-2 py-0.5 rounded-full border transition-all ${prescriptionForm.referredTests.includes(test) ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-50'}`}
-                                            >
-                                                + {test}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                                <div className="relative">
-                                    <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
-                                    <input 
-                                        type="text"
-                                        placeholder="Add lab tests (e.g. CBC, Sugar)..."
-                                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-orange-500 transition-all font-bold"
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                e.preventDefault();
-                                                const val = (e.target as HTMLInputElement).value.trim();
-                                                if (val && !prescriptionForm.referredTests.includes(val)) {
-                                                    setPrescriptionForm({...prescriptionForm, referredTests: [...prescriptionForm.referredTests, val]});
-                                                    (e.target as HTMLInputElement).value = '';
-                                                }
-                                            }
-                                        }}
-                                    />
-                                    <datalist id="rx-templates-list">
-                                        {templates.map(t => <option key={t.id} value={t.name} />)}
-                                    </datalist>
-                                </div>
+                        {(selectedVisit?.status === 'completed' || selectedVisit?.status === 'referred') ? (
+                            <div className="bg-orange-50/30 p-5 rounded-2xl border border-orange-100 flex flex-col gap-3">
+                                <h5 className="text-[10px] font-black text-orange-700 uppercase tracking-widest flex items-center gap-2">
+                                    <i className="fas fa-vial"></i> Laboratory Referrals
+                                </h5>
                                 <div className="flex flex-wrap gap-2">
                                     {prescriptionForm.referredTests.map((test: string, idx: number) => (
-                                        <span key={idx} className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-[10px] font-black flex items-center gap-2 shadow-sm border border-orange-200">
-                                            {test}
-                                            <button type="button" onClick={() => setPrescriptionForm({...prescriptionForm, referredTests: prescriptionForm.referredTests.filter((_,i) => i !== idx)})} className="hover:text-red-600">
-                                                <i className="fas fa-times"></i>
-                                            </button>
-                                        </span>
+                                        <span key={idx} className="bg-white text-orange-700 px-3 py-1 rounded-full text-[10px] font-black border border-orange-200 shadow-sm">{test}</span>
                                     ))}
-                                    {prescriptionForm.referredTests.length === 0 && <p className="text-[10px] text-gray-400 italic">No tests referred.</p>}
+                                    {prescriptionForm.referredTests.length === 0 && <span className="text-[10px] text-gray-400 italic">No lab tests referred.</span>}
                                 </div>
                             </div>
-                        </div>
+                        ) : (
+                            <div className="bg-orange-50/50 p-5 rounded-2xl border border-orange-100 mt-6">
+                                <h5 className="flex items-center gap-2 text-sm font-black text-orange-700 uppercase tracking-widest mb-4">
+                                    <i className="fas fa-vial"></i> Refer to Laboratory
+                                </h5>
+                                <div className="space-y-3">
+                                    {aiDiagnosis?.recommendedTests?.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mb-3 px-1">
+                                            <p className="w-full text-[10px] font-bold text-orange-400 uppercase tracking-tighter mb-1">AI Recommended Tests:</p>
+                                            {aiDiagnosis.recommendedTests.map((test: string, i: number) => (
+                                                <button 
+                                                    key={i} 
+                                                    type="button" 
+                                                    onClick={() => {
+                                                        if (!prescriptionForm.referredTests.includes(test)) {
+                                                            setPrescriptionForm({...prescriptionForm, referredTests: [...prescriptionForm.referredTests, test]});
+                                                        }
+                                                    }}
+                                                    className={`text-[10px] px-2 py-0.5 rounded-full border transition-all ${prescriptionForm.referredTests.includes(test) ? 'bg-orange-600 text-white border-orange-600' : 'bg-white text-orange-600 border-orange-200 hover:bg-orange-50'}`}
+                                                >
+                                                    + {test}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="relative">
+                                        <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                                        <input 
+                                            type="text"
+                                            placeholder="Add lab tests (e.g. CBC, Sugar)..."
+                                            className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-orange-500 transition-all font-bold"
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    const val = (e.target as HTMLInputElement).value.trim();
+                                                    if (val && !prescriptionForm.referredTests.includes(val)) {
+                                                        setPrescriptionForm({...prescriptionForm, referredTests: [...prescriptionForm.referredTests, val]});
+                                                        (e.target as HTMLInputElement).value = '';
+                                                    }
+                                                }
+                                            }}
+                                        />
+                                        <datalist id="rx-templates-list">
+                                            {templates.map(t => <option key={t.id} value={t.name} />)}
+                                        </datalist>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {prescriptionForm.referredTests.map((test: string, idx: number) => (
+                                            <span key={idx} className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-[10px] font-black flex items-center gap-2 shadow-sm border border-orange-200">
+                                                {test}
+                                                <button type="button" onClick={() => setPrescriptionForm({...prescriptionForm, referredTests: prescriptionForm.referredTests.filter((_,i) => i !== idx)})} className="hover:text-red-600">
+                                                    <i className="fas fa-times"></i>
+                                                </button>
+                                            </span>
+                                        ))}
+                                        {prescriptionForm.referredTests.length === 0 && <p className="text-[10px] text-gray-400 italic">No tests referred.</p>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         <div>
                             <label className="block text-sm font-bold text-gray-700 mb-2">Advice & Lifestyle Modifications</label>
-                            <textarea 
-                                value={prescriptionForm.advice}
-                                onChange={(e) => setPrescriptionForm({...prescriptionForm, advice: e.target.value})}
-                                className="w-full p-3 border rounded-xl bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="Rest, diet plan, etc..."
-                                rows={2}
-                            ></textarea>
+                            {(selectedVisit?.status === 'completed' || selectedVisit?.status === 'referred') ? (
+                                <div className="p-6 bg-gradient-to-br from-teal-50/50 to-emerald-50/30 border border-teal-100 rounded-[2.5rem] shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center gap-6">
+                                    <i className="fas fa-shield-virus absolute -right-4 -top-4 text-7xl text-teal-600/5 rotate-12"></i>
+                                    <div className="shrink-0 flex items-center gap-3 bg-white p-3 rounded-2xl border border-teal-100 shadow-sm self-start">
+                                        <div className="w-10 h-10 bg-teal-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-teal-100">
+                                            <i className="fas fa-user-shield"></i>
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-black text-teal-600 uppercase tracking-widest">Physician's</p>
+                                            <p className="text-xs font-black text-gray-900 uppercase tracking-tighter leading-none">Lifestyle Guidance</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-bold text-teal-900 leading-relaxed italic">
+                                            {prescriptionForm.advice || "Standard medical precautions and rest are advised for optimal recovery."}
+                                        </p>
+                                    </div>
+                                    <div className="shrink-0 pt-4 md:pt-0 border-t md:border-t-0 md:border-l border-teal-100 md:pl-6 text-center md:text-right">
+                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Follow-up Recommendation</p>
+                                        <p className="text-sm font-black text-gray-800 uppercase tracking-tighter">
+                                            {prescriptionForm.nextVisit ? new Date(prescriptionForm.nextVisit).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : "AS REQUIRED"}
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <textarea 
+                                    value={prescriptionForm.advice}
+                                    onChange={(e) => setPrescriptionForm({...prescriptionForm, advice: e.target.value})}
+                                    className="w-full p-4 border rounded-2xl bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                                    placeholder="Rest, diet plan, etc..."
+                                    rows={2}
+                                ></textarea>
+                            )}
                         </div>
 
                         <div className="flex items-center gap-4">
                             <div className="flex-1">
-                                <label className="block text-xs font-black text-gray-400 uppercase mb-2 tracking-widest">Next Visit Recommendation</label>
-                                <input 
-                                    type="date"
-                                    value={prescriptionForm.nextVisit}
-                                    onChange={(e) => setPrescriptionForm({...prescriptionForm, nextVisit: e.target.value})}
-                                    className="w-full p-3 border rounded-xl bg-gray-50 text-[11px] font-black uppercase"
-                                />
+                                <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 tracking-widest ml-1">Next Visit Recommendation</label>
+                                {(selectedVisit?.status === 'completed' || selectedVisit?.status === 'referred') ? (
+                                    <div className="p-3 bg-gray-50 border border-gray-100 rounded-xl text-xs font-black text-gray-700 uppercase">
+                                        {prescriptionForm.nextVisit ? new Date(prescriptionForm.nextVisit).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : "As required"}
+                                    </div>
+                                ) : (
+                                    <input 
+                                        type="date"
+                                        value={prescriptionForm.nextVisit}
+                                        onChange={(e) => setPrescriptionForm({...prescriptionForm, nextVisit: e.target.value})}
+                                        className="w-full p-3 border rounded-xl bg-gray-50 text-[11px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                )}
                             </div>
                         </div>
 
                         <div className="flex justify-end gap-3 pt-6 border-t mt-6">
+                            {(selectedVisit?.status === 'completed' || selectedVisit?.status === 'referred') && (
+                                <button 
+                                    type="button"
+                                    onClick={() => window.open(`/print/opd/${selectedVisit.id}`, '_blank')}
+                                    className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl shadow-blue-200 transition-all active:scale-95 flex items-center justify-center gap-3 border-b-4 border-indigo-900 group"
+                                >
+                                    <i className="fas fa-print group-hover:rotate-12 transition-transform"></i>
+                                    Print Official Prescription
+                                </button>
+                            )}
+                            
                             <button 
                                 type="button"
                                 onClick={() => setShowPrescriptionModal(false)}
-                                className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
+                                className="px-8 py-3 bg-slate-900 hover:bg-black text-white rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 border-b-4 border-gray-950 flex items-center justify-center gap-2"
                             >
-                                Cancel
+                                <i className="fas fa-portal-exit mr-2"></i> {(selectedVisit?.status === 'pending' || selectedVisit?.status === 'in-consultation') ? 'Cancel' : 'Close Verification Portal'}
                             </button>
                             
-                            {prescriptionForm.referredTests.length > 0 && (
-                                <button 
-                                    type="button"
-                                    onClick={(e) => handleSavePrescription(e, 'referred')}
-                                    disabled={isSaving}
-                                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-                                >
-                                    <i className="fas fa-flask"></i>
-                                    {isSaving ? 'Saving...' : 'Refer & Hold Rx'}
-                                </button>
-                            )}
+                            {(selectedVisit?.status === 'pending' || selectedVisit?.status === 'in-consultation') && userProfile?.role === 'doctor' && (
+                                <>
+                                    {prescriptionForm.referredTests.length > 0 && (
+                                        <button 
+                                            type="button"
+                                            onClick={(e) => handleSavePrescription(e, 'referred')}
+                                            disabled={isSaving}
+                                            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            <i className="fas fa-flask"></i>
+                                            {isSaving ? 'Saving...' : 'Refer & Hold Rx'}
+                                        </button>
+                                    )}
 
-                            <button 
-                                type="submit"
-                                disabled={isSaving}
-                                className="px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-green-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
-                            >
-                                <i className="fas fa-check-double"></i>
-                                {isSaving ? 'Saving...' : 'Save & Complete Rx'}
-                            </button>
+                                    <button 
+                                        type="submit"
+                                        disabled={isSaving}
+                                        className="px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-green-100 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        <i className="fas fa-check-double"></i>
+                                        {isSaving ? 'Saving...' : 'Save & Complete Rx'}
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </form>
 
-                    {/* Right: AI Clinical Assistant & History (DOCTOR ONLY) */}
-                    {userProfile?.role === 'doctor' && (
+                    {/* Right: AI Clinical Assistant & History (DOCTOR ONLY & ACTIVE ONLY) */}
+                    {userProfile?.role === 'doctor' && (selectedVisit?.status === 'pending' || selectedVisit?.status === 'in-consultation') && (
                         <div className="hidden lg:flex flex-1 flex-col gap-6 w-96 border-l pl-6 overflow-y-auto pr-2 custom-scrollbar">
                         {/* 1. AI Clinical Intelligence */}
                         <div className="bg-gradient-to-br from-gray-900 to-indigo-950 rounded-2xl p-5 text-white shadow-2xl relative overflow-hidden ring-1 ring-white/10 shrink-0">
@@ -816,55 +1051,71 @@ export default function OPDPage() {
                             <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-blue-600/10 blur-3xl rounded-full"></div>
                         </div>
 
-                        {/* 2. Patient History Timeline */}
-                        <div className="flex-1 flex flex-col min-h-0">
-                            <div className="flex items-center gap-2 mb-4 px-1">
-                                <i className="fas fa-history text-gray-400 text-xs"></i>
-                                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Patient Intelligence Timeline</h3>
+                        {/* 2. Patient Clinical Timeline */}
+                        <div className="flex-1 flex flex-col min-h-0 bg-white/50 rounded-2xl border border-gray-100 p-1 shadow-inner">
+                            <div className="flex items-center justify-between mb-4 px-3 pt-3">
+                                <div className="flex items-center gap-2">
+                                    <i className="fas fa-history text-blue-600 text-xs"></i>
+                                    <h3 className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em]">Clinical History</h3>
+                                </div>
+                                <span className="text-[8px] font-bold bg-white text-gray-400 px-2 py-0.5 rounded-full border">{patientHistory.length} EVENTS</span>
                             </div>
-                            <div className="space-y-4 overflow-y-auto flex-1 pr-2 custom-scrollbar">
-                                {/* Last 5 Prescriptions */}
-                                {visits
-                                    .filter(v => v.patientId === selectedVisit?.patientId && v.id !== selectedVisit?.id && v.status === 'completed')
-                                    .sort((a,b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())
-                                    .slice(0, 5)
-                                    .map(v => (
-                                        <div key={v.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 hover:border-blue-200 transition-all group shadow-sm">
-                                            <div className="flex justify-between items-center mb-2">
-                                                <span className="text-[9px] font-black text-blue-500 bg-blue-50 px-2 py-0.5 rounded-full">{new Date(v.visitDate).toLocaleDateString()}</span>
-                                                <i className="fas fa-prescription text-[9px] text-gray-300 group-hover:text-blue-400 transition-colors"></i>
-                                            </div>
-                                            <p className="text-[11px] font-black text-gray-800 line-clamp-1">{v.prescription?.diagnosis || 'Follow up'}</p>
-                                            <p className="text-[9px] text-gray-400 italic truncate mt-1">
-                                                {v.prescription?.medicines?.map((m:any) => m.name).join(', ')}
-                                            </p>
+                            
+                            <div className="space-y-4 overflow-y-auto flex-1 px-3 pb-4 custom-scrollbar relative before:absolute before:left-[21px] before:top-2 before:bottom-4 before:w-0.5 before:bg-blue-100">
+                                {patientHistory.map((h, i) => (
+                                    <div key={h.id} className="relative pl-8 animate-in fade-in slide-in-from-right-3" style={{ animationDelay: `${i * 100}ms` }}>
+                                        <div className="absolute left-0 top-1 w-6 h-6 bg-white border-2 border-blue-500 rounded-full flex items-center justify-center z-10 shadow-md">
+                                            <i className="fas fa-prescription text-[9px] text-blue-600"></i>
                                         </div>
-                                    ))
-                                }
-
-                                {/* Last 5 Reports */}
-                                {reports
-                                    .filter(r => r.patientId === selectedVisit?.patientId)
-                                    .sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                                    .slice(0, 5)
-                                    .map(r => (
-                                        <div key={r.id} onClick={() => window.open(`/print/report/${r.id}`, '_blank')} className="p-4 bg-indigo-50/20 rounded-2xl border border-indigo-50 hover:border-indigo-200 cursor-pointer transition-all shadow-sm group">
+                                        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:shadow-lg transition-all group cursor-default">
                                             <div className="flex justify-between items-center mb-2">
-                                                <span className="text-[9px] font-bold text-gray-400">{new Date(r.createdAt).toLocaleDateString()}</span>
-                                                <i className="fas fa-flask text-[9px] text-indigo-300 group-hover:text-indigo-500"></i>
+                                                <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">{new Date(h.createdAt).toLocaleDateString(undefined, { day: '2-digit', month: 'short' })}</span>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => handleLoadTemplate(h)}
+                                                    className="text-[9px] font-black text-blue-600 hover:underline"
+                                                >
+                                                    REUSE RX
+                                                </button>
                                             </div>
-                                            <p className="text-[11px] font-black text-indigo-900 truncate">{r.testName || 'Laboratory Test'}</p>
-                                            <span className={`text-[8px] font-black uppercase tracking-tighter px-2 py-0.5 mt-2 inline-block rounded-full ${r.threatLevel === 'Critical' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                                            <p className="text-[11px] font-extrabold text-gray-800 line-clamp-1 mb-2">"{h.diagnosis || 'Follow-up'}"</p>
+                                            <div className="flex flex-wrap gap-1">
+                                                {h.medicines?.slice(0, 3).map((m:any, j:number) => (
+                                                    <span key={j} className="text-[8px] bg-gray-50 text-gray-500 px-2 py-0.5 rounded-md border border-gray-100 font-bold">{m.name}</span>
+                                                ))}
+                                                {h.medicines?.length > 3 && <span className="text-[8px] text-gray-400 font-extrabold">+{h.medicines.length-3}</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {reports.filter(r => r.patientId === selectedVisit?.patientId).slice(0, 3).map((r, i) => (
+                                    <div key={r.id} className="relative pl-8 animate-in fade-in slide-in-from-right-3">
+                                        <div className="absolute left-0 top-1 w-6 h-6 bg-white border-2 border-orange-500 rounded-full flex items-center justify-center z-10 shadow-md">
+                                            <i className="fas fa-flask text-[9px] text-orange-600"></i>
+                                        </div>
+                                        <div onClick={() => window.open(`/print/report/${r.id}`, '_blank')} className="bg-orange-50/30 p-4 rounded-2xl border border-orange-100 shadow-sm hover:shadow-lg transition-all cursor-pointer group">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <span className="text-[9px] font-black text-orange-600">{new Date(r.createdAt || '').toLocaleDateString()}</span>
+                                                <i className="fas fa-external-link-alt text-[8px] text-orange-300"></i>
+                                            </div>
+                                            <p className="text-[11px] font-black text-orange-950 truncate">{r.testName || 'Lab Investigation'}</p>
+                                            <span className={`text-[8px] font-black uppercase tracking-tighter px-2 py-0.5 mt-2 inline-block rounded-md ${r.threatLevel === 'Critical' ? 'bg-red-500 text-white animate-pulse' : 'bg-green-500 text-white'}`}>
                                                 {r.threatLevel || 'Normal'}
                                             </span>
                                         </div>
-                                    ))
-                                }
+                                    </div>
+                                ))}
 
-                                {visits.filter(v => v.patientId === selectedVisit?.patientId && v.status === 'completed').length === 0 && 
-                                 reports.filter(r => r.patientId === selectedVisit?.patientId).length === 0 && (
-                                    <div className="py-12 text-center text-gray-300 italic text-[10px]">
-                                        No previous medical history found.
+                                {patientHistory.length === 0 && reports.filter(r => r.patientId === selectedVisit?.patientId).length === 0 && (
+                                    <div className="py-20 text-center flex flex-col items-center gap-3">
+                                        <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center text-gray-200">
+                                            <i className="fas fa-folder-open text-3xl"></i>
+                                        </div>
+                                        <div>
+                                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">No Prior Data</p>
+                                            <p className="text-[9px] text-gray-300 italic">Patient visiting for the first time.</p>
+                                        </div>
                                     </div>
                                 )}
                             </div>
