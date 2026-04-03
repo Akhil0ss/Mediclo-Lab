@@ -215,6 +215,55 @@ export default function UniversalPortalLogin() {
                     </form>
                 </div>
 
+                {/* Guest Booking Card - NEW */}
+                <div className="mt-6 bg-slate-800/50 rounded-[2rem] border border-slate-700/50 p-8 backdrop-blur-md animate-in slide-in-from-bottom-8 duration-700 delay-200">
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-500/30">
+                            <i className="fas fa-calendar-plus text-lg"></i>
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-black text-white uppercase tracking-widest leading-none">New Patient?</h2>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mt-1">Book appointment without login</p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div className="relative group">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                                <i className="fas fa-search-location"></i>
+                            </span>
+                            <select
+                                value={selectedHospital?.id || ''}
+                                onChange={(e) => {
+                                    const h = hospitals.find(x => x.id === e.target.value);
+                                    setSelectedHospital(h);
+                                }}
+                                className="w-full bg-slate-900/50 border-2 border-slate-700 rounded-2xl pl-12 pr-4 py-4 text-sm font-bold text-slate-300 focus:border-indigo-500 focus:bg-slate-900 outline-none transition-all appearance-none cursor-pointer"
+                            >
+                                <option value="">Select Lab / Clinic...</option>
+                                {hospitals.map((h) => (
+                                    <option key={h.id} value={h.id}>
+                                        {h.brandName || h.labName || h.lab_name || 'Medical Facility'}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <button
+                            onClick={() => {
+                                if (selectedHospital) {
+                                    router.push(`/portal/${selectedHospital.id}/book`);
+                                } else {
+                                    setError('Please select a hospital/lab first');
+                                }
+                            }}
+                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[10px] uppercase tracking-widest py-4 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-3 group"
+                        >
+                            Book Appointment Now <i className="fas fa-arrow-right group-hover:translate-x-1 transition-transform"></i>
+                        </button>
+                    </div>
+                </div>
+
                 <div className="mt-8 text-center">
                     <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">
                         Powered by Mediclo v2.0 • HIPAA Compliant

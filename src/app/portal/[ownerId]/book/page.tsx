@@ -268,6 +268,7 @@ export default function BookAppointment() {
                                     value={form.doctorId}
                                     onChange={e => setForm({...form, doctorId: e.target.value})}
                                     className="w-full bg-slate-50 border-2 border-slate-50 rounded-2xl px-6 py-4 text-sm font-bold text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all appearance-none"
+                                    required
                                 >
                                     <option value="">Any Available Specialist</option>
                                     {doctors.map(doc => (
