@@ -1,3 +1,4 @@
+
 {
   "rules": {
     "users": {
@@ -128,8 +129,8 @@
       ".read": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
       ".write": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
       "$ownerId": {
-        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId)",
-        ".write": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId)"
+        ".read": "auth != null && (auth.uid === $ownerId || root.child('sessions/' + auth.uid + '/ownerId').val() === $ownerId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
       }
     },
     "common_templates": {
@@ -142,9 +143,18 @@
     },
     "payment_requests": {
       ".read": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+      ".write": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
       "$userId": {
         ".read": "auth != null && (auth.uid === $userId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
         ".write": "auth != null && (auth.uid === $userId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
+      }
+    },
+    "staff_limits": {
+      ".read": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+      ".write": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+      "$userId": {
+        ".read": "auth != null && (auth.uid === $userId || root.child('sessions/' + auth.uid + '/ownerId').val() === $userId || root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')",
+        ".write": "auth != null && (root.child('admins/' + auth.uid).val() === true || root.child('users/' + auth.uid + '/profile/role').val() === 'admin' || auth.token.email === 'wdbyakt@gmail.com')"
       }
     }
   }

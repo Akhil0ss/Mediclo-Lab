@@ -19,6 +19,7 @@ export default function AdminUsers() {
     const [roleLimits, setRoleLimits] = useState<Record<string, any>>({});
     const [selectedUserForLimits, setSelectedUserForLimits] = useState<any>(null);
     const [limitForm, setLimitForm] = useState({ lab: 1, pharmacy: 1, receptionist: 1, doctor: 1 });
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         // Fix 5: Use get() for subscriptions (one-time read) to avoid nested listener memory leak
@@ -68,11 +69,14 @@ export default function AdminUsers() {
                         expiring: list.filter(u => u.subscription.isExpiring).length
                     };
                     setStats(s);
-                    const validUsers = list.filter(u => u.name || u.email);
+                    // Filter: At least must have a UID, name/email is for display
+                    const validUsers = list.filter(u => u.uid);
                     setUsers(validUsers);
                     setFilteredUsers(validUsers);
+                    setError(null);
                 } else {
                     setUsers([]);
+                    setError(null);
                 }
             } catch (error: any) {
                 console.error('Data load error:', error.message);
@@ -80,6 +84,11 @@ export default function AdminUsers() {
             setLoading(false);
         }, (error) => {
             console.error('Users read error:', error.message);
+            if (error.message.includes('permission_denied') || error.message.includes('Permission denied')) {
+                setError('PERMISSION_DENIED');
+            } else {
+                setError(error.message);
+            }
             setLoading(false);
         });
 
@@ -168,7 +177,44 @@ export default function AdminUsers() {
         }
     };
 
-    if (loading) return <div className="p-12 text-center text-gray-500 font-mono">Loading God Mode Data...</div>;
+    if (loading) return (
+        <div className="p-12 text-center space-y-4">
+            <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="text-gray-500 font-mono animate-pulse uppercase tracking-widest text-xs">Accessing Laboratory Registry...</p>
+        </div>
+    );
+
+    if (error === 'PERMISSION_DENIED') {
+        return (
+            <div className="p-12 text-center max-w-2xl mx-auto space-y-6 animate-in fade-in zoom-in-95 duration-500">
+                <div className="w-20 h-20 bg-red-50 text-red-600 rounded-full flex items-center justify-center mx-auto shadow-sm border border-red-100">
+                    <i className="fas fa-shield-slash text-3xl"></i>
+                </div>
+                <div className="space-y-2">
+                    <h2 className="text-2xl font-black text-gray-900 tracking-tighter uppercase">Permission Denied</h2>
+                    <p className="text-gray-500 text-sm leading-relaxed">
+                        Your account (<span className="font-bold text-gray-700">{user?.email}</span>) does not have sufficient privileges 
+                        to read the user registry. This usually happens if the security rules are out of sync.
+                    </p>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left">
+                    <div className="flex items-center gap-2 mb-2">
+                        <i className="fas fa-info-circle text-amber-600"></i>
+                        <span className="text-xs font-black text-amber-800 uppercase tracking-widest">Required Fix:</span>
+                    </div>
+                    <code className="text-[10px] block bg-white/50 p-2 rounded border border-amber-100 text-amber-900 font-mono">
+                        Ensure database.rules.json contains the admin email check under "users" node.
+                    </code>
+                </div>
+                <button 
+                    onClick={() => window.location.reload()}
+                    className="px-6 py-2.5 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg active:scale-95"
+                >
+                    Retry Access
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col flex-1 min-h-0">
