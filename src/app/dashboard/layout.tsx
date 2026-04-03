@@ -86,6 +86,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     const isLab = userProfile?.role === 'lab';
     const isPharmacy = userProfile?.role === 'pharmacy';
     const isOwner = userProfile?.role === 'owner';
+    const isReceptionist = userProfile?.role === 'receptionist';
 
     const tabs = useMemo(() => {
         const baseTabs = [
@@ -108,14 +109,16 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
             baseTabs.push({ id: 'reports', label: 'Reports', icon: 'fa-file-medical', path: '/dashboard/reports', group: 'Laboratory' });
         }
 
-        if (isOwner) {
+        if (isOwner || isReceptionist) {
             baseTabs.push({ id: 'templates', label: 'Templates', icon: 'fa-flask-vial', path: '/dashboard/templates', group: 'Laboratory' });
             baseTabs.push({ id: 'analytics', label: 'Analytics', icon: 'fa-chart-bar', path: '/dashboard/analytics', group: 'Admin' });
-            baseTabs.push({ id: 'settings', label: 'Settings', icon: 'fa-cog', path: '/dashboard/settings', group: 'Admin' });
+            if (isOwner) {
+                baseTabs.push({ id: 'settings', label: 'Settings', icon: 'fa-cog', path: '/dashboard/settings', group: 'Admin' });
+            }
         }
 
         return baseTabs;
-    }, [isDoctor, isOwner, isLab, isPharmacy]);
+    }, [isDoctor, isOwner, isReceptionist, isLab, isPharmacy]);
 
     const groupedTabs = useMemo(() => {
         const groups: { [key: string]: any[] } = {};
@@ -218,7 +221,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                         <div className="text-right mr-2">
                             <p className="text-sm font-semibold">{user?.displayName || userProfile?.name}</p>
                             <span className="text-xs bg-white/30 px-2 py-0.5 rounded-full">
-                                {userProfile?.role === 'receptionist' ? 'LAB ADMIN' :
+                                {userProfile?.role === 'receptionist' ? 'RECEPTION' :
                                     userProfile?.role === 'owner' ? 'CLINIC OWNER' :
                                         userProfile?.role?.toUpperCase() || 'LAB ADMIN'}
                             </span>
