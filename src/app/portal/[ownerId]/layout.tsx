@@ -95,7 +95,19 @@ export default function PatientAuthenticatedLayout({
                             <h1 className="text-lg font-black tracking-tight text-slate-900 uppercase">
                                 {branding?.brandName || branding?.labName || branding?.lab_name || 'Patient Portal'}
                             </h1>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none">Welcome, {patientName}</p>
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
+                                <p className="text-[10px] text-blue-600 font-black uppercase tracking-widest leading-none border-r border-slate-200 pr-4">Welcome, {patientName}</p>
+                                {branding?.contact && (
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none flex items-center gap-1.5">
+                                        <i className="fas fa-phone text-[8px] text-blue-500"></i> {branding.contact}
+                                    </p>
+                                )}
+                                {branding?.address && (
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none flex items-center gap-1.5">
+                                        <i className="fas fa-map-marker-alt text-[8px] text-blue-500"></i> {branding.address}
+                                    </p>
+                                )}
+                            </div>
                         </div>
                     </div>
 
