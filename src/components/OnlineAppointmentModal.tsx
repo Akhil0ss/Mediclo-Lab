@@ -20,6 +20,8 @@ export default function OnlineAppointmentModal({ isOpen, onClose, ownerId }: Onl
     const [loading, setLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
     const [labName, setLabName] = useState('CLINIC');
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editFields, setEditFields] = useState({ date: '', time: '', token: '' });
 
     useEffect(() => {
         if (!isOpen || !ownerId) return;
@@ -29,11 +31,17 @@ export default function OnlineAppointmentModal({ isOpen, onClose, ownerId }: Onl
             const list: any[] = [];
             snapshot.forEach((child) => {
                 const val = child.val();
-                if (val.status === 'pending') {
+                if (val.status === 'pending' || val.status === 'confirmed') {
                     list.push({ id: child.key, ...val });
                 }
             });
-            setAppointments(list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+            // Sort: pending first, then by createdAt newest to oldest
+            const sorted = list.sort((a, b) => {
+                if (a.status === 'pending' && b.status === 'confirmed') return -1;
+                if (a.status === 'confirmed' && b.status === 'pending') return 1;
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            });
+            setAppointments(sorted);
             setLoading(false);
         });
 
@@ -48,16 +56,21 @@ export default function OnlineAppointmentModal({ isOpen, onClose, ownerId }: Onl
         if (isProcessing) return;
         setIsProcessing(true);
 
+        const targetDate = editingId === appointment.id ? editFields.date : appointment.date;
+        const targetTime = editingId === appointment.id ? editFields.time : appointment.time;
+        const manualToken = editingId === appointment.id ? parseInt(editFields.token) : NaN;
+
         try {
-            const today = new Date().toISOString().split('T')[0];
+            const today = targetDate || new Date().toISOString().split('T')[0];
             
-            // 1. Get Token Count
-            const opdRef = ref(database, `opd/${ownerId}`);
-            const snapshot = await get(opdRef);
-            let tokenCount = 1;
-            if (snapshot.exists()) {
-                const visits = Object.values(snapshot.val());
-                tokenCount = visits.filter((v: any) => v.visitDate === today).length + 1;
+            let tokenCount = isNaN(manualToken) ? 1 : manualToken;
+            if (isNaN(manualToken)) {
+                const opdRef = ref(database, `opd/${ownerId}`);
+                const snapshot = await get(opdRef);
+                if (snapshot.exists()) {
+                    const visits = Object.values(snapshot.val());
+                    tokenCount = visits.filter((v: any) => v.visitDate === today).length + 1;
+                }
             }
 
             const opdId = await generateOpdId(ownerId, labName);
@@ -108,13 +121,52 @@ export default function OnlineAppointmentModal({ isOpen, onClose, ownerId }: Onl
             await update(ref(database, `appointments/${ownerId}/${appointment.id}`), {
                 status: 'confirmed',
                 opdVisitId: visitKey,
+                date: today,
+                time: targetTime,
+                token: tokenCount,
                 confirmedAt: new Date().toISOString()
             });
+
+            setEditingId(null);
 
             showToast(`Appointment Confirmed! Token #${tokenCount} assigned.`, 'success');
         } catch (error: any) {
             console.error('Approval Error:', error);
             showToast('Failed to approve appointment', 'error');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleDeleteConfirmed = async (appointment: any) => {
+        if (!window.confirm("Are you sure you want to void this confirmed appointment?")) return;
+        setIsProcessing(true);
+        try {
+            // 1. Revert main appointment status
+            await update(ref(database, `appointments/${ownerId}/${appointment.id}`), {
+                status: 'cancelled',
+                cancelledAt: new Date().toISOString(),
+                voidedReason: 'No-Show / Cancelled by Admin'
+            });
+
+            // 2. Revert status in patient_records if patientId exists
+            if (appointment.patientId) {
+                await update(ref(database, `patient_records/${ownerId}/${appointment.patientId}/appointments/${appointment.id}`), {
+                    status: 'cancelled'
+                });
+            }
+
+            // 3. Mark linked OPD visit as cancelled (if exists)
+            if (appointment.opdVisitId) {
+                await update(ref(database, `opd/${ownerId}/${appointment.opdVisitId}`), {
+                    status: 'cancelled'
+                });
+            }
+
+            showToast('Appointment Voided', 'info');
+        } catch (error) {
+            console.error('Void Error:', error);
+            showToast('Failed to void appointment', 'error');
         } finally {
             setIsProcessing(false);
         }
@@ -144,7 +196,7 @@ export default function OnlineAppointmentModal({ isOpen, onClose, ownerId }: Onl
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Online Appointment Management">
+        <Modal isOpen={isOpen} onClose={onClose} title="Online Appointment Management" maxWidth="max-w-6xl">
             <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
                 {loading ? (
                     <div className="py-20 text-center flex flex-col items-center gap-4">
@@ -168,6 +220,7 @@ export default function OnlineAppointmentModal({ isOpen, onClose, ownerId }: Onl
                                 <tr>
                                     <th className="px-4 py-3">Patient Detail</th>
                                     <th className="px-4 py-3">Slot (Date/Time)</th>
+                                    <th className="px-4 py-3 text-center">Status</th>
                                     <th className="px-4 py-3">Dr / Dept</th>
                                     <th className="px-4 py-3">Notes</th>
                                     <th className="px-4 py-3 text-right">Clinical Action</th>
@@ -188,10 +241,36 @@ export default function OnlineAppointmentModal({ isOpen, onClose, ownerId }: Onl
                                             </div>
                                         </td>
                                         <td className="px-4 py-3">
-                                            <div className="flex flex-col">
-                                                <span className="text-[10px] font-black text-gray-800">{app.date}</span>
-                                                <span className="text-[9px] font-bold text-indigo-500 uppercase">{app.time}</span>
-                                            </div>
+                                            {editingId === app.id ? (
+                                                <div className="flex flex-col gap-1">
+                                                    <input 
+                                                        type="date" 
+                                                        value={editFields.date} 
+                                                        onChange={(e) => setEditFields({ ...editFields, date: e.target.value })}
+                                                        className="text-[10px] font-bold border border-blue-200 rounded p-1"
+                                                    />
+                                                    <input 
+                                                        type="text" 
+                                                        placeholder="Time (e.g. 10:30 AM)"
+                                                        value={editFields.time} 
+                                                        onChange={(e) => setEditFields({ ...editFields, time: e.target.value })}
+                                                        className="text-[10px] font-bold border border-blue-200 rounded p-1"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-col">
+                                                    <span className="text-[10px] font-black text-gray-800">{app.date}</span>
+                                                    <span className="text-[9px] font-bold text-indigo-500 uppercase">{app.time}</span>
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${
+                                                app.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-600'
+                                            }`}>
+                                                {app.status}
+                                                {app.token && app.status === 'confirmed' && ` • Token #${app.token}`}
+                                            </span>
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex flex-col">
@@ -204,22 +283,70 @@ export default function OnlineAppointmentModal({ isOpen, onClose, ownerId }: Onl
                                                 {app.notes || <span className="opacity-30">No special instructions</span>}
                                             </p>
                                         </td>
-                                        <td className="px-4 py-3 text-right">
+                                        <td className="px-4 py-3 text-right whitespace-nowrap">
                                             <div className="flex justify-end gap-2">
-                                                <button 
-                                                    disabled={isProcessing}
-                                                    onClick={() => handleApprove(app)}
-                                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm shadow-emerald-100 transition-all active:scale-95 flex items-center gap-1.5"
-                                                >
-                                                    <i className="fas fa-check"></i> Approve
-                                                </button>
-                                                <button 
-                                                    disabled={isProcessing}
-                                                    onClick={() => handleReject(app.id, app.patientId)}
-                                                    className="px-3 py-1.5 bg-white border border-red-100 text-red-500 hover:bg-red-50 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm transition-all active:scale-95"
-                                                >
-                                                    <i className="fas fa-times"></i> Reject
-                                                </button>
+                                                {app.status === 'confirmed' ? (
+                                                    <button 
+                                                        disabled={isProcessing}
+                                                        onClick={() => handleDeleteConfirmed(app)}
+                                                        className="px-3 py-1.5 bg-rose-50 text-rose-500 hover:bg-rose-100 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-1.5"
+                                                    >
+                                                        <i className="fas fa-trash"></i> Void / Cancel
+                                                    </button>
+                                                ) : editingId === app.id ? (
+                                                    <>
+                                                        <div className="flex flex-col items-end gap-1 mr-2 border-r border-gray-100 pr-2">
+                                                            <span className="text-[7px] font-black text-gray-400 uppercase">Token #</span>
+                                                            <input 
+                                                                type="text" 
+                                                                placeholder="Token"
+                                                                value={editFields.token}
+                                                                onChange={(e) => setEditFields({ ...editFields, token: e.target.value })}
+                                                                className="w-12 text-[10px] font-black text-emerald-600 border border-emerald-200 rounded p-1 text-center"
+                                                            />
+                                                        </div>
+                                                        <button 
+                                                            disabled={isProcessing}
+                                                            onClick={() => handleApprove(app)}
+                                                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm shadow-emerald-100 transition-all active:scale-95"
+                                                        >
+                                                            Update & Approve
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => setEditingId(null)}
+                                                            className="px-3 py-1.5 bg-gray-100 font-black text-[9px] text-gray-500 rounded-lg uppercase tracking-widest"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button 
+                                                            disabled={isProcessing}
+                                                            onClick={() => {
+                                                                setEditingId(app.id);
+                                                                setEditFields({ date: app.date, time: app.time, token: '' });
+                                                            }}
+                                                            className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-1.5"
+                                                        >
+                                                            <i className="fas fa-edit"></i> Edit
+                                                        </button>
+                                                        <button 
+                                                            disabled={isProcessing}
+                                                            onClick={() => handleApprove(app)}
+                                                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm shadow-emerald-100 transition-all active:scale-95 flex items-center gap-1.5"
+                                                        >
+                                                            <i className="fas fa-check"></i> Approve
+                                                        </button>
+                                                        <button 
+                                                            disabled={isProcessing}
+                                                            onClick={() => handleReject(app.id, app.patientId)}
+                                                            className="px-3 py-1.5 bg-white border border-red-100 text-red-500 hover:bg-red-50 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-sm transition-all active:scale-95"
+                                                        >
+                                                            <i className="fas fa-times"></i>
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>

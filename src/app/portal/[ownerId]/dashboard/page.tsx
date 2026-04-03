@@ -175,11 +175,18 @@ export default function PatientDashboard() {
                                             {new Date(appt.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} • {appt.time}
                                         </h4>
                                     </div>
-                                    <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg ${
-                                        appt.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
-                                    }`}>
-                                        {appt.status}
-                                    </span>
+                                    <div className="flex flex-col">
+                                        <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg self-end mb-2 ${
+                                            appt.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                                        }`}>
+                                            {appt.status}
+                                        </span>
+                                        {appt.token && appt.status === 'confirmed' && (
+                                            <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100 flex items-center gap-1.5 animate-pulse">
+                                                <i className="fas fa-ticket-alt"></i> Token #{appt.token}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-3 pt-3 border-t border-slate-50">
                                     <div className="h-8 w-8 bg-slate-50 rounded-lg flex items-center justify-center text-slate-400">
