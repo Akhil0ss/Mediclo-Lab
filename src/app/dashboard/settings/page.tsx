@@ -73,7 +73,7 @@ export default function SettingsPage() {
     const [staffList, setStaffList] = useState<any[]>([]);
     const [showStaffModal, setShowStaffModal] = useState(false);
     const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
-    const [staffForm, setStaffForm] = useState({ username: '', password: '', role: 'lab' as UserRole, name: '', isActive: true, specialization: '', registrationNumber: '' });
+    const [staffForm, setStaffForm] = useState({ username: '', password: '', role: 'lab' as UserRole, name: '', isActive: true, specialization: '', registrationNumber: '', fee: '' });
     const [showPassword, setShowPassword] = useState(false);
     const [staffLimits, setStaffLimits] = useState<{ [role: string]: number }>({ lab: 1, pharmacy: 1, receptionist: 1, doctor: 1, 'dr-staff': 1 });
 
@@ -173,6 +173,7 @@ export default function SettingsPage() {
             if (staffForm.role === 'doctor' || staffForm.role === 'dr-staff') {
                 staffData.specialization = staffForm.specialization || '';
                 staffData.registrationNumber = staffForm.registrationNumber || '';
+                staffData.fee = staffForm.fee || '';
             }
 
             // Final safety check: remove any undefined values to prevent Firebase errors
@@ -199,7 +200,7 @@ export default function SettingsPage() {
                 alert('Staff member updated successfully!');
             }
             
-            setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true, specialization: '', registrationNumber: '' });
+            setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true, specialization: '', registrationNumber: '', fee: '' });
             setEditingStaffId(null);
             setShowPassword(false);
         } catch (error) {
@@ -630,7 +631,7 @@ export default function SettingsPage() {
                                     })}
                                 </div>
                             </div>
-                            <button onClick={() => { setEditingStaffId(null); setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true, specialization: '', registrationNumber: '' }); setShowStaffModal(true); }} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm flex items-center gap-2 h-fit">
+                            <button onClick={() => { setEditingStaffId(null); setStaffForm({ username: '', password: '', role: 'lab', name: '', isActive: true, specialization: '', registrationNumber: '', fee: '' }); setShowStaffModal(true); }} className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm flex items-center gap-2 h-fit">
                                 <i className="fas fa-plus"></i> Add Staff
                             </button>
                         </div>
@@ -667,7 +668,8 @@ export default function SettingsPage() {
                                                         name: staff.name, 
                                                         isActive: staff.isActive,
                                                         specialization: staff.specialization || '',
-                                                        registrationNumber: staff.registrationNumber || ''
+                                                        registrationNumber: staff.registrationNumber || '',
+                                                        fee: staff.fee || ''
                                                     }); 
                                                     setShowStaffModal(true); 
                                                     setShowPassword(false); 
@@ -1055,13 +1057,13 @@ export default function SettingsPage() {
 
             {/* STAFF MODAL */}
             {showStaffModal && (
-                <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95">
-                        <div className="flex justify-between items-center mb-6">
+                <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 max-h-[90vh] flex flex-col border border-gray-100">
+                        <div className="flex justify-between items-center mb-6 shrink-0">
                             <h3 className="text-xl font-bold text-gray-800">{editingStaffId ? 'Edit Staff' : 'Add Staff Member'}</h3>
-                            <button onClick={() => setShowStaffModal(false)} className="text-gray-400 hover:text-gray-600"><i className="fas fa-times text-xl"></i></button>
+                            <button onClick={() => setShowStaffModal(false)} className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"><i className="fas fa-times"></i></button>
                         </div>
-                        <div className="space-y-5">
+                        <div className="space-y-5 overflow-y-auto pr-2 custom-scrollbar flex-1 mb-6">
                             <div>
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">Staff Full Name</label>
                                 <input 
@@ -1142,16 +1144,26 @@ export default function SettingsPage() {
                                             placeholder="MC-1234..." 
                                         />
                                     </div>
+                                    <div className="col-span-2">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-1">Consultation Fee (₹)</label>
+                                        <input 
+                                            type="number" 
+                                            value={staffForm.fee} 
+                                            onChange={e => setStaffForm({...staffForm, fee: e.target.value})} 
+                                            className="w-full p-2.5 border-2 border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-blue-600" 
+                                            placeholder="500, 1000..." 
+                                        />
+                                    </div>
                                 </div>
                             )}
-                            <div className="flex items-center gap-2 mt-4">
+                            <div className="flex items-center gap-2 mt-2 pb-4">
                                 <input type="checkbox" id="isActiveStaff" checked={staffForm.isActive} onChange={e => setStaffForm({...staffForm, isActive: e.target.checked})} className="w-4 h-4 text-blue-600 rounded" />
                                 <label htmlFor="isActiveStaff" className="text-sm font-bold text-gray-700">Account Active</label>
                             </div>
                         </div>
-                        <div className="mt-8 flex justify-end gap-3">
-                            <button onClick={() => setShowStaffModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-                            <button onClick={handleSaveStaff} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition">Save Staff</button>
+                        <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 shrink-0">
+                            <button onClick={() => setShowStaffModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium transition-colors">Cancel</button>
+                            <button onClick={handleSaveStaff} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all shadow-md active:scale-95">Save Staff</button>
                         </div>
                     </div>
                 </div>

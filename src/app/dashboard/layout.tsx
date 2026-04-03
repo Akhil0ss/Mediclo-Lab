@@ -228,21 +228,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </div>
             </header>
 
-            {/* Doctor/Staff Mobile Bottom Navigation */}
-            {isClinical && (
-                <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-50 px-6 py-3 flex justify-between items-center shadow-2xl">
-                    {tabs.map(tab => (
-                        <Link 
-                            key={tab.id}
-                            href={tab.path}
-                            className={`flex flex-col items-center gap-1 transition-all ${activeTab === tab.id ? 'text-blue-600' : 'text-gray-300'}`}
-                        >
-                            <i className={`fas ${tab.icon} text-lg`}></i>
-                            <span className="text-[9px] font-black uppercase tracking-tighter">{tab.label}</span>
-                        </Link>
-                    ))}
-                </div>
-            )}
+            {/* Removed Doctor/Staff Mobile Bottom Navigation as requested */}
 
             <div className={`container-pc w-full mx-auto p-4 lg:p-6 flex flex-col lg:flex-row gap-6`}>
                 {!isClinical && !isPharmacy && (
