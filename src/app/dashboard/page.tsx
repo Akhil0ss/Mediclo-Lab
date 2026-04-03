@@ -17,7 +17,7 @@ const RxModal = dynamic(() => import('@/components/RxModal'), { ssr: false });
 export default function DashboardPage() {
     const router = useRouter();
     const { user, userProfile } = useAuth();
-    const [stats, setStats] = useState({ todayPatients: 0, todayReports: 0, todaySamples: 0, pendingSamples: 0, opdWaiting: 0, opdCompleted: 0, opdReferred: 0 });
+    const [stats, setStats] = useState({ todayPatients: 0, todayReports: 0, todaySamples: 0, pendingSamples: 0, opdWaiting: 0, opdCompleted: 0, opdReferred: 0, onlineAppts: 0 });
     const [pendingSamplesList, setPendingSamplesList] = useState([]);
     const [doctorQueue, setDoctorQueue] = useState<any[]>([]);
     const [doctorStats, setDoctorStats] = useState({ waiting: 0, completed: 0, referred: 0 });
@@ -63,7 +63,7 @@ export default function DashboardPage() {
     const [pharmacyDoctor, setPharmacyDoctor] = useState('all');
     const [doctorsList, setDoctorsList] = useState<any[]>([]);
     const [patientsMap, setPatientsMap] = useState<Record<string, any>>({});
-    
+
     // 🏥 FETCH PATIENTS MAP (Source of Truth)
     useEffect(() => {
         if (!dataOwnerId) return;
@@ -94,7 +94,7 @@ export default function DashboardPage() {
         try {
             if (visit.status === 'pending') {
                 const visitRef = ref(database, `opd/${dataOwnerId}/${visit.id}`);
-                await update(visitRef, { 
+                await update(visitRef, {
                     status: 'in-consultation',
                     updatedAt: new Date().toISOString()
                 });
@@ -160,23 +160,23 @@ export default function DashboardPage() {
             const fullList: any[] = [];
             const referrals: any[] = [];
             const completedList: any[] = [];
-            
+
             let globalWaiting = 0;
             let globalInConsult = 0;
             let globalCompleted = 0;
             let globalReferred = 0;
-            
+
             let dWaiting = 0;
             let dInConsult = 0;
             let dCompleted = 0;
             let dReferred = 0;
-            
+
             const userId = user?.uid;
 
             snap.forEach(c => {
                 const val = c.val();
                 const visit = { id: c.key, ...val };
-                
+
                 // 📊 Global Stats (Main Dash) - Only for TODAY
                 if (val.visitDate === today) {
                     if (val.status === 'pending') globalWaiting++;
@@ -213,11 +213,11 @@ export default function DashboardPage() {
                 }
             });
 
-            setDoctorQueue(docList.sort((a,b) => (parseInt(a.token) || 0) - (parseInt(b.token) || 0)));
-            setCompletedRxList(completedList.sort((a,b) => (parseInt(b.token) || 0) - (parseInt(a.token) || 0)));
+            setDoctorQueue(docList.sort((a, b) => (parseInt(a.token) || 0) - (parseInt(b.token) || 0)));
+            setCompletedRxList(completedList.sort((a, b) => (parseInt(b.token) || 0) - (parseInt(a.token) || 0)));
             setDoctorStats({ waiting: dWaiting, completed: dCompleted, referred: dReferred });
-            setFullOPDQueue(fullList.sort((a,b) => (parseInt(a.token) || 0) - (parseInt(b.token) || 0)));
-            setLabReferrals(referrals.sort((a,b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()));
+            setFullOPDQueue(fullList.sort((a, b) => (parseInt(a.token) || 0) - (parseInt(b.token) || 0)));
+            setLabReferrals(referrals.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()));
             setStats(p => ({ ...p, opdWaiting: globalWaiting, opdInConsult: globalInConsult, opdCompleted: globalCompleted, opdReferred: globalReferred }));
 
             // 💊 PHARMACY SPECIFIC (Only if role is pharmacy or owner/admin)
@@ -229,15 +229,15 @@ export default function DashboardPage() {
                 snap.forEach(c => {
                     const val = c.val();
                     const pProfile = patientsMap[val.patientId] || {};
-                    const visit = { 
-                        id: c.key, 
+                    const visit = {
+                        id: c.key,
                         ...val,
                         // Override/Fallback with source of truth from patient profile
                         patientPhone: pProfile.mobile || val.patientPhone || val.mobile || '',
                         patientReadableId: pProfile.patientId || val.opdId || val.patientReadableId || '',
                         patientName: pProfile.name || val.patientName || ''
                     };
-                    
+
                     if (val.status === 'completed' && val.prescription) {
                         if (!val.pharmacyStatus || val.pharmacyStatus === 'pending') {
                             pending.push(visit);
@@ -248,8 +248,8 @@ export default function DashboardPage() {
                     }
                 });
 
-                setPharmacyPendingQueue(pending.sort((a,b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()));
-                setPharmacyDispensedList(dispensed.sort((a,b) => new Date(b.dispensedAt || b.updatedAt).getTime() - new Date(a.dispensedAt || a.updatedAt).getTime()));
+                setPharmacyPendingQueue(pending.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()));
+                setPharmacyDispensedList(dispensed.sort((a, b) => new Date(b.dispensedAt || b.updatedAt).getTime() - new Date(a.dispensedAt || a.updatedAt).getTime()));
                 setPharmacyStats({ pending: pending.length, dispensedToday: dToday });
             }
         });
@@ -271,7 +271,18 @@ export default function DashboardPage() {
             });
         }
 
-    }, [user, dataOwnerId, today, isDoctor, userProfile, selectedRxDate, patientsMap]);
+        // 5. Online Appointments
+        if (isOwnerOrAdmin) {
+            onValue(ref(database, 'appointments/' + dataOwnerId), (snap) => {
+                let count = 0;
+                snap.forEach(c => {
+                    if (c.val().status === 'pending') count++;
+                });
+                setStats(p => ({ ...p, onlineAppts: count }));
+            });
+        }
+
+    }, [user, dataOwnerId, today, isDoctor, userProfile, selectedRxDate, patientsMap, isOwnerOrAdmin]);
 
     if (!user) return null;
 
@@ -312,13 +323,13 @@ export default function DashboardPage() {
 
                         {/* Tabs Group */}
                         <div className="flex bg-gray-200/50 p-1 rounded-lg w-full lg:w-auto border border-gray-100">
-                            <button 
+                            <button
                                 onClick={() => setPharmacyActiveTab('pending')}
                                 className={`px-4 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all gap-1.5 flex items-center justify-center flex-1 lg:flex-none ${pharmacyActiveTab === 'pending' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                             >
                                 <i className="fas fa-clock"></i> Pending
                             </button>
-                            <button 
+                            <button
                                 onClick={() => setPharmacyActiveTab('dispensed')}
                                 className={`px-4 py-1.5 rounded-md text-[9px] font-black uppercase tracking-widest transition-all gap-1.5 flex items-center justify-center flex-1 lg:flex-none ${pharmacyActiveTab === 'dispensed' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                             >
@@ -333,15 +344,15 @@ export default function DashboardPage() {
                             <div className="p-2 border-b border-gray-50 bg-gray-50/30 flex flex-wrap items-center gap-2">
                                 <div className="relative flex-1 min-w-[150px] lg:max-w-[200px]">
                                     <i className="fas fa-search absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-[9px]"></i>
-                                    <input 
-                                        type="text" 
-                                        placeholder="Search Patient..." 
+                                    <input
+                                        type="text"
+                                        placeholder="Search Patient..."
                                         value={pharmacySearch}
                                         onChange={e => setPharmacySearch(e.target.value)}
                                         className="w-full bg-white border border-gray-200 pl-7 pr-3 py-1 rounded-lg text-[9px] font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all uppercase"
                                     />
                                 </div>
-                                <select 
+                                <select
                                     value={pharmacyDoctor}
                                     onChange={e => setPharmacyDoctor(e.target.value)}
                                     className="bg-white border border-gray-200 px-2 py-1 rounded-lg text-[9px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
@@ -351,8 +362,8 @@ export default function DashboardPage() {
                                         <option key={doc.id} value={doc.id}>{doc.name}</option>
                                     ))}
                                 </select>
-                                <input 
-                                    type="date" 
+                                <input
+                                    type="date"
                                     value={pharmacyDate}
                                     onChange={e => setPharmacyDate(e.target.value)}
                                     className="bg-white border border-gray-200 px-2 py-1 rounded-lg text-[9px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
@@ -404,7 +415,7 @@ export default function DashboardPage() {
                                                 </td>
                                                 <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                                     <div className="flex justify-end gap-1.5">
-                                                        <button 
+                                                        <button
                                                             onClick={() => setActiveRxVisit(v)}
                                                             className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 transition-colors shrink-0"
                                                             title="View RX"
@@ -412,7 +423,7 @@ export default function DashboardPage() {
                                                             <i className="fas fa-eye text-[10px]"></i>
                                                         </button>
                                                         {pharmacyActiveTab === 'pending' ? (
-                                                            <button 
+                                                            <button
                                                                 onClick={() => handleDispense(v.id)}
                                                                 className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-sm transition-all active:scale-95 flex items-center gap-1"
                                                             >
@@ -435,7 +446,7 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
-                <PatientHistoryModal 
+                <PatientHistoryModal
                     isOpen={!!historyPatient}
                     onClose={() => { setHistoryPatient(null); setHistoryTab('visits'); }}
                     patientId={historyPatient?.id || ''}
@@ -469,19 +480,19 @@ export default function DashboardPage() {
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-2 rounded-2xl border border-gray-200 shadow-sm sticky top-0 z-30">
                         {/* Clinical Tabs */}
                         <div className="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto overflow-x-auto scrollbar-hide">
-                            <button 
+                            <button
                                 onClick={() => setDoctorActiveTab('dashboard')}
                                 className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${doctorActiveTab === 'dashboard' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-gray-600'}`}
                             >
                                 <i className="fas fa-th-large"></i> Dashboard
                             </button>
-                            <button 
+                            <button
                                 onClick={() => setDoctorActiveTab('ref_pats')}
                                 className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${doctorActiveTab === 'ref_pats' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-gray-600'}`}
                             >
                                 <i className="fas fa-external-link-alt"></i> Ref Pats
                             </button>
-                            <button 
+                            <button
                                 onClick={() => setDoctorActiveTab('rx_mgmt')}
                                 className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap ${doctorActiveTab === 'rx_mgmt' ? 'bg-purple-600 text-white shadow-md' : 'text-gray-400 hover:text-gray-600'}`}
                             >
@@ -511,21 +522,21 @@ export default function DashboardPage() {
                                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                         {/* Sub-tab Switcher */}
                                         <div className="flex items-center bg-gray-200/50 p-1 rounded-xl w-full md:w-auto relative">
-                                            <button 
+                                            <button
                                                 onClick={() => setQueueSubTab('regular')}
                                                 className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${queueSubTab === 'regular' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
                                             >
                                                 Regular
                                             </button>
-                                            <button 
+                                            <button
                                                 onClick={() => setQueueSubTab('emergency')}
                                                 className={`flex-1 md:flex-none px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${queueSubTab === 'emergency' ? 'bg-red-600 text-white shadow-lg' : 'text-gray-400 hover:text-red-600'}`}
                                             >
                                                 Emergency
                                                 {doctorQueue.some(v => v.isEmergency && (v.status === 'pending' || v.status === 'in-consultation')) && (
                                                     <span className="relative flex h-2.5 w-2.5">
-                                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 shadow-sm border border-white"></span>
+                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500 shadow-sm border border-white"></span>
                                                     </span>
                                                 )}
                                             </button>
@@ -534,9 +545,9 @@ export default function DashboardPage() {
                                         {/* Search Filter Inline */}
                                         <div className="relative w-full md:w-64">
                                             <i className="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]"></i>
-                                            <input 
-                                                type="text" 
-                                                placeholder="Search Queue..." 
+                                            <input
+                                                type="text"
+                                                placeholder="Search Queue..."
                                                 value={queueSearch}
                                                 onChange={(e) => setQueueSearch(e.target.value)}
                                                 className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-[11px] font-bold outline-none focus:ring-2 focus:ring-blue-500 transition-all shadow-sm"
@@ -548,15 +559,15 @@ export default function DashboardPage() {
                                 {/* Mobile Queue Cards (Visible on Small Screens) */}
                                 <div className="lg:hidden divide-y divide-gray-100">
                                     {doctorQueue
-                                        .filter(v => 
+                                        .filter(v =>
                                             (queueSubTab === 'emergency' ? v.isEmergency === true : !v.isEmergency) &&
                                             (v.status !== 'referred') &&
                                             (v.patientName.toLowerCase().includes(queueSearch.toLowerCase()) || v.token.toString().includes(queueSearch))
                                         ).length === 0 ? (
-                                            <div className="p-12 text-center text-gray-400 italic text-xs uppercase tracking-widest">No patients in queue</div>
-                                        ) : (
-                                            doctorQueue
-                                            .filter(v => 
+                                        <div className="p-12 text-center text-gray-400 italic text-xs uppercase tracking-widest">No patients in queue</div>
+                                    ) : (
+                                        doctorQueue
+                                            .filter(v =>
                                                 (queueSubTab === 'emergency' ? v.isEmergency === true : !v.isEmergency) &&
                                                 (v.status !== 'referred') &&
                                                 (v.patientName.toLowerCase().includes(queueSearch.toLowerCase()) || v.token.toString().includes(queueSearch))
@@ -586,13 +597,13 @@ export default function DashboardPage() {
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-1 shrink-0">
-                                                            <button 
+                                                            <button
                                                                 onClick={() => { setHistoryTab('visits'); setHistoryPatient({ id: v.patientId, name: v.patientName }); }}
                                                                 className="w-8 h-8 bg-gray-50 text-gray-400 rounded-lg flex items-center justify-center text-[10px] border border-gray-100"
                                                             >
                                                                 <i className="fas fa-history"></i>
                                                             </button>
-                                                            <button 
+                                                            <button
                                                                 onClick={() => handleStartConsultation(v)}
                                                                 className="px-4 py-2 bg-blue-600 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-lg"
                                                             >
@@ -601,9 +612,9 @@ export default function DashboardPage() {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                )
                                             )
-                                        )
+                                            )
+                                    )
                                     }
                                 </div>
 
@@ -619,7 +630,7 @@ export default function DashboardPage() {
                                         </thead>
                                         <tbody className="divide-y divide-gray-50 bg-white">
                                             {doctorQueue
-                                                .filter(v => 
+                                                .filter(v =>
                                                     (queueSubTab === 'emergency' ? v.isEmergency === true : !v.isEmergency) &&
                                                     (v.status !== 'referred') &&
                                                     (v.patientName.toLowerCase().includes(queueSearch.toLowerCase()) || v.token.toString().includes(queueSearch))
@@ -639,66 +650,64 @@ export default function DashboardPage() {
                                                 </tr>
                                             ) : (
                                                 doctorQueue
-                                                .filter(v => 
-                                                    (queueSubTab === 'emergency' ? v.isEmergency === true : !v.isEmergency) &&
-                                                    (v.status !== 'referred') &&
-                                                    (v.patientName.toLowerCase().includes(queueSearch.toLowerCase()) || v.token.toString().includes(queueSearch))
-                                                )
-                                                .map((v) => (
-                                                    <tr key={v.id} className="group hover:bg-blue-50/10 transition-all border-b border-gray-50 last:border-0 text-[13px]">
-                                                        <td className="px-4 py-2">
-                                                            <div className="w-8 h-8 bg-white border-2 border-blue-600 text-blue-600 rounded-lg flex items-center justify-center text-[10px] font-black shadow-sm">
-                                                                {v.token}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-2">
-                                                            <div className="flex items-center gap-2 min-w-0">
-                                                                <span className="font-black text-gray-900 group-hover:text-blue-700 transition-colors uppercase tracking-tight truncate">{v.patientName}</span>
-                                                                <span className="text-[8px] font-black bg-gray-50 text-gray-400 px-1 py-0.5 rounded tracking-tighter shrink-0">{v.patientAge}Y/{v.patientGender[0]}</span>
-                                                                {v.isEmergency && <span className="bg-red-600 text-white text-[7px] font-black px-1 py-0.5 rounded uppercase tracking-widest animate-pulse shrink-0">ER</span>}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-2">
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {!Object.values(v.vitals || {}).some(val => val) ? (
-                                                                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-tighter italic px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded">Vitals Pending (N/A)</span>
-                                                                ) : (
-                                                                    <>
-                                                                        {v.vitals?.bp && (
-                                                                            <div className={`px-1.5 py-0.5 rounded border text-[8px] font-black ${
-                                                                                (() => {
-                                                                                    try {
-                                                                                        const sys = parseInt(v.vitals.bp.split('/')[0]);
-                                                                                        return sys >= 140 ? 'bg-red-600 text-white border-red-700' : 'bg-red-50 text-red-600 border-red-100';
-                                                                                    } catch(e) { return 'bg-red-50 text-red-600 border-red-100'; }
-                                                                                })()
-                                                                            }`}>
-                                                                                {v.vitals.bp}
-                                                                            </div>
-                                                                        )}
-                                                                        {v.vitals?.pulse && <div className="px-1.5 py-0.5 bg-gray-50 border border-gray-100 rounded text-[8px] font-black text-gray-600">P:{v.vitals.pulse}</div>}
-                                                                        {v.vitals?.spo2 && <div className={`px-1.5 py-0.5 rounded border text-[8px] font-black ${parseInt(v.vitals.spo2) < 95 ? 'bg-rose-600 text-white border-rose-700' : 'bg-cyan-50 text-cyan-600 border-cyan-100'}`}>O2:{v.vitals.spo2}%</div>}
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-2 text-right">
-                                                            <div className="flex items-center justify-end gap-1">
-                                                                <button onClick={() => { setHistoryTab('ai'); setHistoryPatient({ id: v.patientId, name: v.patientName }); }} className="w-7 h-7 bg-purple-50 text-purple-400 hover:bg-purple-600 hover:text-white rounded flex items-center justify-center transition-all border border-purple-100" title="AI"><i className="fas fa-brain text-[9px]"></i></button>
-                                                                <button onClick={() => { setHistoryTab('visits'); setHistoryPatient({ id: v.patientId, name: v.patientName }); }} className="w-7 h-7 bg-gray-50 text-gray-400 hover:bg-blue-600 hover:text-white rounded flex items-center justify-center transition-all border border-gray-100" title="History"><i className="fas fa-history text-[9px]"></i></button>
-                                                                <button 
-                                                                    onClick={() => handleStartConsultation(v)}
-                                                                    className={`px-3 py-1.5 rounded text-[9px] font-black shadow-md transition-all active:scale-95 flex items-center gap-1.5 uppercase tracking-widest ${
-                                                                        v.status === 'in-consultation' ? 'bg-indigo-600 text-white' : 'bg-blue-600 text-white'
-                                                                    }`}
-                                                                >
-                                                                    <i className={`fas ${v.status === 'in-consultation' ? 'fa-play' : 'fa-plus'}`}></i> 
-                                                                    {v.status === 'in-consultation' ? 'RESUME' : 'RX'}
-                                                                </button>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                ))
+                                                    .filter(v =>
+                                                        (queueSubTab === 'emergency' ? v.isEmergency === true : !v.isEmergency) &&
+                                                        (v.status !== 'referred') &&
+                                                        (v.patientName.toLowerCase().includes(queueSearch.toLowerCase()) || v.token.toString().includes(queueSearch))
+                                                    )
+                                                    .map((v) => (
+                                                        <tr key={v.id} className="group hover:bg-blue-50/10 transition-all border-b border-gray-50 last:border-0 text-[13px]">
+                                                            <td className="px-4 py-2">
+                                                                <div className="w-8 h-8 bg-white border-2 border-blue-600 text-blue-600 rounded-lg flex items-center justify-center text-[10px] font-black shadow-sm">
+                                                                    {v.token}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-2">
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    <span className="font-black text-gray-900 group-hover:text-blue-700 transition-colors uppercase tracking-tight truncate">{v.patientName}</span>
+                                                                    <span className="text-[8px] font-black bg-gray-50 text-gray-400 px-1 py-0.5 rounded tracking-tighter shrink-0">{v.patientAge}Y/{v.patientGender[0]}</span>
+                                                                    {v.isEmergency && <span className="bg-red-600 text-white text-[7px] font-black px-1 py-0.5 rounded uppercase tracking-widest animate-pulse shrink-0">ER</span>}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-2">
+                                                                <div className="flex flex-wrap gap-1">
+                                                                    {!Object.values(v.vitals || {}).some(val => val) ? (
+                                                                        <span className="text-[8px] font-black text-gray-500 uppercase tracking-tighter italic px-1.5 py-0.5 bg-gray-100 border border-gray-200 rounded">Vitals Pending (N/A)</span>
+                                                                    ) : (
+                                                                        <>
+                                                                            {v.vitals?.bp && (
+                                                                                <div className={`px-1.5 py-0.5 rounded border text-[8px] font-black ${(() => {
+                                                                                        try {
+                                                                                            const sys = parseInt(v.vitals.bp.split('/')[0]);
+                                                                                            return sys >= 140 ? 'bg-red-600 text-white border-red-700' : 'bg-red-50 text-red-600 border-red-100';
+                                                                                        } catch (e) { return 'bg-red-50 text-red-600 border-red-100'; }
+                                                                                    })()
+                                                                                    }`}>
+                                                                                    {v.vitals.bp}
+                                                                                </div>
+                                                                            )}
+                                                                            {v.vitals?.pulse && <div className="px-1.5 py-0.5 bg-gray-50 border border-gray-100 rounded text-[8px] font-black text-gray-600">P:{v.vitals.pulse}</div>}
+                                                                            {v.vitals?.spo2 && <div className={`px-1.5 py-0.5 rounded border text-[8px] font-black ${parseInt(v.vitals.spo2) < 95 ? 'bg-rose-600 text-white border-rose-700' : 'bg-cyan-50 text-cyan-600 border-cyan-100'}`}>O2:{v.vitals.spo2}%</div>}
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-2 text-right">
+                                                                <div className="flex items-center justify-end gap-1">
+                                                                    <button onClick={() => { setHistoryTab('ai'); setHistoryPatient({ id: v.patientId, name: v.patientName }); }} className="w-7 h-7 bg-purple-50 text-purple-400 hover:bg-purple-600 hover:text-white rounded flex items-center justify-center transition-all border border-purple-100" title="AI"><i className="fas fa-brain text-[9px]"></i></button>
+                                                                    <button onClick={() => { setHistoryTab('visits'); setHistoryPatient({ id: v.patientId, name: v.patientName }); }} className="w-7 h-7 bg-gray-50 text-gray-400 hover:bg-blue-600 hover:text-white rounded flex items-center justify-center transition-all border border-gray-100" title="History"><i className="fas fa-history text-[9px]"></i></button>
+                                                                    <button
+                                                                        onClick={() => handleStartConsultation(v)}
+                                                                        className={`px-3 py-1.5 rounded text-[9px] font-black shadow-md transition-all active:scale-95 flex items-center gap-1.5 uppercase tracking-widest ${v.status === 'in-consultation' ? 'bg-indigo-600 text-white' : 'bg-blue-600 text-white'
+                                                                            }`}
+                                                                    >
+                                                                        <i className={`fas ${v.status === 'in-consultation' ? 'fa-play' : 'fa-plus'}`}></i>
+                                                                        {v.status === 'in-consultation' ? 'RESUME' : 'RX'}
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    ))
                                             )}
                                         </tbody>
                                     </table>
@@ -709,14 +718,14 @@ export default function DashboardPage() {
 
                     {doctorActiveTab === 'ref_pats' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-500">
-                             <div className="bg-white rounded-[2rem] shadow-xl border border-gray-100 overflow-hidden">
+                            <div className="bg-white rounded-[2rem] shadow-xl border border-gray-100 overflow-hidden">
                                 <div className="p-4 border-b border-gray-50 bg-gray-50/30 flex justify-between items-center">
                                     <h3 className="text-[10px] font-black text-gray-700 uppercase tracking-[0.2em] flex items-center gap-2">
                                         <i className="fas fa-external-link-alt text-indigo-500"></i> Lab Referral Queue
                                     </h3>
                                     <span className="text-[8px] font-black bg-indigo-100 text-indigo-700 px-2 py-1 rounded shadow-sm uppercase tracking-widest">Active Holds: {labReferrals.length}</span>
                                 </div>
-                                
+
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left">
                                         <thead className="bg-gray-50 text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">
@@ -761,7 +770,7 @@ export default function DashboardPage() {
                                                             </div>
                                                         </td>
                                                         <td className="px-4 py-2 text-right">
-                                                            <button 
+                                                            <button
                                                                 onClick={() => handleStartConsultation(v)}
                                                                 className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-black uppercase tracking-widest rounded shadow-md transition-all active:scale-95 flex items-center gap-2 ml-auto"
                                                             >
@@ -774,13 +783,13 @@ export default function DashboardPage() {
                                         </tbody>
                                     </table>
                                 </div>
-                             </div>
+                            </div>
                         </div>
                     )}
 
                     {doctorActiveTab === 'rx_mgmt' && (
                         <div className="animate-in fade-in slide-in-from-right-4 duration-500">
-                             <div className="bg-white rounded-[2rem] shadow-xl border border-gray-100 overflow-hidden">
+                            <div className="bg-white rounded-[2rem] shadow-xl border border-gray-100 overflow-hidden">
                                 <div className="p-3 border-b border-gray-50 bg-gray-50/30 flex flex-col md:flex-row justify-between items-center gap-3">
                                     <div className="flex items-center gap-4">
                                         <h3 className="text-[10px] font-black text-gray-700 uppercase tracking-[0.2em] flex items-center gap-2">
@@ -793,23 +802,23 @@ export default function DashboardPage() {
                                     <div className="flex items-center gap-2 w-full md:w-auto">
                                         <div className="relative flex-1 md:w-64">
                                             <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]"></i>
-                                            <input 
-                                                type="text" 
-                                                placeholder="Search Name / Token / Rx-ID..." 
+                                            <input
+                                                type="text"
+                                                placeholder="Search Name / Token / Rx-ID..."
                                                 value={rxSearch}
                                                 onChange={e => setRxSearch(e.target.value)}
                                                 className="w-full bg-white border border-gray-200 pl-8 pr-4 py-1.5 rounded-lg text-[10px] font-bold outline-none focus:ring-2 focus:ring-purple-500 transition-all uppercase"
                                             />
                                         </div>
-                                        <input 
-                                            type="date" 
+                                        <input
+                                            type="date"
                                             value={selectedRxDate}
                                             onChange={e => setSelectedRxDate(e.target.value)}
                                             className="bg-white border border-gray-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
                                         />
                                     </div>
                                 </div>
-                                
+
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-left">
                                         <thead className="bg-gray-50 text-[9px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">
@@ -821,8 +830,8 @@ export default function DashboardPage() {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-50">
-                                            {completedRxList.filter(v => 
-                                                v.patientName.toLowerCase().includes(rxSearch.toLowerCase()) || 
+                                            {completedRxList.filter(v =>
+                                                v.patientName.toLowerCase().includes(rxSearch.toLowerCase()) ||
                                                 v.token.toString().includes(rxSearch) ||
                                                 (v.rxId && v.rxId.toLowerCase().includes(rxSearch.toLowerCase()))
                                             ).length === 0 ? (
@@ -836,49 +845,49 @@ export default function DashboardPage() {
                                                 </tr>
                                             ) : (
                                                 completedRxList
-                                                .filter(v => 
-                                                    v.patientName.toLowerCase().includes(rxSearch.toLowerCase()) || 
-                                                    v.token.toString().includes(rxSearch) ||
-                                                    (v.rxId && v.rxId.toLowerCase().includes(rxSearch.toLowerCase()))
-                                                )
-                                                .map(v => (
-                                                    <tr key={v.id} className="group hover:bg-purple-50/10 transition-all border-b border-gray-50 last:border-0 text-[13px]">
-                                                        <td className="px-4 py-2">
-                                                            <div className="w-8 h-8 bg-purple-600 text-white rounded-lg flex items-center justify-center font-black shadow-sm text-[11px]">
-                                                                {v.token}
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-2">
-                                                            <div className="flex items-center gap-2 min-w-0">
-                                                                <span className="font-black text-gray-900 uppercase tracking-tight truncate">{v.patientName}</span>
-                                                                <span className="text-[8px] font-black bg-gray-50 text-gray-400 px-1 py-0.5 rounded tracking-tighter shrink-0">{v.patientAge}Y/{v.patientGender[0]}</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-2">
-                                                            <div className="flex flex-col min-w-0">
-                                                                <span className="text-[10px] font-black text-purple-600 uppercase tracking-tight">{v.rxId || 'N/A'}</span>
-                                                                <span className="text-[8px] text-gray-400 font-bold uppercase tracking-widest leading-none mt-0.5">{v.updatedAt ? new Date(v.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Completed'}</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-2 text-right">
-                                                            <button 
-                                                                onClick={() => setActiveRxVisit(v)}
-                                                                className="px-3 py-1.5 bg-purple-50 hover:bg-purple-600 text-purple-600 hover:text-white text-[9px] font-black uppercase tracking-widest rounded border border-purple-100 transition-all active:scale-95 flex items-center gap-2 ml-auto"
-                                                            >
-                                                                <i className="fas fa-eye"></i> View Rx
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))
+                                                    .filter(v =>
+                                                        v.patientName.toLowerCase().includes(rxSearch.toLowerCase()) ||
+                                                        v.token.toString().includes(rxSearch) ||
+                                                        (v.rxId && v.rxId.toLowerCase().includes(rxSearch.toLowerCase()))
+                                                    )
+                                                    .map(v => (
+                                                        <tr key={v.id} className="group hover:bg-purple-50/10 transition-all border-b border-gray-50 last:border-0 text-[13px]">
+                                                            <td className="px-4 py-2">
+                                                                <div className="w-8 h-8 bg-purple-600 text-white rounded-lg flex items-center justify-center font-black shadow-sm text-[11px]">
+                                                                    {v.token}
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-2">
+                                                                <div className="flex items-center gap-2 min-w-0">
+                                                                    <span className="font-black text-gray-900 uppercase tracking-tight truncate">{v.patientName}</span>
+                                                                    <span className="text-[8px] font-black bg-gray-50 text-gray-400 px-1 py-0.5 rounded tracking-tighter shrink-0">{v.patientAge}Y/{v.patientGender[0]}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-2">
+                                                                <div className="flex flex-col min-w-0">
+                                                                    <span className="text-[10px] font-black text-purple-600 uppercase tracking-tight">{v.rxId || 'N/A'}</span>
+                                                                    <span className="text-[8px] text-gray-400 font-bold uppercase tracking-widest leading-none mt-0.5">{v.updatedAt ? new Date(v.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Completed'}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-4 py-2 text-right">
+                                                                <button
+                                                                    onClick={() => setActiveRxVisit(v)}
+                                                                    className="px-3 py-1.5 bg-purple-50 hover:bg-purple-600 text-purple-600 hover:text-white text-[9px] font-black uppercase tracking-widest rounded border border-purple-100 transition-all active:scale-95 flex items-center gap-2 ml-auto"
+                                                                >
+                                                                    <i className="fas fa-eye"></i> View Rx
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))
                                             )}
                                         </tbody>
                                     </table>
                                 </div>
-                             </div>
+                            </div>
                         </div>
                     )}
 
-                    <PatientHistoryModal 
+                    <PatientHistoryModal
                         isOpen={!!historyPatient}
                         onClose={() => { setHistoryPatient(null); setHistoryTab('visits'); }}
                         patientId={historyPatient?.id || ''}
@@ -906,42 +915,65 @@ export default function DashboardPage() {
 
     return (
         <div className="p-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-800">{isOwnerOrAdmin ? 'Clinic Dashboard' : 'Lab Dashboard'}</h1>
-                    <p className="text-gray-500 text-sm">Welcome back, {userProfile?.name}</p>
+            <div className="flex items-center justify-between gap-4 mb-6 bg-white p-3 rounded-full border border-gray-100 shadow-sm overflow-x-auto scrollbar-hide whitespace-nowrap sticky top-0 z-40 backdrop-blur-md bg-white/90">
+                <div className="flex items-center gap-4 shrink-0 px-2">
+                    <div className="flex items-center gap-3">
+                        <div>
+                            <h1 className="text-xl font-bold text-gray-800 tracking-tight leading-none">{isOwnerOrAdmin ? 'Clinic Dashboard' : 'Lab Dashboard'}</h1>
+                            <p className="text-gray-500 text-[10px] leading-none mt-1">Welcome back, {userProfile?.name}</p>
+                        </div>
+
+                        {/* Online Appts Pill - Moved directly after heading text */}
+                        {isOwnerOrAdmin && stats.onlineAppts > 0 && (
+                            <div 
+                                onClick={() => (window as any).dispatchEvent(new CustomEvent('openOnlineAppts'))}
+                                className="bg-indigo-600 text-white px-3 py-1.5 rounded-full flex items-center gap-2 shadow-lg shadow-indigo-100 cursor-pointer animate-in zoom-in duration-300 active:scale-95 shrink-0 ml-2"
+                            >
+                                <i className="fas fa-calendar-check text-[9px]"></i>
+                                <span className="text-[9px] font-black uppercase tracking-widest">{stats.onlineAppts} Appts</span>
+                                <div className="w-1.5 h-1.5 bg-white rounded-full animate-ping"></div>
+                            </div>
+                        )}
+                    </div>
                 </div>
-                <div className="flex flex-wrap gap-3">
-                    {isOwnerOrAdmin && (
-                        <button
-                            onClick={() => setShowQuickPatientModal(true)}
-                            className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg font-bold shadow-md transition flex items-center gap-2 text-sm">
-                            <i className="fas fa-user-plus"></i> Quick Add Patient
-                        </button>
-                    )}
-                    {(isOwnerOrAdmin || isLab) && (
-                        <button
-                            onClick={() => setShowQuickSampleModal(true)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg font-bold shadow-md transition flex items-center gap-2 text-sm">
-                            <i className="fas fa-vial"></i> Quick Sample
-                        </button>
-                    )}
-                    {isOwnerOrAdmin && (
-                        <button
-                            onClick={() => setShowQuickOPDModal(true)}
-                            className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-lg font-bold shadow-md transition flex items-center gap-2 text-sm">
-                            <i className="fas fa-stethoscope"></i> Quick OPD
-                        </button>
-                    )}
-                    {(isLab || isOwnerOrAdmin) && (
-                        <button onClick={() => { setSelectedSample(''); setShowQuickReportModal(true); }}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg font-bold shadow-md transition flex items-center gap-2 text-sm">
-                            <i className="fas fa-plus-circle"></i> Quick Report
-                        </button>
-                    )}
+
+                <div className="flex items-center gap-2 shrink-0">
+                    <div className="h-6 w-[1px] bg-gray-100 mx-1"></div>
+
+                    {/* Quick Action Buttons */}
+                    <div className="flex items-center gap-2">
+                        {isOwnerOrAdmin && (
+                            <button
+                                onClick={() => setShowQuickPatientModal(true)}
+                                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-md transition-all active:scale-95 flex items-center gap-2 shrink-0">
+                                <i className="fas fa-user-plus text-[8px]"></i> Add Patient
+                            </button>
+                        )}
+                        {(isOwnerOrAdmin || isLab) && (
+                            <button
+                                onClick={() => setShowQuickSampleModal(true)}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-md transition-all active:scale-95 flex items-center gap-2 shrink-0">
+                                <i className="fas fa-vial text-[8px]"></i> Add Sample
+                            </button>
+                        )}
+                        {isOwnerOrAdmin && (
+                            <button
+                                onClick={() => setShowQuickOPDModal(true)}
+                                className="bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-md transition-all active:scale-95 flex items-center gap-2 shrink-0">
+                                <i className="fas fa-stethoscope text-[8px]"></i> Create OPD
+                            </button>
+                        )}
+                        {(isLab || isOwnerOrAdmin) && (
+                            <button onClick={() => { setSelectedSample(''); setShowQuickReportModal(true); }}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-md transition-all active:scale-95 flex items-center gap-2 shrink-0">
+                                <i className="fas fa-plus-circle text-[8px]"></i> Create Report
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
 
+            {/* Restored Stats Grid */}
             <div className={`grid gap-4 mb-8 ${isLab ? 'grid-cols-1 md:grid-cols-3' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6'}`}>
                 <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-4 rounded-xl shadow-sm border border-amber-100 flex items-center justify-between hover:shadow-md transition-shadow">
                     <div><p className="text-[10px] font-black text-amber-700 uppercase tracking-tighter whitespace-nowrap">Pending</p><p className="text-2xl font-black text-amber-900 leading-none mt-1">{stats.pendingSamples}</p></div>
@@ -973,6 +1005,7 @@ export default function DashboardPage() {
                     </>
                 )}
             </div>
+
 
             <div className={`grid grid-cols-1 ${isLab ? '' : 'lg:grid-cols-2'} gap-6`}>
                 {/* 1. Laboratory Samples Queue */}
@@ -1010,7 +1043,7 @@ export default function DashboardPage() {
                                             <td className="px-3 py-2 text-right whitespace-nowrap">
                                                 {userProfile?.role === 'lab' ? (
                                                     <div className="flex items-center justify-end gap-2">
-                                                        <button 
+                                                        <button
                                                             onClick={() => {
                                                                 setHistoryPatient({ id: s.patientId, name: s.patientName });
                                                                 setHistoryTab('reports');
@@ -1074,7 +1107,7 @@ export default function DashboardPage() {
                                                 <td className="px-3 py-2 text-right">
                                                     {userProfile?.role === 'doctor' ? (
                                                         <div className="flex items-center gap-1.5 justify-end">
-                                                            <button 
+                                                            <button
                                                                 onClick={() => {
                                                                     setHistoryPatient({ id: v.patientId, name: v.patientName });
                                                                     setHistoryTab('ai');
@@ -1084,32 +1117,30 @@ export default function DashboardPage() {
                                                             >
                                                                 <i className="fas fa-brain text-[10px]"></i>
                                                             </button>
-                                                            <button 
+                                                            <button
                                                                 onClick={() => handleStartConsultation(v)}
-                                                                className={`text-[9px] px-2 py-1.5 rounded font-black transition uppercase cursor-pointer whitespace-nowrap ${
-                                                                    v.status === 'in-consultation' 
-                                                                    ? 'bg-indigo-600 text-white' 
-                                                                    : v.status === 'referred'
-                                                                    ? 'bg-orange-600 text-white shadow-lg shadow-orange-100'
-                                                                    : (v.isEmergency && v.status === 'pending' ? 'bg-red-600 text-white shadow-lg shadow-red-200' : 'bg-green-600 text-white hover:bg-green-700 shadow-sm')
-                                                                }`}
+                                                                className={`text-[9px] px-2 py-1.5 rounded font-black transition uppercase cursor-pointer whitespace-nowrap ${v.status === 'in-consultation'
+                                                                        ? 'bg-indigo-600 text-white'
+                                                                        : v.status === 'referred'
+                                                                            ? 'bg-orange-600 text-white shadow-lg shadow-orange-100'
+                                                                            : (v.isEmergency && v.status === 'pending' ? 'bg-red-600 text-white shadow-lg shadow-red-200' : 'bg-green-600 text-white hover:bg-green-700 shadow-sm')
+                                                                    }`}
                                                             >
                                                                 {v.status === 'in-consultation' ? 'RESUME' : (v.status === 'referred' ? 'LAB RE-CONSULT' : (v.isEmergency && v.status === 'pending' ? 'URGENT' : 'START'))}
                                                             </button>
                                                         </div>
                                                     ) : (
                                                         <div className="flex items-center gap-1.5 justify-end">
-                                                            <div className={`text-[9px] px-2 py-1.5 rounded font-black uppercase whitespace-nowrap select-none flex items-center gap-1.5 ${
-                                                                v.status === 'in-consultation' 
-                                                                ? 'bg-rose-600 text-white shadow-lg shadow-rose-200'
-                                                                : v.status === 'referred'
-                                                                ? 'bg-orange-100 text-orange-700 border border-orange-200'
-                                                                : v.status === 'completed'
-                                                                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100'
-                                                                : (v.status === 'pending'
-                                                                    ? (v.isEmergency ? 'bg-red-600 text-white shadow-lg shadow-red-200 animate-pulse' : 'bg-slate-100 text-slate-600 border border-slate-200')
-                                                                    : 'bg-emerald-50 text-emerald-700 border border-emerald-100')
-                                                            }`}>
+                                                            <div className={`text-[9px] px-2 py-1.5 rounded font-black uppercase whitespace-nowrap select-none flex items-center gap-1.5 ${v.status === 'in-consultation'
+                                                                    ? 'bg-rose-600 text-white shadow-lg shadow-rose-200'
+                                                                    : v.status === 'referred'
+                                                                        ? 'bg-orange-100 text-orange-700 border border-orange-200'
+                                                                        : v.status === 'completed'
+                                                                            ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100'
+                                                                            : (v.status === 'pending'
+                                                                                ? (v.isEmergency ? 'bg-red-600 text-white shadow-lg shadow-red-200 animate-pulse' : 'bg-slate-100 text-slate-600 border border-slate-200')
+                                                                                : 'bg-emerald-50 text-emerald-700 border border-emerald-100')
+                                                                }`}>
                                                                 {v.status === 'in-consultation' && (
                                                                     <span className="relative flex h-1.5 w-1.5">
                                                                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/40 opacity-75"></span>
@@ -1119,7 +1150,7 @@ export default function DashboardPage() {
                                                                 {v.status === 'pending' ? (v.isEmergency ? 'URGENT' : 'WAITING') : (v.status === 'in-consultation' ? 'IN CONSULT' : (v.status === 'referred' ? 'SENT TO LAB' : 'CONSULTED'))}
                                                             </div>
                                                             {v.status === 'completed' && (
-                                                                <button 
+                                                                <button
                                                                     onClick={() => setActiveRxVisit(v)}
                                                                     className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-emerald-200 shadow-sm"
                                                                     title="View Prescription"
@@ -1127,7 +1158,7 @@ export default function DashboardPage() {
                                                                     <i className="fas fa-eye text-[10px]"></i>
                                                                 </button>
                                                             )}
-                                                            <button 
+                                                            <button
                                                                 onClick={() => handleDeleteQueue(v.id)}
                                                                 className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                                                                 title="Remove Queue Entry"
@@ -1159,13 +1190,13 @@ export default function DashboardPage() {
             {showQuickSampleModal && (
                 <QuickSampleModal isOpen={showQuickSampleModal} onClose={() => setShowQuickSampleModal(false)} ownerId={dataOwnerId} labName={userProfile?.labName} />
             )}
-            
+
             {historyPatient && (
-                <PatientHistoryModal 
-                    isOpen={!!historyPatient} 
-                    onClose={() => { setHistoryPatient(null); setHistoryTab('visits'); }} 
-                    patientId={historyPatient.id} 
-                    patientName={historyPatient.name} 
+                <PatientHistoryModal
+                    isOpen={!!historyPatient}
+                    onClose={() => { setHistoryPatient(null); setHistoryTab('visits'); }}
+                    patientId={historyPatient.id}
+                    patientName={historyPatient.name}
                     ownerId={dataOwnerId}
                     role={userProfile?.role}
                     defaultTab={historyTab === 'samples' ? 'visits' : historyTab}

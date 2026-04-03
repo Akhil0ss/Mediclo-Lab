@@ -11,6 +11,7 @@ import { getDataOwnerId } from '@/lib/dataUtils';
 import { ToastProvider, useToast } from '@/contexts/ToastContext';
 import DashboardChat from '@/components/DashboardChat';
 import AILabSuggestions from '@/components/AILabSuggestions';
+import OnlineAppointmentModal from '@/components/OnlineAppointmentModal';
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { user, userProfile, loading } = useAuth();
@@ -20,6 +21,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     const [branding, setBranding] = useState<{ logoUrl?: string; tagline?: string }>({});
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotifications, setShowNotifications] = useState(false);
+    const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+    const [pendingApptCount, setPendingApptCount] = useState(0);
 
     const { showToast } = useToast();
 
@@ -49,18 +52,39 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         });
 
         // Notifications
-        const notifRef = query(ref(database, 'notifications/' + dataOwnerId), limitToLast(20));
+        const notifRef = query(ref(database, 'notifications/' + dataOwnerId), limitToLast(50));
         const unsubNotif = onValue(notifRef, (snapshot) => {
             if (snapshot.exists()) {
                 const data = snapshot.val();
                 const list = Object.keys(data).map(key => ({ id: key, ...data[key] }));
-                setNotifications(list.reverse()); // Newest first
+                setNotifications(list.sort((a,b) => new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime())); // Newest first
             } else {
                 setNotifications([]);
             }
         });
 
-        return () => { unsubBranding(); unsubNotif(); };
+        // Pending Appointments Count
+        const apptRef = ref(database, 'appointments/' + dataOwnerId);
+        const unsubAppt = onValue(apptRef, (snapshot) => {
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                const pending = Object.values(data).filter((a: any) => a.status === 'pending').length;
+                setPendingApptCount(pending);
+            } else {
+                setPendingApptCount(0);
+            }
+        });
+
+        // Event Listener for external triggers
+        const handleOpenAppts = () => setShowAppointmentModal(true);
+        window.addEventListener('openOnlineAppts', handleOpenAppts);
+
+        return () => { 
+            unsubBranding(); 
+            unsubNotif(); 
+            unsubAppt(); 
+            window.removeEventListener('openOnlineAppts', handleOpenAppts);
+        };
     }, [user, dataOwnerId]);
 
     const handleSignOut = async () => {
@@ -102,6 +126,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         if (!isLab) {
             baseTabs.push({ id: 'patients', label: 'Patients', icon: 'fa-users', path: '/dashboard/patients', group: 'Medical' });
             baseTabs.push({ id: 'opd', label: 'OPD', icon: 'fa-stethoscope', path: '/dashboard/opd', group: 'Medical' });
+            baseTabs.push({ id: 'appointments', label: 'Online Appts', icon: 'fa-calendar-check', path: '#', group: 'Medical' });
         }
 
         if (!isDoctor) {
@@ -205,25 +230,33 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                                             notifications.map(n => (
                                                 <div
                                                     key={n.id}
-                                                    className={`p-3 border-b hover:bg-gray-50 transition-colors ${!n.read ? 'bg-blue-50/50' : ''}`}
+                                                    onClick={() => {
+                                                        if (n.type === 'online_appointment') {
+                                                            setShowAppointmentModal(true);
+                                                            setShowNotifications(false);
+                                                        }
+                                                        if (!n.read) update(ref(database, `notifications/${dataOwnerId}/${n.id}`), { read: true });
+                                                    }}
+                                                    className={`p-3 border-b hover:bg-gray-50 cursor-pointer transition-colors ${!n.read ? 'bg-blue-50/50' : ''}`}
                                                 >
                                                     <div className="flex justify-between items-start mb-1">
-                                                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${n.type === 'critical' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-                                                            {n.type?.toUpperCase() || 'INFO'}
+                                                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest ${
+                                                            n.type === 'online_appointment' ? 'bg-indigo-600 text-white shadow-sm' :
+                                                            n.type === 'critical' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'
+                                                        }`}>
+                                                            {n.type?.replace('_', ' ') || 'INFO'}
                                                         </span>
                                                         <span className="text-[10px] text-gray-400">
-                                                            {new Date(n.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                            {new Date(n.date || n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                         </span>
                                                     </div>
                                                     <p className="text-sm font-semibold text-gray-800">{n.title}</p>
                                                     <p className="text-xs text-gray-600 mb-2">{n.message}</p>
                                                     {!n.read && (
-                                                        <button
-                                                            onClick={() => update(ref(database, `notifications/${dataOwnerId}/${n.id}`), { read: true })}
-                                                            className="text-[10px] text-blue-500 hover:text-blue-700 font-medium"
-                                                        >
-                                                            Mark as read
-                                                        </button>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+                                                            <span className="text-[9px] text-blue-500 font-bold uppercase tracking-widest">New Update</span>
+                                                        </div>
                                                     )}
                                                 </div>
                                             ))
@@ -250,7 +283,13 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
             <div className={`container-pc w-full mx-auto p-4 lg:p-6 flex flex-col lg:flex-row gap-6`}>
                 {!isClinical && !isPharmacy && (
-                    <aside className={`w-full lg:w-52 h-full flex-shrink-0 flex flex-col gap-2 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-120px)] lg:overflow-y-auto pr-2`}>
+                    <aside className={`w-full lg:w-52 h-full flex-shrink-0 flex flex-col gap-2 lg:sticky lg:top-24 lg:self-start lg:h-[calc(100vh-120px)] lg:overflow-y-auto pr-2 
+                        [&::-webkit-scrollbar]:w-1 
+                        [&::-webkit-scrollbar-track]:bg-transparent 
+                        [&::-webkit-scrollbar-thumb]:bg-gray-200 
+                        [&::-webkit-scrollbar-thumb]:rounded-full 
+                        hover:[&::-webkit-scrollbar-thumb]:bg-gray-300 
+                        transition-colors`}>
                         <div className="space-y-4">
                             {Object.entries(groupedTabs).map(([groupName, groupItems]) => (
                                 <div key={groupName} className="space-y-1">
@@ -271,11 +310,20 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                                                         }
                                                         return;
                                                     }
+                                                    if (tab.id === 'appointments') {
+                                                        setShowAppointmentModal(true);
+                                                        return;
+                                                    }
                                                     router.push(tab.path);
                                                 }}
-                                                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium transition-all cursor-pointer select-none ` + (activeTab === tab.id ? 'gradient-colorful text-white shadow-lg' : 'bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 shadow-sm border border-transparent')}>
+                                                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium transition-all cursor-pointer select-none relative ` + (activeTab === tab.id ? 'gradient-colorful text-white shadow-lg' : 'bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 shadow-sm border border-transparent')}>
                                                 <i className={`fas ` + tab.icon + ` w-5 text-center`}></i> 
                                                 <span className="text-sm">{tab.label}</span>
+                                                {tab.id === 'appointments' && pendingApptCount > 0 && (
+                                                    <span className="absolute -top-1 -right-1 bg-indigo-600 text-white text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center border-2 border-white animate-bounce shadow-md">
+                                                        {pendingApptCount}
+                                                    </span>
+                                                )}
                                                 {isTemplates && <i className="fas fa-lock text-[8px] ml-auto opacity-40" title="Double Click to Open"></i>}
                                             </div>
                                         );
@@ -333,6 +381,12 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                     channel="pharmacy"
                 />
             )}
+
+            <OnlineAppointmentModal 
+                isOpen={showAppointmentModal}
+                onClose={() => setShowAppointmentModal(false)}
+                ownerId={dataOwnerId}
+            />
         </div>
     );
 }

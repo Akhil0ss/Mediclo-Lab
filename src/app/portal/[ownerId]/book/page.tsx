@@ -99,6 +99,22 @@ export default function BookAppointment() {
 
             await set(appointmentRef, appointmentData);
 
+            // 1.5. NOTIFICATION: Push to owner dashboard
+            const notificationRef = push(ref(database, `notifications/${ownerId}`));
+            await set(notificationRef, {
+                title: 'New Online Appointment',
+                message: `${form.patientName} requested an appointment for ${form.date} at ${form.time}`,
+                type: 'online_appointment',
+                createdAt: new Date().toISOString(),
+                read: false,
+                data: {
+                    appointmentId: appointmentRef.key,
+                    patientName: form.patientName,
+                    date: form.date,
+                    time: form.time
+                }
+            });
+
             // 2. BINDING: Update patient_records index if logged in
             if (isLoggedIn && storedPid) {
                 const appointmentKey = appointmentRef.key;

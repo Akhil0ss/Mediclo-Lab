@@ -52,7 +52,8 @@ export default function AnalyticsPage() {
         emergencyToday: 0,
         avgTAT: { value: 0, unit: 'hrs' },
         outstanding: 0,
-        efficiency: 0
+        efficiency: 0,
+        onlineAppts: { total: 0, pending: 0, today: 0, growth: 0 }
     });
 
 
@@ -67,6 +68,9 @@ export default function AnalyticsPage() {
     const [topTestsData, setTopTestsData] = useState<any[]>([]);
     const [genderStats, setGenderStats] = useState<any>({ Male: 0, Female: 0, Other: 0 });
     const [paymentStats, setPaymentStats] = useState<any[]>([]);
+    const [appointmentStatusData, setAppointmentStatusData] = useState<any>(null);
+    const [appointmentTrendData, setAppointmentTrendData] = useState<any>(null);
+    const [topRequestedDocs, setTopRequestedDocs] = useState<any[]>([]);
 
     const [doctorPage, setDoctorPage] = useState(1);
     const docsPerPage = 4;
@@ -128,7 +132,8 @@ export default function AnalyticsPage() {
                 get(ref(database, `externalDoctors/${dataSourceId}`)),
                 get(ref(database, `templates/${dataSourceId}`)),
                 get(ref(database, `opd/${dataSourceId}`)),
-                get(ref(database, `users/${dataSourceId}/auth/staff`))
+                get(ref(database, `users/${dataSourceId}/auth/staff`)),
+                get(ref(database, `appointments/${dataSourceId}`))
             ]);
 
             const patients = results[0].exists() ? Object.values(results[0].val() as object) as any[] : [];
@@ -140,6 +145,7 @@ export default function AnalyticsPage() {
             const templates = results[6].exists() ? Object.values(results[6].val() as object) as any[] : [];
             const opdRaw = results[7].exists() ? Object.values(results[7].val() as object) as any[] : [];
             const staffRaw = results[8].exists() ? Object.values(results[8].val() as object) as any[] : [];
+            const appointments = results[9].exists() ? Object.values(results[9].val() as object) as any[] : [];
 
 
             // Staff & Template Maps for Instant Lookup
@@ -166,6 +172,9 @@ export default function AnalyticsPage() {
             const currSamples = filterByRange(samples, start, end);
             const prevSamples = filterByRange(samples, prevStart, prevEnd);
             const currReports = filterByRange(reports, start, end);
+            const currAppts = filterByRange(appointments, start, end);
+            const prevAppts = filterByRange(appointments, prevStart, prevEnd);
+            const todayAppts = filterByRange(appointments, new Date(new Date().setHours(0,0,0,0)), new Date(new Date().setHours(23,59,59,999)));
 
             // CLINICAL-FIRST REVENUE AUDIT (Workload based)
             // Lab Gross = All test prices from Samples (even if unbilled)
@@ -347,9 +356,53 @@ export default function AnalyticsPage() {
                 activeLabLoad: currSamples.filter((s: any) => s.status !== 'Completed').length,
                 activeOpdQueue: currOpd.filter((v: any) => (v.status || 'pending').toLowerCase() === 'pending').length,
                 emergencyToday: currOpd.filter((v: any) => v.isEmergency).length,
+                onlineAppts: { 
+                    total: currAppts.length, 
+                    pending: currAppts.filter(a => (a.status || 'pending') === 'pending').length,
+                    today: todayAppts.length,
+                    growth: calculateGrowth(currAppts.length, prevAppts.length)
+                },
                 avgTAT: { value: Number(avgTAT), unit: 'hrs' },
                 outstanding: totalCurrGross - totalCurrPaid,
                 efficiency: totalCurrGross > 0 ? Math.round((totalCurrPaid / totalCurrGross) * 100) : 100
+            });
+
+            // Online Appt Insights
+            const apptStatus = { pending: 0, approved: 0, rejected: 0 };
+            const apptDocPerf: Record<string, number> = {};
+            const apptDays: Record<string, number> = {};
+
+            currAppts.forEach(a => {
+                const s = (a.status || 'pending').toLowerCase();
+                if (s === 'pending') apptStatus.pending++;
+                else if (s === 'approved' || s === 'confirmed') apptStatus.approved++;
+                else if (s === 'rejected' || s === 'cancelled') apptStatus.rejected++;
+
+                const dName = a.doctorName || 'General';
+                apptDocPerf[dName] = (apptDocPerf[dName] || 0) + 1;
+            });
+
+            setAppointmentStatusData({
+                labels: ['Pending', 'Approved', 'Rejected'],
+                datasets: [{ data: [apptStatus.pending, apptStatus.approved, apptStatus.rejected], backgroundColor: ['#6366f1', '#10b981', '#ef4444'], borderWidth: 0 }]
+            });
+
+            const topApptDocs = Object.entries(apptDocPerf).sort(([, a], [, b]) => b - a).slice(0, 5);
+            setTopRequestedDocs(topApptDocs.map(([name, count]) => ({ name, count })));
+
+            // Appt Trend
+            const apptChartLabels: string[] = [];
+            const apptVolTrend: number[] = [];
+            for (let i = 6; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const dStr = d.toISOString().split('T')[0];
+                apptChartLabels.push(d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }));
+                apptVolTrend.push(appointments.filter((a: any) => (a.date === dStr || a.createdAt?.startsWith(dStr))).length);
+            }
+            setAppointmentTrendData({
+                labels: apptChartLabels,
+                datasets: [{ label: 'Online Bookings', data: apptVolTrend, borderColor: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.1)', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 3 }]
             });
 
 
@@ -420,11 +473,12 @@ export default function AnalyticsPage() {
                     color="rose" 
                 />
                 <MetricCard 
-                    title="Unique Patients" 
-                    value={metrics.totalPatients.value.toString()} 
-                    icon="fas fa-users" 
-                    color="purple" 
-                    subtitle={`Eff: ${metrics.efficiency}%`}
+                    title="Online Appts" 
+                    value={metrics.onlineAppts.total.toString()} 
+                    growth={metrics.onlineAppts.growth} 
+                    icon="fas fa-calendar-check" 
+                    color="sky" 
+                    subtitle={`${metrics.onlineAppts.pending} Pending | ${metrics.onlineAppts.today} Today`}
                 />
             </div>
 
@@ -432,56 +486,94 @@ export default function AnalyticsPage() {
 
             {/* Main Content Grid */}
             <div className="grid grid-cols-12 gap-4">
-                {/* Unified Growth Trend - Large */}
-                <div className="col-span-12 lg:col-span-8 bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100">
+                {/* Row 2: Trend & Demographics */}
+                <div className="col-span-12 lg:col-span-8 bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 min-h-[300px] flex flex-col">
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-xs font-black uppercase tracking-tight text-gray-400">Revenue & Visit Trends</h3>
-                        <div className="flex gap-3 text-[9px] font-black uppercase">
+                        <div className="flex gap-3 text-[9px] font-black uppercase text-gray-400">
                             <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500" /> Lab</span>
                             <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-indigo-500" /> OPD</span>
                         </div>
                     </div>
-                    <div className="h-[220px]">
+                    <div className="flex-1 h-[220px]">
                         {trendData && <Line data={trendData} options={chartOptions} />}
                     </div>
                 </div>
 
-                {/* Patient Demographics & Age - Compact */}
-                <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col justify-between">
-                    <div className="space-y-6">
+                <div className="col-span-12 lg:col-span-4 bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 min-h-[300px] flex flex-col justify-between">
+                    <div className="space-y-4">
                         <div>
-                            <h3 className="text-xs font-black uppercase tracking-tight text-gray-400 mb-4">Gender Distribution</h3>
-                            <div className="space-y-3">
+                            <h3 className="text-xs font-black uppercase tracking-tight text-gray-400 mb-3">Gender Distribution</h3>
+                            <div className="space-y-2">
                                 <DemoRow label="Male" value={genderStats.Male} total={genderStats.Male + genderStats.Female + genderStats.Other} color="bg-blue-500" />
                                 <DemoRow label="Female" value={genderStats.Female} total={genderStats.Male + genderStats.Female + genderStats.Other} color="bg-pink-500" />
                             </div>
                         </div>
                         <div>
-                            <h3 className="text-xs font-black uppercase tracking-tight text-gray-400 mb-4">Age Groups</h3>
+                            <h3 className="text-xs font-black uppercase tracking-tight text-gray-400 mb-2">Age Groups</h3>
                             <div className="h-[100px]">
                                 {ageGroupData && <Bar data={ageGroupData} options={barOptions} />}
                             </div>
                         </div>
                     </div>
                     <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
-
                         <div>
                             <p className="text-[10px] font-black text-gray-400 uppercase">Avg TAT</p>
-                            <p className="text-lg font-black text-indigo-600">{metrics.avgTAT.value} hrs</p>
+                            <p className="text-lg font-black text-indigo-600 leading-none">{metrics.avgTAT.value} hrs</p>
                         </div>
                         <div className="text-right">
                             <p className="text-[10px] font-black text-gray-400 uppercase">Outstanding</p>
-                            <p className="text-lg font-black text-rose-500">₹{metrics.outstanding.toLocaleString()}</p>
+                            <p className="text-lg font-black text-rose-500 leading-none">₹{metrics.outstanding.toLocaleString()}</p>
                         </div>
                     </div>
                 </div>
 
-                {/* OPD Insights */}
-                <div className="col-span-12 lg:col-span-4 bg-gradient-to-br from-indigo-50/50 to-white p-5 rounded-[2rem] shadow-sm border border-indigo-100">
-                    <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-6 flex items-center gap-2">
+                {/* Row 3: Online Appointments & OPD Insights (Balanced 6:6) */}
+                <div className="col-span-12 lg:col-span-6 bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-xs font-black uppercase tracking-tight text-gray-400 flex items-center gap-2">
+                            <i className="fas fa-globe text-indigo-500" /> Online Appointment Insights
+                        </h3>
+                        <div className="bg-indigo-50 px-2 py-1 rounded-lg">
+                            <p className="text-[10px] font-black text-indigo-600">
+                                {metrics.onlineAppts.total > 0 ? Math.round(((metrics.onlineAppts.total - metrics.onlineAppts.pending) / metrics.onlineAppts.total) * 100) : 0}% Conv.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 flex-1">
+                        <div className="flex flex-col">
+                            <p className="text-[8px] font-black text-gray-400 uppercase mb-2">Booking Status</p>
+                            <div className="flex-1 h-[120px] relative">
+                                {appointmentStatusData && <Doughnut data={appointmentStatusData} options={{ cutout: '70%', plugins: { legend: { display: false } }, maintainAspectRatio: false }} />}
+                                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                    <p className="text-lg font-black text-gray-900 leading-none">{metrics.onlineAppts.total}</p>
+                                    <p className="text-[7px] font-bold text-gray-400 uppercase">Total</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex flex-col">
+                            <p className="text-[8px] font-black text-gray-400 uppercase mb-2">Top Requested Docs</p>
+                            <div className="space-y-1.5 overflow-hidden">
+                                {topRequestedDocs.slice(0, 3).map((doc, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-1.5 bg-gray-50 rounded-lg border border-gray-100">
+                                        <span className="text-[9px] font-bold text-gray-600 truncate max-w-[80px]">{doc.name}</span>
+                                        <span className="text-[9px] font-black text-indigo-600">{doc.count}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="mt-4 h-[100px]">
+                        {appointmentTrendData && <Line data={appointmentTrendData} options={{...chartOptions, scales: { ...chartOptions.scales, x: { ...chartOptions.scales.x, display: false } } }} />}
+                    </div>
+                </div>
+
+                <div className="col-span-12 lg:col-span-6 bg-gradient-to-br from-indigo-50/50 to-white p-4 rounded-[2rem] shadow-sm border border-indigo-100 flex flex-col">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-4 flex items-center gap-2">
                         <i className="fas fa-stethoscope text-xs" /> OPD Clinical Insights
                     </h3>
-                    <div className="flex gap-4">
+                    <div className="flex gap-4 flex-1">
                         <div className="w-1/2 h-[140px] relative">
                             {opdStatusData && <Doughnut data={opdStatusData} options={{ cutout: '70%', plugins: { legend: { display: false } }, maintainAspectRatio: false }} />}
                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -493,43 +585,42 @@ export default function AnalyticsPage() {
                         </div>
                         <div className="w-1/2 flex flex-col justify-between">
                             <div className="space-y-1.5">
-                                {physicianPerformance.slice(0, 2).map((p, i) => (
-                                    <div key={i} className="bg-white p-2 rounded-xl shadow-sm border border-indigo-50">
-                                        <p className="text-[9px] font-black truncate">{p.name}</p>
-                                        <p className="text-[10px] font-black text-emerald-600 leading-none mt-1">₹{(p.revenue / 1000).toFixed(1)}k</p>
+                                {physicianPerformance.slice(0, 3).map((p, i) => (
+                                    <div key={i} className="bg-white p-1.5 rounded-lg shadow-sm border border-indigo-50 flex justify-between items-center">
+                                        <p className="text-[9px] font-bold truncate max-w-[70px] text-gray-600">{p.name}</p>
+                                        <p className="text-[9px] font-black text-indigo-600">₹{(p.revenue / 1000).toFixed(1)}k</p>
                                     </div>
                                 ))}
                             </div>
-                            <div className="bg-white p-2 rounded-xl shadow-sm border border-red-50 flex items-center justify-between">
-                                <span className="text-[9px] font-black text-red-600 uppercase tracking-tighter">Emergency</span>
+                            <div className="bg-white p-1.5 rounded-xl shadow-sm border border-red-50 flex items-center justify-between mt-2">
+                                <span className="text-[8px] font-black text-red-600 uppercase tracking-tighter">Emergency Load</span>
                                 <div className="h-6 w-6">
                                     {clinicalLoadData && <Doughnut data={clinicalLoadData} options={{ cutout: '60%', plugins: { legend: { display: false } }, maintainAspectRatio: false }} />}
                                 </div>
                             </div>
                         </div>
                     </div>
-
                 </div>
 
-                {/* Lab Insights */}
-                <div className="col-span-12 lg:col-span-5 bg-gradient-to-br from-emerald-50/50 to-white p-5 rounded-[2rem] shadow-sm border border-emerald-100">
-                    <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-6 flex items-center gap-2">
+                {/* Row 4: Lab Insights & Settlements (Balanced 8:4) */}
+                <div className="col-span-12 lg:col-span-8 bg-gradient-to-br from-emerald-50/50 to-white p-4 rounded-[2rem] shadow-sm border border-emerald-100 flex flex-col min-h-[250px]">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-4 flex items-center gap-2">
                         <i className="fas fa-microscope text-xs" /> Lab Diagnostic Insights
                     </h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-6 flex-1">
                         <div>
-                            <h4 className="text-[9px] font-black text-gray-400 uppercase mb-3 text-center">Revenue by Dept</h4>
-                            <div className="h-[120px]">
+                            <h4 className="text-[9px] font-black text-gray-400 uppercase mb-2">Revenue by Dept</h4>
+                            <div className="h-[150px]">
                                 {categoryData && <Bar data={categoryData} options={barOptions} />}
                             </div>
                         </div>
                         <div>
-                            <h4 className="text-[9px] font-black text-gray-400 uppercase mb-3 text-center">Top Tests</h4>
-                            <div className="space-y-1.5">
+                            <h4 className="text-[9px] font-black text-gray-400 uppercase mb-2">Top Performed Tests</h4>
+                            <div className="grid grid-cols-1 gap-1.5">
                                 {topTestsData.map((t, i) => (
                                     <div key={i} className="flex items-center justify-between gap-2 p-1.5 bg-white rounded-lg border border-emerald-50">
                                         <span className="text-[9px] font-bold text-gray-600 truncate flex-1">{t.name}</span>
-                                        <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">{t.count}</span>
+                                        <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">{t.count}</span>
                                     </div>
                                 ))}
                             </div>
@@ -537,10 +628,9 @@ export default function AnalyticsPage() {
                     </div>
                 </div>
 
-                {/* Payment Breakdown */}
-                <div className="col-span-12 lg:col-span-3 bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col justify-between">
-                    <h3 className="text-xs font-black uppercase tracking-tight text-gray-400 mb-4">Settlements</h3>
-                    <div className="space-y-4">
+                <div className="col-span-12 lg:col-span-4 bg-white p-4 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col justify-between min-h-[250px]">
+                    <h3 className="text-xs font-black uppercase tracking-tight text-gray-400 mb-3">Finance & Settlments</h3>
+                    <div className="space-y-3 flex-1 overflow-y-auto">
                         {paymentStats.map((p, i) => (
                             <div key={i}>
                                 <div className="flex justify-between text-[10px] font-black uppercase text-gray-500 mb-1">
@@ -550,22 +640,21 @@ export default function AnalyticsPage() {
                                 <div className="w-full h-1 bg-gray-50 rounded-full overflow-hidden">
                                     <div className="h-full bg-slate-800" style={{ width: `${(p.value / (metrics.netCollections.value || 1)) * 100}%` }} />
                                 </div>
-
                             </div>
                         ))}
                     </div>
-                    <div className="mt-4 bg-indigo-600 p-3 rounded-2xl text-white">
+                    <div className="mt-4 bg-slate-900 p-3 rounded-2xl text-white">
                         <div className="flex justify-between items-end">
                             <div>
-                                <p className="text-[8px] font-black opacity-70 uppercase">Financial Efficiency</p>
-                                <p className="text-xl font-black">₹{(metrics.netCollections.value / (metrics.totalPatients.value || 1)).toFixed(0)} <span className="text-xs font-bold opacity-60">/ PATIENT</span></p>
+                                <p className="text-[8px] font-black opacity-70 uppercase tracking-widest">Revenue Impact</p>
+                                <p className="text-lg font-black">₹{(metrics.netCollections.value / (metrics.totalPatients.value || 1)).toFixed(0)} <span className="text-[10px] font-bold opacity-60">/ PATIENT</span></p>
                             </div>
                             <div className="text-right">
-                                <p className="text-[10px] font-bold opacity-60">{metrics.efficiency}% collected</p>
+                                <p className="text-[10px] font-black text-emerald-400 leading-none">{metrics.efficiency}%</p>
+                                <p className="text-[7px] font-bold opacity-60 uppercase">Settled</p>
                             </div>
                         </div>
                     </div>
-
                 </div>
             </div>
         </div>
