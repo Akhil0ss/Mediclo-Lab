@@ -24,234 +24,297 @@ export default function PrintOPDPage() {
         const fetchData = async () => {
             try {
                 let currentOwnerId = userProfile?.ownerId || user?.uid;
-                
                 if (!currentOwnerId && typeof window !== 'undefined') {
                     const urlParams = new URLSearchParams(window.location.search);
                     currentOwnerId = urlParams.get('ownerId') || localStorage.getItem('ownerId') || localStorage.getItem('portal_owner_id') || null;
                 }
-
-                if (!currentOwnerId) {
-                    setLoading(false);
-                    return;
-                }
+                if (!currentOwnerId) { setLoading(false); return; }
 
                 setOwnerId(currentOwnerId);
-
-                // Fetch Visit
                 const visitSnap = await get(ref(database, `opd/${currentOwnerId}/${visitId}`));
-                if (!visitSnap.exists()) {
-                    setLoading(false);
-                    return;
-                }
+                if (!visitSnap.exists()) { setLoading(false); return; }
                 const visitData = visitSnap.val();
+                setVisit(visitData);
 
-                // Fetch Branding
                 const brandingSnap = await get(ref(database, `branding/${currentOwnerId}`));
-                const brandingData = brandingSnap.val() || {};
+                setBranding(brandingSnap.val() || {});
 
-                // Fetch Doctor Info (to get Reg No / Specialization if not in visit)
-                let doctorData = null;
                 if (visitData.doctorId) {
                     const docSnap = await get(ref(database, `users/${currentOwnerId}/auth/staff/${visitData.doctorId}`));
-                    doctorData = docSnap.val();
+                    setDoctor(docSnap.val());
                 }
-
-                setVisit(visitData);
-                setBranding(brandingData);
-                setDoctor(doctorData);
                 setLoading(false);
-
             } catch (error) {
                 console.error('Error fetching print data:', error);
                 setLoading(false);
             }
         };
-
         fetchData();
     }, [visitId, authLoading, user, userProfile]);
 
     useEffect(() => {
         if (loading || !visit || !branding || printTriggeredRef.current) return;
         printTriggeredRef.current = true;
-        setTimeout(() => {
-            window.print();
-        }, 1000);
+        setTimeout(() => { window.print(); }, 1200);
     }, [loading, visit, branding]);
 
-    if (loading) return <div className="p-10 text-center font-bold">Loading Prescription...</div>;
+    if (loading) return <div className="p-10 text-center font-bold text-slate-400 italic">Formatting for A4 High-Clarity Print...</div>;
     if (!visit) return <div className="p-10 text-center font-bold text-red-600">Prescription not found!</div>;
 
-    const themeColor = branding.primaryColor || '#2563eb';
+    const themeGradient = branding.themeColor 
+        ? `linear-gradient(135deg, ${branding.themeColor} 0%, ${branding.themeColor}dd 100%)` 
+        : 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)';
+    const accentGradient = 'linear-gradient(90deg, #fbbf24, #f97316, #ef4444, #ec4899)';
+
+    const displayRxId = (visit.prescription?.rxId || visit.opdId || visitId).toUpperCase();
+    const displayPatientId = (visit.patientUHID || visit.patientId || 'N/A').toUpperCase();
+
+    const currentVitals = [
+        { label: 'BP', val: visit.vitals?.bp, color: 'text-red-700' },
+        { label: 'Pulse', val: visit.vitals?.pulse, color: 'text-orange-700' },
+        { label: 'Temp', val: visit.vitals?.temp || visit.vitals?.temperature, color: 'text-emerald-700' },
+        { label: 'Wt.', val: visit.vitals?.weight, color: 'text-blue-700' },
+        { label: 'Ht.', val: visit.vitals?.height, color: 'text-purple-700' },
+        { label: 'SpO2', val: visit.vitals?.spo2, color: 'text-cyan-700' },
+    ];
+
+    const capturedTime = new Date(visit.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
 
     return (
-        <div className="report-container bg-white min-h-screen font-sans text-gray-900 overflow-hidden" style={{ width: '210mm', margin: '0 auto' }}>
-            {/* Header */}
-            <div className="p-8 border-b-4 flex justify-between items-center bg-gray-50" style={{ borderBottomColor: themeColor }}>
-                <div className="flex items-center gap-6">
-                    {branding.logoUrl && <img src={branding.logoUrl} alt="Logo" className="w-20 h-20 object-contain" />}
-                    <div>
-                        <h1 className="text-3xl font-black uppercase tracking-tight" style={{ color: themeColor }}>{branding.labName || 'Mediclo Clinic'}</h1>
-                        <p className="text-xs font-bold text-gray-500 italic mb-2">{branding.tagline || 'Your Health, Our Priority'}</p>
-                        <div className="text-[10px] text-gray-600 leading-relaxed">
-                            <p>{branding.address || 'Health Center Main Road'}</p>
-                            <p>{branding.city}, {branding.state} - {branding.pincode}</p>
-                            <p className="font-bold mt-1">📞 {branding.contact} | ✉️ {branding.email}</p>
+        <div className="report-container bg-white min-h-screen font-sans text-gray-900 overflow-hidden flex flex-col" style={{ width: '210mm', margin: '0 auto' }}>
+            {/* 1. HEADER SECTION (EXACT SYNC WITH REPORT PDF) */}
+            <header className="header">
+                <div className="header-logo-container">
+                    {branding.logoUrl ? <img src={branding.logoUrl} className="header-logo" alt="Logo" /> : <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center font-black text-2xl">🏥</div>}
+                </div>
+                
+                <div className="header-center">
+                    <h1>{branding.labName || 'Mediclo Lab'}</h1>
+                    <p className="tagline">{branding.tagline || 'Leading Healthcare Through Digital Excellence'}</p>
+                    <div className="contact-details">
+                        <span>{branding.address || 'Medical Center Road'}, {branding.city}, {branding.state} - {branding.pincode}</span>
+                        <div className="contact-flex">
+                            <span>📞 {branding.contact}</span>
+                            <span className="separator">|</span>
+                            <span>✉️ {branding.email}</span>
                         </div>
                     </div>
                 </div>
-                <div className="text-right">
-                    <div className="bg-white p-2 border-2 rounded-xl mb-2" style={{ borderColor: themeColor }}>
-                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=OPD_${visitId}`} alt="QR" className="w-16 h-16 mx-auto" />
+
+                <div className="header-right">
+                    <div className="header-meta-text">
+                        <p className="meta-label">Clinical Prescription</p>
+                        <p className="meta-date">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                        <p className="meta-time">{capturedTime}</p>
+                        <p className="meta-id">{displayRxId}</p>
                     </div>
-                    <p className="text-[8px] font-black text-gray-400">Rx ID: {visitId.slice(-8).toUpperCase()}</p>
+                    <div className="header-qr"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(`https://medlab.spotnet.in/verify/${visitId}?oid=${ownerId}&type=rx`)}`} alt="QR" /></div>
                 </div>
-            </div>
+            </header>
 
-            {/* Sub-Header / Doctor Info */}
-            <div className="px-8 py-4 border-b flex justify-between items-end bg-white">
-                <div>
-                    <h2 className="text-lg font-black text-gray-800">Dr. {visit.doctorName || doctor?.name}</h2>
-                    <p className="text-xs font-bold text-blue-600">{doctor?.specialization || 'Consultant Physician'}</p>
-                    {doctor?.registrationNumber && <p className="text-[9px] text-gray-500 font-mono">Reg No: {doctor.registrationNumber}</p>}
-                </div>
-                <div className="text-right">
-                    <p className="text-xs font-bold text-gray-500">Date: <span className="text-gray-900">{new Date(visit.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></p>
-                    <p className="text-xs font-bold text-gray-500">Time: <span className="text-gray-900">{new Date(visit.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span></p>
-                </div>
-            </div>
-
-            {/* Patient Info Bar */}
-            <div className="mx-8 mt-6 p-4 bg-gray-50 rounded-2xl border border-gray-100 grid grid-cols-4 gap-4">
-                <div>
-                    <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Patient Name</label>
-                    <span className="text-sm font-bold text-gray-800">{visit.patientName}</span>
-                </div>
-                <div>
-                    <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Patient ID</label>
-                    <span className="text-sm font-mono font-bold text-gray-800">{visit.patientId}</span>
-                </div>
-                <div>
-                    <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Token No.</label>
-                    <span className="text-sm font-black text-blue-600">#{visit.token}</span>
-                </div>
-                <div className="text-right">
-                    <label className="block text-[8px] font-black text-gray-400 uppercase tracking-widest mb-1">Visit Type</label>
-                    <span className="text-[10px] font-bold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">OPD Consultation</span>
-                </div>
-            </div>
-
-            {/* Vitals Section */}
-            <div className="mx-8 mt-4 grid grid-cols-5 gap-3">
-                {Object.entries(visit.vitals || {}).map(([key, val]) => (
-                    val ? (
-                        <div key={key} className="p-3 border rounded-xl bg-white border-dashed border-gray-300">
-                            <p className="text-[8px] font-black text-gray-400 uppercase mb-1">{key === 'bp' ? 'BP (mmHg)' : key === 'spo2' ? 'SpO2 %' : key}</p>
-                            <p className="text-xs font-black text-gray-800">{val as string}</p>
-                        </div>
-                    ) : null
-                ))}
-            </div>
-
-            {/* Clinical Notes Body */}
-            <div className="mx-8 mt-8 grid grid-cols-1 gap-8 min-h-[400px]">
-                <div className="space-y-6">
-                    {/* Complaints & Diagnosis */}
-                    <div className="grid grid-cols-2 gap-8">
-                        <div>
-                            <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest border-b pb-1 mb-2">Chief Complaints</h3>
-                            <p className="text-sm italic text-gray-700 leading-relaxed">{visit.complaints || 'No specific complaints recorded.'}</p>
-                        </div>
-                        <div>
-                            <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest border-b pb-1 mb-2">Diagnosis</h3>
-                            <p className="text-sm font-bold text-gray-900 leading-relaxed underline decoration-blue-200 decoration-4">{visit.prescription?.diagnosis || 'Provisional Diagnosis Pending'}</p>
+            {/* 2. PHYSICIAN META STRIP (Standard Font Sizes) */}
+            <div className="mx-6 -mt-4 relative z-20">
+                <div className="doctor-strip">
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap"><span className="text-indigo-300 uppercase text-[8px] font-black tracking-wider leading-none">Physician:</span><span className="italic text-[10px] font-black text-white">Dr. {visit.doctorName || doctor?.name}</span></div>
+                        <div className="w-[1px] h-3 bg-white/20"></div>
+                        <div className="flex items-center gap-1.5 whitespace-nowrap"><span className="text-blue-300 uppercase text-[8px] font-black tracking-wider leading-none">Type:</span><span className="text-[10px] font-black text-white">OPD Record</span></div>
+                        <div className="w-[1px] h-3 bg-white/20"></div>
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                            <span className="text-[8px] font-black text-amber-300 uppercase tracking-wider leading-none">Follow-up:</span>
+                            <span className="text-[10px] font-black text-white uppercase italic">
+                                {visit.prescription?.nextVisit || visit.prescription?.followUpDate || visit.nextVisit 
+                                    ? new Date(visit.prescription?.nextVisit || visit.prescription?.followUpDate || visit.nextVisit).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) 
+                                    : 'SOS / As Advised'}
+                            </span>
                         </div>
                     </div>
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5 border-l border-white/20 pl-3 whitespace-nowrap"><span className="text-slate-400 uppercase text-[8.5px] font-black tracking-wider leading-none">Rx ID:</span><span className="text-white font-black text-[10px]">{displayRxId}</span></div>
+                        <div className="flex items-center gap-1.5 border-l border-white/20 pl-3 whitespace-nowrap"><span className="text-slate-400 uppercase text-[8.5px] font-black tracking-wider leading-none">UHID:</span><span className="text-white font-black text-[10px]">{displayPatientId}</span></div>
+                    </div>
+                </div>
+            </div>
 
-                    {/* Prescription Table */}
-                    <div className="mt-8">
-                        <div className="flex items-center gap-2 mb-4">
-                            <span className="text-2xl font-serif italic font-black text-blue-600">Rx</span>
-                            <div className="h-[2px] flex-1 bg-gray-100"></div>
-                        </div>
-                        
-                        <table className="w-full text-left">
-                            <thead>
-                                <tr className="text-[10px] font-black text-gray-400 uppercase border-b">
-                                    <th className="pb-2">Medicine Detail</th>
-                                    <th className="pb-2">Dosage</th>
-                                    <th className="pb-2">Frequency</th>
-                                    <th className="pb-2">Duration</th>
-                                    <th className="pb-2 text-right">Instructions</th>
+            {/* 3. PATIENT & VITALS STRIP (A4 Print Optimized) */}
+            <div className="mx-6 mt-3 relative z-10">
+                <div className="patient-strip !h-[38px]">
+                    <div className="flex items-center gap-5">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap"><span className="text-slate-600 uppercase text-[9px] font-black tracking-wider">Patient:</span><span className="text-slate-900 font-extrabold text-[12px] uppercase">{visit.patientName}</span></div>
+                        <div className="w-[1px] h-3 bg-slate-300"></div>
+                        <div className="flex items-center gap-1.5 whitespace-nowrap"><span className="text-slate-600 uppercase text-[9px] font-black tracking-wider">Age/Gen:</span><span className="text-slate-800 text-[11px] font-bold">{visit.patientAge || 'N/A'} / {visit.patientGender || '---'}</span></div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {currentVitals.map((vit, i) => (
+                            <div key={i} className="flex items-center gap-1.5 border-l border-slate-200 pl-3 first:border-l-0 first:pl-0 whitespace-nowrap"><span className="text-slate-600 uppercase text-[9.5px] font-black tracking-tighter leading-none">{vit.label}:</span><span className={`font-black tracking-tight text-[13px] ${vit.color}`}>{vit.val || '---'}</span></div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* 4. MAIN CLINICAL LAYOUT (GRID OPTIMIZED) */}
+            <div className="mx-6 mt-6 grid grid-cols-2 gap-x-6 gap-y-4">
+                {/* 4.1 Complaints (Row 1, Col 1) */}
+                <div className="h-[75px] overflow-hidden flex flex-col py-2 px-4 bg-slate-50/50 rounded-xl border border-slate-200 border-l-4 border-l-slate-400">
+                    <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1.5">Chief Complaints</label>
+                    <p className="text-[11px] italic text-slate-700 leading-tight font-semibold line-clamp-3">{visit.complaints || 'None specific recorded for this session.'}</p>
+                </div>
+
+                {/* 4.2 Diagnosis (Row 1-2, Col 2) - Higher Visibility */}
+                <div className="row-span-2 h-[145px] overflow-hidden flex flex-col py-2.5 px-4 bg-amber-50/40 rounded-xl border border-amber-200 border-l-4 border-l-amber-500 shadow-sm">
+                    <label className="text-[8px] font-black text-amber-600 uppercase tracking-widest leading-none mb-1.5">Observation / Diagnosis</label>
+                    <p className="text-[12px] font-black text-slate-800 leading-relaxed italic line-clamp-6">
+                        {visit.prescription?.diagnosis || visit.diagnosis || 'Clinical session assessment and evaluation.'}
+                    </p>
+                </div>
+
+                {/* 4.3 Prescribed Medicines Heading (Row 2, Col 1) */}
+                <div className="flex items-center gap-3 h-[50px] -mt-2">
+                    <div className="rx-icon !w-8 !h-8 !text-lg bg-indigo-700">℞</div>
+                    <div className="flex-1">
+                        <h2 className="text-[14px] font-black text-slate-900 uppercase tracking-tighter leading-none mb-0.5">Prescribed Medications</h2>
+                        <div className="h-[2px] w-12 bg-indigo-200"></div>
+                    </div>
+                </div>
+
+                {/* 4.4 Full Width Medication Table (Row 3, Spans both columns) */}
+                <div className="col-span-2 mt-2 min-h-[350px]">
+                    <div className="overflow-hidden border border-slate-300 rounded-2xl shadow-sm bg-white">
+                        <table className="w-full text-left border-collapse">
+                            <thead className="bg-slate-50 border-b border-slate-300">
+                                <tr className="text-[9px] font-black text-slate-700 uppercase tracking-widest">
+                                    <th className="p-3 border-r border-slate-200 text-center w-10">Sn</th>
+                                    <th className="p-3 border-r border-slate-200">Medicine & Frequency</th>
+                                    <th className="p-3 border-r border-slate-200 text-center w-24">Dosage</th>
+                                    <th className="p-3 border-r border-slate-200 text-center w-28">Frequency</th>
+                                    <th className="p-3 text-center w-24">Days</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y">
-                                {visit.prescription?.medicines?.map((med: any, idx: number) => (
-                                    <tr key={idx} className="text-sm">
-                                        <td className="py-3 pr-4">
-                                            <p className="font-bold text-gray-900">{med.name}</p>
-                                        </td>
-                                        <td className="py-3 text-gray-700">{med.dosage}</td>
-                                        <td className="py-3">
-                                            <span className="inline-block px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-black rounded border border-blue-100">{med.frequency}</span>
-                                        </td>
-                                        <td className="py-3 text-gray-700">{med.duration}</td>
-                                        <td className="py-3 text-right text-xs font-medium italic text-gray-500">{med.instructions}</td>
-                                    </tr>
-                                ))}
-                                {!visit.prescription?.medicines?.length && (
-                                    <tr>
-                                        <td colSpan={5} className="py-10 text-center text-gray-400 italic">No medicines prescribed.</td>
-                                    </tr>
+                            <tbody className="divide-y divide-slate-100 text-[11px]">
+                                {visit.prescription?.medicines?.length > 0 ? (
+                                    visit.prescription.medicines.map((med: any, idx: number) => (
+                                        <tr key={idx} className="hover:bg-slate-50/30">
+                                            <td className="p-3 border-r border-slate-100 text-center text-slate-400 font-bold">{idx + 1}</td>
+                                            <td className="p-3 border-r border-slate-100">
+                                                <div className="font-black text-slate-950 leading-none mb-1 uppercase text-[12px]">{med.name}</div>
+                                                <div className="text-[10px] text-slate-500 italic font-bold leading-none">{med.instructions || 'As advised by the physician'}</div>
+                                            </td>
+                                            <td className="p-3 border-r border-slate-100 text-center font-black text-indigo-800">{med.dosage}</td>
+                                            <td className="p-3 border-r border-slate-100 text-center">
+                                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-900 text-[10px] font-black rounded-lg border border-indigo-100 uppercase italic">{med.frequency}</span>
+                                            </td>
+                                            <td className="p-3 text-center font-black text-slate-800 italic tracking-tighter text-[12px]">{med.duration}</td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr><td colSpan={5} className="p-20 text-center text-slate-300 font-black italic uppercase tracking-widest opacity-50">Authorized Prescription: No medicines recorded</td></tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
-
-                    {/* Advice Section */}
-                    {visit.prescription?.advice && (
-                        <div className="mt-8 p-4 bg-yellow-50/50 rounded-2xl border border-yellow-100">
-                            <h3 className="text-xs font-black text-yellow-700 uppercase tracking-widest mb-2">Advice / General Instructions</h3>
-                            <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{visit.prescription.advice}</p>
-                        </div>
-                    )}
                 </div>
             </div>
 
-            {/* Footer */}
-            <div className="mt-auto p-8 border-t-2" style={{ borderTopColor: themeColor }}>
-                <div className="flex justify-between items-end">
-                    <div>
-                        {visit.prescription?.nextVisit && (
-                            <div className="mb-4">
-                                <p className="text-[10px] font-black text-blue-600 uppercase">Next Follow-up Visit</p>
-                                <p className="text-sm font-bold text-gray-800">{new Date(visit.prescription.nextVisit).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
-                            </div>
-                        )}
-                        <p className="text-[10px] text-gray-400 italic max-w-sm">This is a digitally generated medical prescription. Please consult your doctor for any clarifications.</p>
+            {/* 6. LEGAL & CLINICAL FOOTER (A4 OPTIMIZED) */}
+            <div className="mt-auto">
+                <div className="mx-6 py-4 border-t-2 border-slate-300 flex justify-between items-center gap-8">
+                    {/* Left: Digital Verification */}
+                    <div className="flex flex-col gap-2 min-w-[200px] h-[85px] justify-center">
+                        <div className="digital-sign-box !py-2.5 !px-3 !w-[195px] !h-full flex flex-col justify-center border-slate-200">
+                             <p className="flex items-center gap-1 font-black text-slate-700 text-[7.5px]"><span className="text-emerald-600 text-[9px]">✔</span> 🔐 AUTHORIZED DIGITAL SIGNATURE</p>
+                             <div className="hash-text !text-[6px] text-slate-500 mt-1 uppercase">HASH: {visitId.replace(/-/g, '').substring(0, 18).toUpperCase()}...</div>
+                             <p className="mt-1.5 font-black text-slate-400 text-[7px] uppercase tracking-tighter italic leading-none">Verified • MedOS Secure</p>
+                        </div>
                     </div>
-                    <div className="text-center">
-                        <div className="w-40 h-1 border-b-2 border-gray-300 mb-2 mx-auto"></div>
-                        <p className="text-xs font-bold text-gray-800">Digitally Signed By</p>
-                        <p className="text-[10px] font-bold text-blue-600">Dr. {visit.doctorName}</p>
+
+                    {/* Center: CLINICAL SUGGESTIONS (advice) */}
+                    <div className="flex-1 min-h-[85px] p-4 bg-slate-50/50 rounded-xl border border-slate-200 border-dashed relative flex items-center justify-center">
+                        <label className="absolute -top-2 left-4 px-2 bg-white text-[8px] font-black text-indigo-500 uppercase tracking-[0.2em] border border-slate-200 rounded-full">Clinical Suggestions</label>
+                        <p className="text-[11px] text-slate-800 font-bold italic leading-relaxed whitespace-pre-wrap text-center">
+                            {visit.prescription?.advice || 'Monitor clinical symptoms. Maintain hydration and adequate rest. SOS if complaints persist.'}
+                        </p>
+                    </div>
+
+                    {/* Right: Physician Info (Legal) */}
+                    <div className="text-center min-w-[240px] h-[85px] flex flex-col items-center justify-between py-1">
+                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none">Digitally Signed By</p>
+                        
+                        <div className="relative inline-block">
+                             {/* Watermark Seal */}
+                             <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center opacity-[0.08] pointer-events-none rotate-[-8deg] z-0">
+                                <span className="text-[28px] font-black tracking-[0.2em] text-indigo-600 italic whitespace-nowrap">AUTHORISED</span>
+                             </div>
+                             
+                             {/* Physician Name */}
+                             <p className="text-[18px] font-black text-indigo-950 italic leading-none uppercase tracking-tighter relative z-10">
+                                Dr. {visit.doctorName || doctor?.name}
+                             </p>
+                        </div>
+
+                        <div className="flex flex-col gap-0.5 border-t border-slate-100 pt-1 w-full">
+                            <p className="text-[10px] font-black text-indigo-700 uppercase tracking-wide leading-none">{doctor?.specialization || 'Authorized Medical Practitioner'}</p>
+                            <p className="text-[9px] font-black text-slate-600 uppercase tracking-tight bg-slate-50 px-2 py-0.5 rounded-full border border-slate-100 inline-block mx-auto mt-0.5 leading-none">
+                                Reg No: {doctor?.registrationNumber || doctor?.regNo || 'VERIFIED MEDICAL PROFESSIONAL'}
+                            </p>
+                        </div>
                     </div>
                 </div>
-                <div className="mt-8 pt-4 border-t border-gray-100 text-center">
-                    <p className="text-[8px] font-black text-gray-300 uppercase tracking-widest">Powered by Mediclo-Lab Cloud Health System</p>
+
+                {/* Formal Legal Disclaimer */}
+                <div className="px-6 pb-4 text-center">
+                    <p className="text-[7.5px] text-slate-500 italic font-bold leading-relaxed max-w-[700px] mx-auto tracking-normal">
+                        * Authorized original computer-generated medical prescription for diagnostic reference. Validity is contingent upon correlation with the patient's identity and clinical examination. For dispensing: pharmacists must verify the digital hash or QR code. 
+                    </p>
+                </div>
+
+                {/* Final Professional Bar */}
+                <div className="final-px-bar" style={{ background: themeGradient }}>
+                    <div className="f-bar-inner">
+                        <div className="flex items-center gap-5">
+                           <span className="bg-white/20 px-2 py-0.5 rounded text-[8px] font-black tracking-widest border border-white/10 uppercase">Original Rx Record</span>
+                           <div className="flex items-center gap-3 border-l border-white/20 pl-4 uppercase font-bold text-[9px] tracking-tight">
+                                <p>UHID: {displayPatientId}</p>
+                                <div className="w-[1px] h-3 bg-white/30"></div>
+                                <p>DATE: {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                                <div className="w-[1px] h-3 bg-white/30"></div>
+                                <p>PORTAL: medlab.spotnet.in/portal</p>
+                           </div>
+                        </div>
+                        <p className="font-extrabold italic text-[10px] tracking-tight uppercase">RX ID: {displayRxId}</p>
+                    </div>
                 </div>
             </div>
 
             <style jsx global>{`
-                @media print {
-                    @page { margin: 0; size: auto; }
-                    body { background: white; margin: 0; padding: 0; }
-                    .report-container { width: 100% !important; height: 100vh !important; margin: 0 !important; box-shadow: none !important; border: none !important; }
-                    .no-print { display: none !important; }
-                }
-                .report-container {
-                    background-image: linear-gradient(rgba(37, 99, 235, 0.02) 1px, transparent 1px),
-                                    linear-gradient(90deg, rgba(37, 99, 235, 0.02) 1px, transparent 1px);
-                    background-size: 20px 20px;
-                }
+                @media print { @page { margin: 0; size: auto; } body { background: white !important; margin: 0; padding: 0; } .report-container { width: 100% !important; min-height: 297mm !important; margin: 0 !important; } .header { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } .no-print { display: none !important; } }
+                .header { background: ${themeGradient}; color: white; padding: 16px 20px; display: flex; align-items: center; position: relative; }
+                .header::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: ${accentGradient}; }
+                .header-logo-container { flex: 0 0 180px; display: flex; align-items: center; justify-content: flex-start; }
+                .header-logo { width: 90px; height: 90px; object-fit: contain; }
+                .header-center { flex: 1; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
+                .header-center h1 { font-size: 24px; font-weight: 900; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+                .tagline { font-size: 11px; opacity: 0.95; margin-bottom: 4px; font-style: italic; font-weight: 500; }
+                .contact-details { font-size: 9px; opacity: 0.9; line-height: 1.4; display: flex; flex-direction: column; align-items: center; gap: 1px; }
+                .contact-flex { display: flex; gap: 12px; font-weight: 600; margin-top: 2px; align-items: center; }
+                .separator { opacity: 0.4; }
+                .header-right { flex: 0 0 180px; display: flex; align-items: center; justify-content: flex-end; gap: 10px; height: 80px; }
+                .header-qr { width: 80px; height: 80px; background: rgba(255, 255, 255, 0.25); border-radius: 10px; padding: 4px; border: 1px solid rgba(255, 255, 255, 0.3); }
+                .header-qr img { width: 100%; height: 100%; object-fit: contain; }
+                .header-meta-text { text-align: right; color: rgba(255,255,255,0.95); font-size: 8px; line-height: 1.4; display: flex; flex-direction: column; justify-content: center; }
+                .meta-label { font-weight: 900; text-transform: uppercase; letter-spacing: -0.2px; opacity: 0.8; }
+                .meta-date { font-weight: 800; font-size: 10px; }
+                .meta-time { font-weight: 700; font-size: 9px; opacity: 0.9; }
+                .meta-id { font-weight: 700; opacity: 0.7; tracking: 0.5px; }
+                .doctor-strip { background: #0f172a; color: white; border-radius: 10px; height: 36px; padding: 0 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border-bottom: 2px solid #6366f1; }
+                .patient-strip { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; height: 34px; padding: 0 16px; display: flex; justify-content: space-between; align-items: center; shadow: 0 1px 2px rgba(0,0,0,0.05); }
+                .rx-icon { background: #4f46e5; color: white; border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-family: serif; font-style: italic; font-size: 20px; font-weight: 900; }
+                .sig-line { width: 220px; border-bottom: 2px solid #e0e7ff; display: flex; align-items: center; justify-content: center; opacity: 0.6; }
+                .sig-text { font-family: serif; font-weight: 900; color: #6366f1; text-transform: uppercase; tracking: 0.4em; transform: rotate(-6deg); }
+                .digital-sign-box { text-align: left; padding: 10px 14px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; width: 220px; }
+                .hash-text { font-family: 'Courier New', monospace; font-size: 7px; color: #64748b; margin-top: 2px; word-break: break-all; font-weight: 900; }
+                .final-px-bar { padding: 12px; color: white; font-weight: 900; font-size: 9px; text-transform: uppercase; tracking: 0.1em; }
+                .f-bar-inner { display: flex; justify-content: space-between; padding: 0 16px; opacity: 1; }
+                .report-container { background-image: radial-gradient(rgba(15, 23, 42, 0.012) 1px, transparent 1px); background-size: 32px 32px; display: flex; flex-direction: column; }
             `}</style>
         </div>
     );
