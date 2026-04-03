@@ -34,6 +34,21 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         if (!loading && !user) router.push('/login');
     }, [loading, user, router]);
 
+    if (loading || (user && !userProfile)) {
+        return (
+            <div className="h-screen w-screen flex flex-col items-center justify-center bg-gray-50 gap-4">
+                <div className="relative">
+                    <div className="w-16 h-16 border-4 border-blue-600/20 rounded-full"></div>
+                    <div className="absolute top-0 left-0 w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                </div>
+                <div className="flex flex-col items-center">
+                    <p className="text-blue-600 font-black text-xs uppercase tracking-[0.2em] animate-pulse">Syncing MedOS</p>
+                    <p className="text-gray-400 text-[10px] mt-1 font-bold uppercase">Preparing Workspace...</p>
+                </div>
+            </div>
+        );
+    }
+
     useEffect(() => {
         const path = pathname.split('/').pop() || 'dashboard';
         setActiveTab(path === 'dashboard' ? 'dashboard' : path);
