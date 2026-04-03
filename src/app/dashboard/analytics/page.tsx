@@ -38,44 +38,44 @@ export default function AnalyticsPage() {
     const [loading, setLoading] = useState(true);
     const [timeframe, setTimeframe] = useState<'today' | 'week' | 'month'>('month');
 
-    // Lab Core Metrics with Growth
+    // Combined Core Metrics
     const [metrics, setMetrics] = useState({
-        revenue: { value: 0, growth: 0 },
-        reports: { value: 0, growth: 0 },
-        patients: { value: 0, growth: 0 },
+        totalRevenue: { value: 0, growth: 0 },
+        labRevenue: { value: 0, growth: 0 },
+        opdRevenue: { value: 0, growth: 0 },
+        totalPatients: { value: 0 },
+        labVolume: 0,
+        opdVolume: 0,
         avgTAT: { value: 0, unit: 'hrs' },
-        pending: 0,
-        totalRevenue: 0,
         outstanding: 0
     });
 
     // Charts & Lists Data
     const [trendData, setTrendData] = useState<any>(null);
     const [categoryData, setCategoryData] = useState<any>(null);
+    const [testVolumeData, setTestVolumeData] = useState<any>(null);
+    const [opdStatusData, setOpdStatusData] = useState<any>(null);
+    const [clinicalLoadData, setClinicalLoadData] = useState<any>(null);
+    const [ageGroupData, setAgeGroupData] = useState<any>(null);
+    const [physicianPerformance, setPhysicianPerformance] = useState<any[]>([]);
     const [topTestsData, setTopTestsData] = useState<any[]>([]);
-    const [topRevenueTests, setTopRevenueTests] = useState<any[]>([]);
-    const [topTestsChartData, setTopTestsChartData] = useState<any>(null);
-    const [topDoctorsData, setTopDoctorsData] = useState<any[]>([]);
-    const [doctorPage, setDoctorPage] = useState(1);
-    const [revenuePage, setRevenuePage] = useState(1);
-    const docsPerPage = 5;
-    const revenuePerPage = 5;
-    const [paymentStats, setPaymentStats] = useState<any[]>([]);
     const [genderStats, setGenderStats] = useState<any>({ Male: 0, Female: 0, Other: 0 });
+    const [paymentStats, setPaymentStats] = useState<any[]>([]);
 
-    const [aiInsights, setAiInsights] = useState<any>(null);
-    const [generatingAI, setGeneratingAI] = useState(false);
+    const [doctorPage, setDoctorPage] = useState(1);
+    const docsPerPage = 4;
 
     useEffect(() => {
         if (!user?.uid) {
             setLoading(false);
             return;
         }
-        fetchLabAnalytics();
+        fetchAnalytics();
     }, [user, timeframe]);
 
-    const fetchLabAnalytics = async () => {
+    const fetchAnalytics = async () => {
         if (!user?.uid) return;
+        setLoading(true);
 
         const now = new Date();
         const getDatesForTimeframe = (tf: string) => {
@@ -112,227 +112,199 @@ export default function AnalyticsPage() {
                 get(ref(database, `samples/${dataSourceId}`)),
                 get(ref(database, `doctors/${dataSourceId}`)),
                 get(ref(database, `externalDoctors/${dataSourceId}`)),
-                get(ref(database, `templates/${dataSourceId}`))
+                get(ref(database, `templates/${dataSourceId}`)),
+                get(ref(database, `opd/${dataSourceId}`)),
+                get(ref(database, `users/${dataSourceId}/auth/staff`))
             ]);
 
-            const patientsSnap = results[0];
-            const reportsSnap = results[1];
-            const invoicesSnap = results[2];
-            const samplesSnap = results[3];
-            const doctorsSnap = results[4];
-            const externalDoctorsSnap = results[5];
-            const templatesSnap = results[6];
+            const patients = results[0].exists() ? Object.values(results[0].val() as object) as any[] : [];
+            const reports = results[1].exists() ? Object.values(results[1].val() as object) as any[] : [];
+            const invoices: any[] = results[2].exists() ? Object.values(results[2].val() as object) as any[] : [];
+            const samples = results[3].exists() ? Object.values(results[3].val() as object) as any[] : [];
+            const doctors = results[4].exists() ? Object.values(results[4].val() as object) as any[] : [];
+            const externalDoctors = results[5].exists() ? Object.values(results[5].val() as object) as any[] : [];
+            const templates = results[6].exists() ? Object.values(results[6].val() as object) as any[] : [];
+            const opdRaw = results[7].exists() ? Object.values(results[7].val() as object) as any[] : [];
+            const staffRaw = results[8].exists() ? Object.values(results[8].val() as object) as any[] : [];
 
-            const patients = patientsSnap.exists() ? Object.values(patientsSnap.val()) : [];
-            const reports = reportsSnap.exists() ? Object.values(reportsSnap.val()) : [];
-            const invoices: any[] = invoicesSnap.exists() ? Object.values(invoicesSnap.val()) : [];
-            const samples = samplesSnap.exists() ? Object.values(samplesSnap.val()) : [];
-            const templates = templatesSnap.exists() ? Object.values(templatesSnap.val()) : [];
+
+            // Staff Fee Map
+            const staffFeeMap: Record<string, number> = {};
+            staffRaw.forEach((s: any) => { if (s.id && s.fee) staffFeeMap[s.id] = parseFloat(s.fee) || 0; });
 
             const filterByRange = (data: any[], s: Date, e: Date) =>
                 data.filter(item => {
-                    const d = new Date(item.createdAt);
+                    const dateStr = item.createdAt || item.visitDate || item.date;
+                    if (!dateStr) return false;
+                    const d = new Date(dateStr);
                     return d >= s && d <= e;
                 });
 
-            // Current Period Data
-            const currPatients = filterByRange(patients, start, end);
-            const currReports = filterByRange(reports, start, end);
             const currInvoices = filterByRange(invoices, start, end);
-
-            // Previous Period Data (for growth)
-            const prevPatients = filterByRange(patients, prevStart, prevEnd);
-            const prevReports = filterByRange(reports, prevStart, prevEnd);
             const prevInvoices = filterByRange(invoices, prevStart, prevEnd);
+            const currOpd = filterByRange(opdRaw, start, end);
+            const prevOpd = filterByRange(opdRaw, prevStart, prevEnd);
+            const currReports = filterByRange(reports, start, end);
+
+            // Revenue
+            const currLabRev = currInvoices.reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0);
+            const prevLabRev = prevInvoices.reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0);
+            const currOpdRev = currOpd.filter(v => (v as any).status === 'completed').reduce((sum, v) => sum + (staffFeeMap[(v as any).doctorId] || 0), 0);
+            const prevOpdRev = prevOpd.filter(v => (v as any).status === 'completed').reduce((sum, v) => sum + (staffFeeMap[(v as any).doctorId] || 0), 0);
+
+
+            const totalCurrRev = currLabRev + currOpdRev;
+            const totalPrevRev = prevLabRev + prevOpdRev;
 
             const calculateGrowth = (curr: number, prev: number) => {
                 if (prev === 0) return curr > 0 ? 100 : 0;
                 return Math.round(((curr - prev) / prev) * 100);
             };
 
-            const currRevenue = currInvoices.reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0);
-            const prevRevenue = prevInvoices.reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0);
+            // Unique Patients
+            const uniquePatientIds = new Set([
+                ...filterByRange(patients, start, end).map((p: any) => p.id || p.patientId),
+                ...currOpd.map((v: any) => v.patientId)
+            ]);
 
-            // Turnaround Time (TAT) Calculation
-            const completedSamples = samples.filter((s: any) => s.status === 'Completed' && s.completedAt && s.createdAt);
-            let totalTATMinutes = 0;
-            completedSamples.forEach((s: any) => {
-                const created = new Date(s.createdAt).getTime();
-                const completed = new Date(s.completedAt).getTime();
-                totalTATMinutes += (completed - created) / (1000 * 60);
-            });
-            const avgTATMinutes = completedSamples.length > 0 ? totalTATMinutes / completedSamples.length : 0;
-            const avgTATHours = (avgTATMinutes / 60).toFixed(1);
-
-            // Test Popularity & Revenue Stats
-            const testStats: Record<string, { count: number; revenue: number }> = {};
-
-            // From Reports (Count)
-            reports.forEach((r: any) => {
-                const name = r.testName || 'Unknown';
-                if (!testStats[name]) testStats[name] = { count: 0, revenue: 0 };
-                testStats[name].count += 1;
-            });
-
-            // From Invoices (Revenue)
-            invoices.forEach((inv: any) => {
-                if (inv.items && Array.isArray(inv.items)) {
-                    inv.items.forEach((item: any) => {
-                        const name = item.name || 'Unknown';
-                        if (!testStats[name]) testStats[name] = { count: 0, revenue: 0 };
-                        testStats[name].revenue += (parseFloat(item.amount) || 0);
-                    });
-                }
-            });
-
-            const sortedTestsByCount = Object.entries(testStats)
-                .map(([name, s]) => ({ name, ...s }))
-                .sort((a, b) => b.count - a.count)
-                .slice(0, 5);
-
-            const sortedTestsByRevenue = Object.entries(testStats)
-                .map(([name, s]) => ({ name, ...s }))
-                .sort((a, b) => b.revenue - a.revenue)
-                .slice(0, 5);
-
-            setTopTestsData(sortedTestsByCount);
-            setTopRevenueTests(sortedTestsByRevenue);
-
-            // Charts
+            // Trend Data
             const chartLabels: string[] = [];
-            const volData: number[] = [];
-            const revData: number[] = [];
+            const labRevTrend: number[] = [];
+            const opdRevTrend: number[] = [];
+            const volTrend: number[] = [];
+
             for (let i = 6; i >= 0; i--) {
                 const d = new Date();
                 d.setDate(d.getDate() - i);
                 const dStr = d.toISOString().split('T')[0];
                 chartLabels.push(d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }));
-                volData.push(reports.filter((r: any) => r.createdAt?.startsWith(dStr)).length);
-                revData.push(invoices.filter((inv: any) => inv.createdAt?.startsWith(dStr)).reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0));
+                
+                labRevTrend.push(invoices.filter((inv: any) => (inv.createdAt || inv.date)?.startsWith(dStr)).reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0));
+                opdRevTrend.push(opdRaw.filter((v: any) => (v as any).status === 'completed' && (v.createdAt || (v as any).visitDate)?.startsWith(dStr)).reduce((sum, v) => sum + (staffFeeMap[(v as any).doctorId] || 0), 0));
+                volTrend.push(reports.filter((r: any) => r.createdAt?.startsWith(dStr)).length + opdRaw.filter((v: any) => (v.createdAt || (v as any).visitDate)?.startsWith(dStr)).length);
             }
 
             setTrendData({
                 labels: chartLabels,
                 datasets: [
-                    {
-                        label: 'Revenue (₹)',
-                        data: revData,
-                        borderColor: 'rgb(34, 197, 94)',
-                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                        yAxisID: 'y1',
-                        tension: 0.4,
-                        fill: true
-                    },
-                    {
-                        label: 'Volume (Reports)',
-                        data: volData,
-                        borderColor: 'rgb(59, 130, 246)',
-                        backgroundColor: 'transparent',
-                        yAxisID: 'y',
-                        tension: 0.4,
-                        borderDash: [5, 5]
-                    }
+                    { label: 'Lab Rev', data: labRevTrend, borderColor: '#10b981', tension: 0.4, borderWidth: 2, pointRadius: 2 },
+                    { label: 'OPD Rev', data: opdRevTrend, borderColor: '#6366f1', tension: 0.4, borderWidth: 2, pointRadius: 2 },
+                    { label: 'Total Visits', data: volTrend, borderColor: '#94a3b8', backgroundColor: 'rgba(148, 163, 184, 0.05)', tension: 0.4, fill: true, borderDash: [5, 5], yAxisID: 'y1' }
                 ]
             });
 
-            setTopTestsChartData({
-                labels: sortedTestsByCount.map(t => t.name),
-                datasets: [{
-                    data: sortedTestsByCount.map(t => t.count),
-                    backgroundColor: ['#6366f1', '#a855f7', '#ec4899', '#f97316', '#22c55e'],
-                    borderWidth: 0
-                }]
+            // OPD Status, Physician & Clinical Load
+            const opdStatus = { pending: 0, completed: 0, referred: 0 };
+            const docPerf: Record<string, { visits: number, revenue: number }> = {};
+            let emergencyCount = 0;
+
+            currOpd.forEach((v: any) => {
+                const s = (v.status || 'pending').toLowerCase();
+                if (s === 'pending') opdStatus.pending++;
+                else if (s === 'completed') opdStatus.completed++;
+                else if (s === 'referred') opdStatus.referred++;
+
+                if (v.isEmergency) emergencyCount++;
+
+                const dName = v.doctorName || 'Unknown';
+                if (!docPerf[dName]) docPerf[dName] = { visits: 0, revenue: 0 };
+                docPerf[dName].visits++;
+                if (s === 'completed') docPerf[dName].revenue += (staffFeeMap[v.doctorId] || 0);
             });
 
-            // Category/Department Stats
+            setOpdStatusData({
+                labels: ['Pending', 'Completed', 'Referred'],
+                datasets: [{ data: [opdStatus.pending, opdStatus.completed, opdStatus.referred], backgroundColor: ['#f59e0b', '#10b981', '#6366f1'], borderWidth: 0 }]
+            });
+            
+            setClinicalLoadData({
+                labels: ['Emergency', 'Routine'],
+                datasets: [{ data: [emergencyCount, currOpd.length - emergencyCount], backgroundColor: ['#ef4444', '#e2e8f0'], borderWidth: 0 }]
+            });
+
+            setPhysicianPerformance(Object.entries(docPerf).map(([name, s]) => ({ name, ...s })).sort((a, b) => b.revenue - a.revenue));
+
+            // Lab Specifics & Age Groups
+            const ageGroups = { child: 0, adult: 0, senior: 0 };
+            const processAge = (age: any) => {
+                const a = parseInt(age);
+                if (isNaN(a)) return;
+                if (a < 18) ageGroups.child++;
+                else if (a < 60) ageGroups.adult++;
+                else ageGroups.senior++;
+            };
+            patients.forEach(p => processAge(p.age));
+            currOpd.forEach(v => processAge(v.patientAge));
+
+            setAgeGroupData({
+                labels: ['Child', 'Adult', 'Senior'],
+                datasets: [{ 
+                    label: 'Age Distribution', 
+                    data: [ageGroups.child, ageGroups.adult, ageGroups.senior], 
+                    backgroundColor: ['#38bdf8', '#818cf8', '#c084fc'],
+                    borderRadius: 4,
+                    barThickness: 12
+                }]
+            });
             const templateMap: Record<string, string> = {};
-            templates.forEach((t: any) => {
-                if (t.name && t.category) templateMap[t.name] = t.category;
-            });
-
+            templates.forEach((t: any) => { if (t.name && t.category) templateMap[t.name] = t.category; });
             const catRevenue: Record<string, number> = {};
+            const testVol: Record<string, number> = {};
 
-            // Calculate revenue by category from invoice items
-            invoices.forEach((inv: any) => {
-                if (inv.items && Array.isArray(inv.items)) {
-                    inv.items.forEach((item: any) => {
-                        const testName = item.name || 'Unknown';
-                        const category = templateMap[testName] || 'Others';
-                        const amount = parseFloat(item.amount) || 0;
-                        catRevenue[category] = (catRevenue[category] || 0) + amount;
-                    });
-                }
-            });
-
-            // Sort by revenue and take top 5
-            const sortedCategories = Object.entries(catRevenue)
-                .sort(([, a], [, b]) => b - a)
-                .slice(0, 5);
-
-            setCategoryData({
-                labels: sortedCategories.map(([cat]) => cat),
-                datasets: [{
-                    label: 'Revenue by Dept',
-                    data: sortedCategories.map(([, rev]) => rev),
-                    backgroundColor: ['#6366f1', '#8b5cf6', '#d946ef', '#f43f5e', '#f59e0b'],
-                    borderRadius: 12,
-                    barThickness: 25
-                }]
-            });
-
-            // Doctor Stats
-            const docStats: Record<string, { count: number; revenue: number; info: string }> = {};
-            const docInfoMap: Record<string, string> = {};
-            if (doctorsSnap.exists()) Object.values(doctorsSnap.val()).forEach((d: any) => { docInfoMap[d.name] = d.specialization || 'Internal'; });
-            if (externalDoctorsSnap.exists()) Object.values(externalDoctorsSnap.val()).forEach((d: any) => { docInfoMap[d.name] = d.clinicInfo || 'External'; });
-
-            reports.forEach((r: any) => {
-                const doc = r.refDoctor || r.patientRefDoctor || 'Self';
-                if (!docStats[doc]) docStats[doc] = { count: 0, revenue: 0, info: docInfoMap[doc] || '' };
-                docStats[doc].count += 1;
-            });
-
-            const patientToDocMap: Record<string, string> = {};
-            if (patientsSnap.exists()) {
-                Object.entries(patientsSnap.val()).forEach(([key, p]: [string, any]) => {
-                    const doc = p.refDoctor || 'Self';
-                    patientToDocMap[key] = doc;
-                    if (p.patientId) patientToDocMap[p.patientId] = doc;
+            currInvoices.forEach((inv: any) => {
+                if (inv.items) inv.items.forEach((item: any) => {
+                    const cat = templateMap[item.name] || 'Others';
+                    catRevenue[cat] = (catRevenue[cat] || 0) + (parseFloat(item.amount) || 0);
                 });
-            }
-
-            invoices.forEach((inv: any) => {
-                const doc = patientToDocMap[inv.patientId] || 'Self';
-                if (!docStats[doc]) docStats[doc] = { count: 0, revenue: 0, info: docInfoMap[doc] || '' };
-                docStats[doc].revenue += (parseFloat(inv.total) || 0);
+            });
+            currReports.forEach((r: any) => {
+                const name = r.testName || 'Unknown';
+                testVol[name] = (testVol[name] || 0) + 1;
             });
 
-            setTopDoctorsData(Object.entries(docStats).map(([name, s]) => ({ name, ...s })).sort((a, b) => b.revenue - a.revenue));
+            const topCategories = Object.entries(catRevenue).sort(([, a], [, b]) => b - a).slice(0, 5);
+            setCategoryData({
+                labels: topCategories.map(([cat]) => cat),
+                datasets: [{ label: 'Revenue', data: topCategories.map(([, v]) => v), backgroundColor: '#6366f1', borderRadius: 4, barThickness: 12 }]
+            });
 
-            // Gender & Payment
+            const topTests = Object.entries(testVol).sort(([, a], [, b]) => b - a).slice(0, 5);
+            setTestVolumeData({
+                labels: topTests.map(([name]) => name),
+                datasets: [{ data: topTests.map(([, v]) => v), backgroundColor: ['#6366f1', '#a855f7', '#ec4899', '#f97316', '#22c55e'], borderWidth: 0 }]
+            });
+            setTopTestsData(topTests.map(([name, count]) => ({ name, count })));
+
+            // Demographics & Payment
             const gStats = { Male: 0, Female: 0, Other: 0 };
+            const pStats: Record<string, number> = {};
             patients.forEach((p: any) => {
-                const g = (p as any).gender || 'Other';
+                const g = p.gender || 'Other';
                 if (g === 'Male') gStats.Male++; else if (g === 'Female') gStats.Female++; else gStats.Other++;
             });
-            setGenderStats(gStats);
-
-            const pStats: Record<string, number> = {};
             invoices.forEach((inv: any) => {
                 const mode = inv.paymentMode || 'Cash';
                 pStats[mode] = (pStats[mode] || 0) + (parseFloat(inv.total) || 0);
             });
+            setGenderStats(gStats);
             setPaymentStats(Object.entries(pStats).map(([name, value]) => ({ name, value })));
 
+            // TAT
+            const compSamples = samples.filter((s: any) => s.status === 'Completed' && s.completedAt && s.createdAt);
+            const totalTAT = compSamples.reduce((sum, s: any) => sum + (new Date(s.completedAt).getTime() - new Date(s.createdAt).getTime()), 0);
+            const avgTAT = compSamples.length > 0 ? (totalTAT / compSamples.length / (1000 * 3600)).toFixed(1) : 0;
+
             setMetrics({
-                revenue: { value: currRevenue, growth: calculateGrowth(currRevenue, prevRevenue) },
-                reports: { value: currReports.length, growth: calculateGrowth(currReports.length, prevReports.length) },
-                patients: { value: currPatients.length, growth: calculateGrowth(currPatients.length, prevPatients.length) },
-                avgTAT: { value: parseFloat(avgTATHours), unit: 'hrs' },
-                pending: samples.filter((s: any) => s.status !== 'Completed').length,
-                totalRevenue: invoices.reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0),
+                totalRevenue: { value: totalCurrRev, growth: calculateGrowth(totalCurrRev, totalPrevRev) },
+                labRevenue: { value: currLabRev, growth: calculateGrowth(currLabRev, prevLabRev) },
+                opdRevenue: { value: currOpdRev, growth: calculateGrowth(currOpdRev, prevOpdRev) },
+                totalPatients: { value: uniquePatientIds.size },
+                labVolume: currReports.length,
+                opdVolume: currOpd.length,
+                avgTAT: { value: Number(avgTAT), unit: 'hrs' },
                 outstanding: invoices.reduce((sum, inv) => sum + (parseFloat(inv.due) || 0), 0)
             });
+
             setLoading(false);
         } catch (error) {
             console.error(error);
@@ -345,265 +317,234 @@ export default function AnalyticsPage() {
         const isPos = growth > 0;
         return (
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isPos ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                <i className={`fas fa-caret-${isPos ? 'up' : 'down'} mr-0.5`}></i>
-                {Math.abs(growth)}%
+                {isPos ? '+' : ''}{growth}%
             </span>
         );
     };
 
-    if (loading) return <div className="h-screen flex items-center justify-center"><i className="fas fa-spinner fa-spin text-3xl text-indigo-600"></i></div>;
+    if (loading) return <div className="h-screen flex items-center justify-center bg-gray-50"><i className="fas fa-spinner fa-spin text-3xl text-indigo-600"></i></div>;
 
     return (
-        <div className="p-4 space-y-6 animate-in fade-in duration-500 pb-20 bg-gray-50/30">
-            {/* Header */}
-            <div className="flex justify-between items-end">
+        <div className="p-3 space-y-4 bg-gray-50/50 min-h-screen pb-10">
+            {/* Header - Compact */}
+            <div className="flex justify-between items-center bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
                 <div>
-                    <h1 className="text-2xl font-black text-gray-900 tracking-tight">Analytics Dashboard</h1>
-                    <p className="text-gray-500 text-xs font-semibold uppercase tracking-widest mt-1">Smart Lab Intelligence</p>
+                    <h1 className="text-lg font-black text-gray-900 leading-none">Intelligence Dashboard</h1>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">Cross-Module Analytics</p>
                 </div>
-                <div className="flex bg-white p-1 rounded-xl shadow-sm border border-gray-100">
+                <div className="flex bg-gray-100 p-1 rounded-xl">
                     {(['today', 'week', 'month'] as const).map((tf) => (
-                        <button key={tf} onClick={() => setTimeframe(tf)} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all capitalize ${timeframe === tf ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-400 hover:text-gray-600'}`}>{tf}</button>
+                        <button key={tf} onClick={() => setTimeframe(tf)} className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all capitalize ${timeframe === tf ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400'}`}>{tf}</button>
                     ))}
                 </div>
             </div>
 
-            {/* Row 1: Key Metrics */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-gradient-to-br from-emerald-50 to-green-50 p-4 rounded-3xl shadow-sm border border-emerald-100 relative overflow-hidden group hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-emerald-700 text-[10px] font-bold uppercase tracking-wider mb-1">Revenue ({timeframe})</p>
-                            <h3 className="text-2xl font-black text-emerald-900">₹{metrics.revenue.value.toLocaleString('en-IN')}</h3>
-                        </div>
-                        <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-green-500 text-white rounded-xl shadow-lg flex items-center justify-center flex-shrink-0">
-                            <span className="text-2xl font-black">₹</span>
-                        </div>
-                    </div>
-                    {metrics.revenue.growth !== 0 && (
-                        <div className="absolute top-2 right-2">
-                            {renderGrowth(metrics.revenue.growth)}
-                        </div>
-                    )}
-                </div>
-                <div className="bg-gradient-to-br from-sky-50 to-blue-50 p-4 rounded-3xl shadow-sm border border-sky-100 relative overflow-hidden group hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sky-700 text-[10px] font-bold uppercase tracking-wider mb-1">Reports ({timeframe})</p>
-                            <h3 className="text-2xl font-black text-sky-900">{metrics.reports.value}</h3>
-                        </div>
-                        <div className="w-12 h-12 bg-gradient-to-br from-sky-400 to-blue-500 text-white rounded-xl shadow-lg flex items-center justify-center flex-shrink-0">
-                            <i className="fas fa-file-medical-alt text-lg"></i>
-                        </div>
-                    </div>
-                    {metrics.reports.growth !== 0 && (
-                        <div className="absolute top-2 right-2">
-                            {renderGrowth(metrics.reports.growth)}
-                        </div>
-                    )}
-                </div>
-                <div className="bg-gradient-to-br from-purple-50 to-violet-50 p-4 rounded-3xl shadow-sm border border-purple-100 relative overflow-hidden group hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-purple-700 text-[10px] font-bold uppercase tracking-wider mb-1">New Patients</p>
-                            <h3 className="text-2xl font-black text-purple-900">{metrics.patients.value}</h3>
-                        </div>
-                        <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-violet-500 text-white rounded-xl shadow-lg flex items-center justify-center flex-shrink-0">
-                            <i className="fas fa-users text-lg"></i>
-                        </div>
-                    </div>
-                    {metrics.patients.growth !== 0 && (
-                        <div className="absolute top-2 right-2">
-                            {renderGrowth(metrics.patients.growth)}
-                        </div>
-                    )}
-                </div>
-                <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-4 rounded-3xl shadow-sm border border-amber-100 relative overflow-hidden group hover:shadow-md transition-shadow">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-amber-700 text-[10px] font-bold uppercase tracking-wider mb-1">Avg TAT</p>
-                            <h3 className="text-2xl font-black text-amber-900">{metrics.avgTAT.value} <span className="text-xs font-medium text-amber-600 uppercase">{metrics.avgTAT.unit}</span></h3>
-                        </div>
-                        <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-orange-500 text-white rounded-xl shadow-lg flex items-center justify-center flex-shrink-0">
-                            <i className="fas fa-bolt text-lg"></i>
-                        </div>
-                    </div>
-                    <div className="absolute top-2 right-2">
-                        <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">Speed</span>
-                    </div>
-                </div>
+            {/* Metrics Grid - Compact Row */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <MetricCard title="Total Revenue" value={`₹${metrics.totalRevenue.value.toLocaleString()}`} growth={metrics.totalRevenue.growth} icon="fas fa-coins" color="emerald" />
+                <MetricCard title="Lab Revenue" value={`₹${metrics.labRevenue.value.toLocaleString()}`} growth={metrics.labRevenue.growth} icon="fas fa-microscope" color="sky" />
+                <MetricCard title="OPD Revenue" value={`₹${metrics.opdRevenue.value.toLocaleString()}`} growth={metrics.opdRevenue.growth} icon="fas fa-user-md" color="indigo" />
+                <MetricCard title="Total Patients" value={metrics.totalPatients.value.toString()} icon="fas fa-users" color="purple" hideGrowth />
             </div>
 
-            {/* Row 2: Trend & Insights (Gender/Payment) */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Growth Trend */}
-                <div className="bg-gradient-to-br from-pink-50 to-rose-50 p-6 rounded-[2.5rem] shadow-sm border border-pink-100">
-                    <div className="flex justify-between items-center mb-6 px-2">
-                        <h3 className="font-black text-gray-900 text-sm uppercase tracking-tight">Growth Trend</h3>
-                        <div className="flex gap-4">
-                            <div className="flex items-center gap-1.5 text-[9px] font-bold text-gray-400 uppercase"><div className="w-2 h-2 rounded-full bg-green-500"></div> Rev</div>
-                            <div className="flex items-center gap-1.5 text-[9px] font-bold text-gray-400 uppercase"><div className="w-2 h-2 rounded-full border border-blue-500"></div> Vol</div>
+
+            {/* Main Content Grid */}
+            <div className="grid grid-cols-12 gap-4">
+                {/* Unified Growth Trend - Large */}
+                <div className="col-span-12 lg:col-span-8 bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-xs font-black uppercase tracking-tight text-gray-400">Revenue & Visit Trends</h3>
+                        <div className="flex gap-3 text-[9px] font-black uppercase">
+                            <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500" /> Lab</span>
+                            <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-indigo-500" /> OPD</span>
                         </div>
                     </div>
-                    <div className="h-[224px]">
-                        {trendData && <Line data={trendData} options={{
-                            maintainAspectRatio: false, scales: {
-                                y: { display: false }, y1: { display: false },
-                                x: { grid: { display: false }, ticks: { font: { size: 9, weight: 'bold' }, color: '#9ca3af' } }
-                            }, plugins: { legend: { display: false }, tooltip: { cornerRadius: 10, padding: 12 } }
-                        }} />}
+                    <div className="h-[220px]">
+                        {trendData && <Line data={trendData} options={chartOptions} />}
                     </div>
                 </div>
 
-                {/* Patient & Payment Split */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Patient Gender Distribution */}
-                    <div className="bg-gradient-to-br from-blue-50 to-cyan-50 p-6 rounded-[2.5rem] shadow-sm border border-blue-100 flex flex-col justify-between">
+                {/* Patient Demographics & Age - Compact */}
+                <div className="col-span-12 lg:col-span-4 bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col justify-between">
+                    <div className="space-y-6">
                         <div>
-                            <h3 className="font-black text-gray-900 text-[10px] uppercase tracking-widest mb-4">Patient Profiles</h3>
+                            <h3 className="text-xs font-black uppercase tracking-tight text-gray-400 mb-4">Gender Distribution</h3>
                             <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2"><i className="fas fa-mars text-blue-500 text-xs"></i> <span className="text-[10px] font-bold text-gray-500 uppercase">Male</span></div>
-                                    <span className="text-xs font-black text-gray-900">{genderStats.Male}</span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2"><i className="fas fa-venus text-pink-500 text-xs"></i> <span className="text-[10px] font-bold text-gray-500 uppercase">Female</span></div>
-                                    <span className="text-xs font-black text-gray-900">{genderStats.Female}</span>
-                                </div>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2"><i className="fas fa-genderless text-indigo-500 text-xs"></i> <span className="text-[10px] font-bold text-gray-500 uppercase">Other</span></div>
-                                    <span className="text-xs font-black text-gray-900">{genderStats.Other}</span>
-                                </div>
+                                <DemoRow label="Male" value={genderStats.Male} total={genderStats.Male + genderStats.Female + genderStats.Other} color="bg-blue-500" />
+                                <DemoRow label="Female" value={genderStats.Female} total={genderStats.Male + genderStats.Female + genderStats.Other} color="bg-pink-500" />
                             </div>
                         </div>
-                        <div className="mt-4">
-                            <div className="w-full h-1.5 bg-gray-100 rounded-full flex overflow-hidden">
-                                <div className="h-full bg-blue-500" style={{ width: `${(genderStats.Male / (genderStats.Male + genderStats.Female + genderStats.Other || 1)) * 100}%` }}></div>
-                                <div className="h-full bg-pink-500" style={{ width: `${(genderStats.Female / (genderStats.Male + genderStats.Female + genderStats.Other || 1)) * 100}%` }}></div>
-                                <div className="h-full bg-indigo-500" style={{ width: `${(genderStats.Other / (genderStats.Male + genderStats.Female + genderStats.Other || 1)) * 100}%` }}></div>
-                            </div>
-                            <p className="text-[8px] font-bold text-gray-400 mt-2 uppercase text-center">{(genderStats.Male + genderStats.Female + genderStats.Other)} Total</p>
-                        </div>
-                    </div>
-
-                    {/* Payment Accuracy */}
-                    <div className="bg-gradient-to-br from-purple-50 to-fuchsia-50 p-6 rounded-[2.5rem] shadow-sm border border-purple-100 flex flex-col justify-between">
                         <div>
-                            <h3 className="font-black text-gray-900 text-[10px] uppercase tracking-widest mb-4">Payment Modes</h3>
-                            <div className="space-y-3 text-[10px]">
-                                {paymentStats.slice(0, 3).map((p, i) => (
-                                    <div key={i} className="flex flex-col gap-1">
-                                        <div className="flex justify-between font-bold text-gray-500"><span className="uppercase text-[9px]">{p.name}</span> <span>₹{p.value.toLocaleString()}</span></div>
-                                        <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
-                                            <div className="h-full bg-indigo-500" style={{ width: `${(p.value / (metrics.totalRevenue || 1)) * 100}%` }}></div>
-                                        </div>
+                            <h3 className="text-xs font-black uppercase tracking-tight text-gray-400 mb-4">Age Groups</h3>
+                            <div className="h-[100px]">
+                                {ageGroupData && <Bar data={ageGroupData} options={barOptions} />}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
+
+                        <div>
+                            <p className="text-[10px] font-black text-gray-400 uppercase">Avg TAT</p>
+                            <p className="text-lg font-black text-indigo-600">{metrics.avgTAT.value} hrs</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="text-[10px] font-black text-gray-400 uppercase">Outstanding</p>
+                            <p className="text-lg font-black text-rose-500">₹{metrics.outstanding.toLocaleString()}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* OPD Insights */}
+                <div className="col-span-12 lg:col-span-4 bg-gradient-to-br from-indigo-50/50 to-white p-5 rounded-[2rem] shadow-sm border border-indigo-100">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-6 flex items-center gap-2">
+                        <i className="fas fa-stethoscope text-xs" /> OPD Clinical Insights
+                    </h3>
+                    <div className="flex gap-4">
+                        <div className="w-1/2 h-[140px] relative">
+                            {opdStatusData && <Doughnut data={opdStatusData} options={{ cutout: '70%', plugins: { legend: { display: false } }, maintainAspectRatio: false }} />}
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                <div className="flex flex-col items-center">
+                                    <p className="text-lg font-black text-indigo-900 leading-none">{metrics.opdVolume}</p>
+                                    <p className="text-[8px] font-bold text-indigo-400 uppercase">Visits</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="w-1/2 flex flex-col justify-between">
+                            <div className="space-y-1.5">
+                                {physicianPerformance.slice(0, 2).map((p, i) => (
+                                    <div key={i} className="bg-white p-2 rounded-xl shadow-sm border border-indigo-50">
+                                        <p className="text-[9px] font-black truncate">{p.name}</p>
+                                        <p className="text-[10px] font-black text-emerald-600 leading-none mt-1">₹{(p.revenue / 1000).toFixed(1)}k</p>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="bg-white p-2 rounded-xl shadow-sm border border-red-50 flex items-center justify-between">
+                                <span className="text-[9px] font-black text-red-600 uppercase tracking-tighter">Emergency</span>
+                                <div className="h-6 w-6">
+                                    {clinicalLoadData && <Doughnut data={clinicalLoadData} options={{ cutout: '60%', plugins: { legend: { display: false } }, maintainAspectRatio: false }} />}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                {/* Lab Insights */}
+                <div className="col-span-12 lg:col-span-5 bg-gradient-to-br from-emerald-50/50 to-white p-5 rounded-[2rem] shadow-sm border border-emerald-100">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-6 flex items-center gap-2">
+                        <i className="fas fa-microscope text-xs" /> Lab Diagnostic Insights
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <h4 className="text-[9px] font-black text-gray-400 uppercase mb-3 text-center">Revenue by Dept</h4>
+                            <div className="h-[120px]">
+                                {categoryData && <Bar data={categoryData} options={barOptions} />}
+                            </div>
+                        </div>
+                        <div>
+                            <h4 className="text-[9px] font-black text-gray-400 uppercase mb-3 text-center">Top Tests</h4>
+                            <div className="space-y-1.5">
+                                {topTestsData.map((t, i) => (
+                                    <div key={i} className="flex items-center justify-between gap-2 p-1.5 bg-white rounded-lg border border-emerald-50">
+                                        <span className="text-[9px] font-bold text-gray-600 truncate flex-1">{t.name}</span>
+                                        <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">{t.count}</span>
                                     </div>
                                 ))}
                             </div>
                         </div>
-                        <div className="bg-indigo-600 rounded-2xl p-2.5 text-white flex items-center gap-2 mt-4">
-                            <i className="fas fa-chart-line text-xs"></i>
-                            <div>
-                                <p className="text-[7px] font-black opacity-70 uppercase tracking-tighter">Efficiency</p>
-                                <p className="text-xs font-black">₹{(metrics.totalRevenue / (metrics.reports.value || 1)).toFixed(0)}/pt</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Row 3: Test Analysis */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Popularity (Visual) */}
-                <div className="bg-gradient-to-br from-rose-50 to-pink-50 p-6 rounded-[2.5rem] shadow-sm border border-rose-100 flex flex-col">
-                    <h3 className="font-black text-gray-900 text-md uppercase tracking-tight mb-6">Test Popularity (Volume)</h3>
-                    <div className="flex-1 relative h-[200px]">
-                        <div className="absolute inset-0">
-                            {topTestsChartData && <Doughnut data={topTestsChartData} options={{ maintainAspectRatio: false, cutout: '60%', plugins: { legend: { display: false } } }} />}
-                        </div>
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="space-y-2 bg-white/95 backdrop-blur-sm rounded-2xl p-4 shadow-sm">
-                                {topTestsData.slice(0, 5).map((t, i) => (
-                                    <div key={i} className="flex justify-between items-center gap-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: topTestsChartData?.datasets[0].backgroundColor[i] }}></div>
-                                            <span className="text-[10px] font-bold text-gray-600 truncate max-w-[80px]">{t.name}</span>
-                                        </div>
-                                        <span className="text-xs font-black text-gray-900">{t.count}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
                     </div>
                 </div>
 
-                {/* Profitability (Financial) */}
-                <div className="bg-gradient-to-br from-teal-50 to-cyan-50 p-6 rounded-[2.5rem] shadow-sm border border-teal-100">
-                    <h3 className="font-black text-gray-900 text-md uppercase tracking-tight mb-6">Top Revenue Generators</h3>
-                    <div className="space-y-2">
-                        {topRevenueTests.slice((revenuePage - 1) * revenuePerPage, revenuePage * revenuePerPage).map((t, i) => (
-                            <div key={i} className="flex items-center justify-between p-2 bg-gray-50 rounded-2xl border border-gray-100 hover:scale-[1.02] transition-transform">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-xl bg-green-500 text-white flex items-center justify-center font-black text-xs">#{(revenuePage - 1) * revenuePerPage + i + 1}</div>
-                                    <span className="text-xs font-bold text-gray-800">{t.name}</span>
+                {/* Payment Breakdown */}
+                <div className="col-span-12 lg:col-span-3 bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col justify-between">
+                    <h3 className="text-xs font-black uppercase tracking-tight text-gray-400 mb-4">Settlements</h3>
+                    <div className="space-y-4">
+                        {paymentStats.map((p, i) => (
+                            <div key={i}>
+                                <div className="flex justify-between text-[10px] font-black uppercase text-gray-500 mb-1">
+                                    <span>{p.name}</span>
+                                    <span>₹{p.value.toLocaleString()}</span>
                                 </div>
-                                <span className="text-sm font-black text-green-600">₹{t.revenue.toLocaleString('en-IN')}</span>
-                            </div>
-                        ))}
-                    </div>
-                    {topRevenueTests.length > revenuePerPage && (
-                        <div className="flex gap-2 mt-6 pt-4 border-t border-gray-50 justify-end">
-                            <button onClick={() => setRevenuePage(p => Math.max(1, p - 1))} disabled={revenuePage === 1} className="w-8 h-8 rounded-xl border border-gray-200 flex items-center justify-center text-xs disabled:opacity-30"><i className="fas fa-chevron-left"></i></button>
-                            <button onClick={() => setRevenuePage(p => Math.min(Math.ceil(topRevenueTests.length / revenuePerPage), p + 1))} disabled={revenuePage >= Math.ceil(topRevenueTests.length / revenuePerPage)} className="w-8 h-8 rounded-xl border border-gray-200 flex items-center justify-center text-xs disabled:opacity-30"><i className="fas fa-chevron-right"></i></button>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Row 4: Doctors & Insights */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Department Performance */}
-                <div className="bg-gradient-to-br from-indigo-100 to-blue-100 p-6 rounded-[2.5rem] shadow-sm border border-indigo-200">
-                    <h3 className="font-black text-gray-900 text-md uppercase tracking-tight mb-6 px-2">Dept Revenue (₹)</h3>
-                    <div className="h-[240px]">
-                        {categoryData && <Bar data={categoryData} options={{
-                            maintainAspectRatio: false, scales: {
-                                y: { display: false },
-                                x: { grid: { display: false }, ticks: { font: { size: 10, weight: 'bold' }, color: '#9ca3af' } }
-                            }, plugins: { legend: { display: false } }
-                        }} />}
-                    </div>
-                </div>
-
-                {/* Paginated Doctors */}
-                <div className="bg-gradient-to-br from-violet-100 to-purple-100 p-6 rounded-[2.5rem] shadow-sm border border-violet-200">
-                    <h3 className="font-black text-gray-900 text-md uppercase tracking-tight mb-6">Top Referring Doctors</h3>
-                    <div className="space-y-3">
-                        {topDoctorsData.slice((doctorPage - 1) * docsPerPage, doctorPage * docsPerPage).map((doc, i) => (
-                            <div key={i} className="flex items-center justify-between p-2 rounded-2xl hover:bg-gray-50 transition-colors">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center text-[10px] font-black text-gray-400">#{(doctorPage - 1) * docsPerPage + i + 1}</div>
-                                    <div>
-                                        <p className="text-xs font-black text-gray-800">{doc.name}</p>
-                                        <p className="text-[10px] font-bold text-gray-400 uppercase">{doc.info || 'Professional'}</p>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-xs font-black text-indigo-600">₹{doc.revenue.toLocaleString('en-IN')}</p>
-                                    <p className="text-[9px] font-bold text-gray-400 uppercase">{doc.count} Referrals</p>
+                                <div className="w-full h-1 bg-gray-50 rounded-full overflow-hidden">
+                                    <div className="h-full bg-slate-800" style={{ width: `${(p.value / (metrics.totalRevenue.value || 1)) * 100}%` }} />
                                 </div>
                             </div>
                         ))}
                     </div>
-                    {topDoctorsData.length > docsPerPage && (
-                        <div className="flex gap-2 mt-6 pt-4 border-t border-gray-50 justify-end">
-                            <button onClick={() => setDoctorPage(p => Math.max(1, p - 1))} disabled={doctorPage === 1} className="w-8 h-8 rounded-xl border border-gray-200 flex items-center justify-center text-xs disabled:opacity-30"><i className="fas fa-chevron-left"></i></button>
-                            <button onClick={() => setDoctorPage(p => Math.min(Math.ceil(topDoctorsData.length / docsPerPage), p + 1))} disabled={doctorPage >= Math.ceil(topDoctorsData.length / docsPerPage)} className="w-8 h-8 rounded-xl border border-gray-200 flex items-center justify-center text-xs disabled:opacity-30"><i className="fas fa-chevron-right"></i></button>
-                        </div>
-                    )}
+                    <div className="mt-4 bg-indigo-600 p-3 rounded-2xl text-white">
+                        <p className="text-[8px] font-black opacity-70 uppercase">Financial Efficiency</p>
+                        <p className="text-xl font-black">₹{(metrics.totalRevenue.value / (metrics.totalPatients.value || 1)).toFixed(0)} <span className="text-xs font-bold opacity-60">/ PATIENT</span></p>
+                    </div>
                 </div>
-
             </div>
         </div>
     );
 }
+
+// Helper Components
+function MetricCard({ title, value, growth, icon, color, hideGrowth = false }: any) {
+    const colors: any = {
+        emerald: 'from-emerald-50 to-green-50 text-emerald-700 bg-emerald-500 border-emerald-100',
+        sky: 'from-sky-50 to-blue-50 text-sky-700 bg-sky-500 border-sky-100',
+        indigo: 'from-indigo-50 to-violet-50 text-indigo-700 bg-indigo-500 border-indigo-100',
+        purple: 'from-purple-50 to-fuchsia-50 text-purple-700 bg-purple-500 border-purple-100',
+    };
+
+    return (
+        <div className={`bg-gradient-to-br ${colors[color].split(' text-')[0]} p-3 rounded-2xl shadow-sm border ${colors[color].split(' border-')[1]} relative overflow-hidden group`}>
+            <div className="flex justify-between items-start">
+                <div>
+                    <p className={`text-[9px] font-black uppercase tracking-tight mb-1 ${colors[color].split(' text-')[1].split(' bg-')[0]} opacity-70`}>{title}</p>
+                    <h3 className="text-xl font-black text-gray-900">{value}</h3>
+                </div>
+                <div className={`w-8 h-8 bg-white/60 backdrop-blur-sm rounded-xl shadow-sm flex items-center justify-center ${colors[color].split(' text-')[1].split(' bg-')[0]} shrink-0 border border-white/50`}>
+                    {icon.length > 3 ? <i className={icon} /> : <span className="text-sm font-black">{icon}</span>}
+                </div>
+            </div>
+            {!hideGrowth && growth !== undefined && (
+
+                <div className="mt-2">
+                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-lg ${growth >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                        <i className={`fas fa-caret-${growth >= 0 ? 'up' : 'down'} mr-0.5`} />
+                        {Math.abs(growth)}%
+                    </span>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function DemoRow({ label, value, total, color }: any) {
+    const pct = total > 0 ? (value / total) * 100 : 0;
+    return (
+        <div>
+            <div className="flex justify-between text-[10px] font-black uppercase text-gray-400 mb-1">
+                <span>{label}</span>
+                <span className="text-gray-900">{value}</span>
+            </div>
+            <div className="w-full h-1 bg-gray-50 rounded-full overflow-hidden">
+                <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
+            </div>
+        </div>
+    );
+}
+
+// Chart Options
+const chartOptions: any = {
+    maintainAspectRatio: false,
+    scales: {
+        y: { display: false },
+        y1: { display: false, position: 'right' },
+        x: { grid: { display: false }, ticks: { font: { size: 9, weight: 'bold' }, color: '#9ca3af' } }
+    },
+    plugins: { legend: { display: false }, tooltip: { cornerRadius: 8, padding: 10, titleFont: { size: 10 }, bodyFont: { size: 10 } } }
+};
+
+const barOptions: any = {
+    maintainAspectRatio: false,
+    scales: {
+        y: { display: false },
+        x: { grid: { display: false }, ticks: { font: { size: 8, weight: 'bold' }, color: '#9ca3af' } }
+    },
+    plugins: { legend: { display: false } }
+};
