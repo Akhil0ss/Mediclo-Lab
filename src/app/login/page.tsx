@@ -75,7 +75,7 @@ export default function LoginPage() {
             // --- SELF-HEALING INDEX END ---
 
             localStorage.setItem('authMethod', 'google');
-            router.push('/dashboard');
+            window.location.href = '/dashboard';
         } catch (err: any) {
             setError(err.message || 'Google login failed');
         } finally {
@@ -145,7 +145,7 @@ export default function LoginPage() {
                 localStorage.setItem('ownerId', user.ownerId || '');
                 localStorage.setItem('sessionId', firebaseUid);
 
-                router.push('/dashboard');
+                window.location.href = '/dashboard';
                 return;
             } else if (isSignup) {
                 // Sign Up (Owner Only)
@@ -162,7 +162,7 @@ export default function LoginPage() {
                 await logAudit(user.uid, 'SIGNUP', 'New user registered', user.email || user.uid);
 
                 localStorage.setItem('authMethod', 'email');
-                router.push('/dashboard');
+                window.location.href = '/dashboard';
             } else {
                 // Sign In Owner via Normal Email
                 const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -190,7 +190,7 @@ export default function LoginPage() {
                 // --- SELF-HEALING INDEX END ---
 
                 localStorage.setItem('authMethod', 'email');
-                router.push('/dashboard');
+                window.location.href = '/dashboard';
             }
         } catch (err: any) {
             console.error('Auth error:', err);
