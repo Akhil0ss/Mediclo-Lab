@@ -5,7 +5,7 @@ import { ref, onValue, push, get, update } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import Modal from './Modal';
 import { useToast } from '@/contexts/ToastContext';
-import { generateOpdId } from '@/lib/idGenerator';
+import { generateOpdId, generateRxId } from '@/lib/idGenerator';
 import { getBrandingData } from '@/lib/dataUtils';
 
 interface QuickOPDModalProps {
@@ -96,7 +96,7 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
                 data.push({ id: child.key, ...child.val() });
             });
             // Sort by most recently added or name
-            setPatients(data.sort((a,b) => a.name?.localeCompare(b.name)));
+            setPatients(data.sort((a,b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
         });
 
         // Fetch Doctors
@@ -105,11 +105,13 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
             const data: any[] = [];
             snapshot.forEach((child) => {
                 const val = child.val();
-                if (val.role === 'doctor') {
+                if (val.role === 'doctor' || val.role === 'dr-staff') {
                     data.push({ id: child.key, ...val });
                 }
             });
             setDoctors(data);
+        }, (error) => {
+            console.error("Error fetching staff:", error);
         });
 
         // Fetch Branding for Clinic Name
@@ -177,23 +179,37 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
 
                 const visitDate = today;
                 const opdId = await generateOpdId(ownerId, labName);
+                const rxId = await generateRxId(ownerId, labName);
 
                 const visitData = {
                     ...form,
                     opdId,
+                    rxId,
                     status: 'pending',
                     visitDate,
                     token: tokenCount,
                     createdAt: new Date().toISOString()
                 };
 
-                await push(ref(database, `opd/${ownerId}`), visitData);
+                const newVisitRef = await push(ref(database, `opd/${ownerId}`), visitData);
+                const visitKey = newVisitRef.key;
+
+                // BINDING: Update patient_records index
+                await update(ref(database, `patient_records/${ownerId}/${form.patientId}/visits/${visitKey}`), {
+                    opdId,
+                    rxId,
+                    date: visitDate,
+                    token: tokenCount,
+                    status: 'pending'
+                });
+
                 showToast(`OPD Created: ${opdId} (Token #${tokenCount})`, 'success');
             }
             
             onClose();
-        } catch (error) {
-            showToast(editData?.id ? 'Update failed' : 'Registration failed', 'error');
+        } catch (error: any) {
+            console.error('OPD Registration Error:', error);
+            showToast(editData?.id ? `Update failed: ${error.message}` : `Registration failed: ${error.message}`, 'error');
         } finally {
             setIsSaving(false);
         }

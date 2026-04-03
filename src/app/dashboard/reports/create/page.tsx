@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ref, onValue, push, get, update, set } from 'firebase/database';
 import { database } from '@/lib/firebase';
-import { generateReportId } from '@/lib/idGenerator';
+import { generateReportId, generateInvoiceId } from '@/lib/idGenerator';
 import { calculateBilling } from '@/lib/billingCalculator';
 import { createReportReadyNotification } from '@/lib/notificationManager';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -259,6 +259,7 @@ export default function CreateReportPage() {
             
             // Wait for ID generation
             const reportId = await generateReportId(dataSourceId, userProfile?.labName || 'CLINIC');
+            const invId = await generateInvoiceId(dataSourceId, userProfile?.labName || 'CLINIC');
             
             if (!reportId) {
                 throw new Error('Could not generate a valid Report ID. Please check your connectivity.');
@@ -337,14 +338,23 @@ export default function CreateReportPage() {
                 labName: userProfile.labName || 'Clinic'
             };
 
-            await push(ref(database, `reports/${dataSourceId}`), reportData);
+            const newReportRef = await push(ref(database, `reports/${dataSourceId}`), reportData);
+            const reportKey = newReportRef.key;
+
+            // BINDING: Update patient_records index
+            await update(ref(database, `patient_records/${dataSourceId}/${patient.id}/reports/${reportKey}`), {
+                reportId,
+                testName: template.name,
+                date: reportData.reportDate,
+                status: 'Completed'
+            });
 
             // ---------------------------------------------------------
             // AUTO-INVOICE GENERATION on Report Generation
             // ---------------------------------------------------------
             try {
                 const today = new Date().toISOString().split('T')[0];
-                const invoiceKey = `inv_${patient.id}_${today}`;
+                const invoiceKey = invId; // Use standardized ID as key
                 const invRef = ref(database, `invoices/${dataSourceId}/${invoiceKey}`);
                 const invSnapshot = await get(invRef);
                 
@@ -379,12 +389,11 @@ export default function CreateReportPage() {
                         updatedAt: new Date().toISOString()
                     });
                 } else {
-                    const invNum = `INV-${Math.floor(Date.now() / 1000) % 10000}`;
                     const b = calculateBilling(newItemsToAdd, 0, 0, 0);
                     
                     const invData = {
-                        invoiceId: invoiceKey,
-                        invoiceNumber: invNum,
+                        invoiceId: invId,
+                        invoiceNumber: invId,
                         patientId: patient.id,
                         patientName: patient.name,
                         ...b,
@@ -396,6 +405,14 @@ export default function CreateReportPage() {
                         createdBy: user.uid
                     };
                     await set(invRef, invData);
+
+                    // BINDING: Update patient_records index for invoice
+                    await update(ref(database, `patient_records/${dataSourceId}/${patient.id}/invoices/${invoiceKey}`), {
+                        invoiceId: invId,
+                        date: today,
+                        total: b.total,
+                        status: 'pending'
+                    });
                 }
             } catch (invErr) {
                 console.error("Auto Invoice Error:", invErr);

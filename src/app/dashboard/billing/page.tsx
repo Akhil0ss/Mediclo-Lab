@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { calculateBilling, createBillingItem, formatCurrency, generateInvoiceNumber } from '@/lib/billingCalculator';
-import { ref, push, onValue, get } from 'firebase/database';
+import { calculateBilling, createBillingItem, formatCurrency } from '@/lib/billingCalculator';
+import { ref, push, onValue, get, update } from 'firebase/database';
 import { database } from '@/lib/firebase';
-import { defaultTemplates } from '@/lib/defaultTemplates';
+import { generateInvoiceId } from '@/lib/idGenerator';
 import { mergeTemplates } from '@/lib/templateUtils';
+import { getBrandingData } from '@/lib/dataUtils';
 
 export default function BillingPage() {
     const { user, userProfile } = useAuth();
@@ -24,10 +25,17 @@ export default function BillingPage() {
     const [templates, setTemplates] = useState<any[]>([]);
     const [testSearch, setTestSearch] = useState('');
     const [autoLabEntry, setAutoLabEntry] = useState(true);
+    const [labName, setLabName] = useState('CLINIC');
 
     useEffect(() => {
-        if (!user) return;
-        const dataSourceId = user.uid; // Simple owner fallback
+        if (!user || !userProfile) return;
+        const dataSourceId = userProfile.ownerId || user.uid;
+
+        // Fetch Branding for Clinic Name
+        getBrandingData(dataSourceId, { ownerId: dataSourceId }).then(data => {
+            if (data?.labName) setLabName(data.labName);
+        });
+
         const templatesRef = ref(database, `templates/${dataSourceId}`);
         const commonTemplatesRef = ref(database, 'common_templates');
 
@@ -90,9 +98,10 @@ export default function BillingPage() {
         const ownerId = userProfile?.ownerId || user?.uid;
         if (!ownerId || !patientId) return;
 
-        const invoiceNumber = generateInvoiceNumber('INV', Date.now());
+        const invoiceNumber = await generateInvoiceId(ownerId, labName);
         const invoiceData = {
-            invoiceNumber,
+            invoiceId: invoiceNumber,
+            invoiceNumber: invoiceNumber,
             patientId,
             patientName,
             ...billing,
@@ -101,7 +110,16 @@ export default function BillingPage() {
             createdBy: user.uid
         };
 
-        await push(ref(database, `invoices/${ownerId}`), invoiceData);
+        const newInvRef = await push(ref(database, `invoices/${ownerId}`), invoiceData);
+        const invKey = newInvRef.key;
+
+        // BINDING: Update patient_records index
+        await update(ref(database, `patient_records/${ownerId}/${patientId}/invoices/${invKey}`), {
+            invoiceId: invoiceNumber,
+            date: new Date().toISOString().split('T')[0],
+            total: billing.total,
+            status: 'pending'
+        });
 
         // Auto-generate Lab Worklist Entry if enabled
         if (autoLabEntry) {

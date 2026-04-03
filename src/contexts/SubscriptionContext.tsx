@@ -38,17 +38,23 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         const init = async () => {
             const ownerId = userProfile.ownerId || user.uid;
             let isAppOwner = false;
-
-            // 1. Check if CURRENT user is the App Owner
-            if (user.email === 'wdbyakt@gmail.com' ||
-                (userProfile?.role as string) === 'admin' ||
-                user.uid === 'Lswb0erMZFUvbBCFfRXrwPwaPW93' // Hardcoded App Owner UID
-            ) {
-                isAppOwner = true;
+            
+            // 0. SKIP ADMIN CHECK FOR PATIENTS (Prevents Permission Denied)
+            const isPatient = (userProfile?.role as string) === 'patient';
+            if (isPatient) {
+                console.log('💊 SubscriptionContext: Patient context - skipping admin check');
+            } else {
+                // 1. Check if CURRENT user is the App Owner
+                if (user.email === 'wdbyakt@gmail.com' ||
+                    (userProfile?.role as string) === 'admin' ||
+                    user.uid === 'Lswb0erMZFUvbBCFfRXrwPwaPW93' // Hardcoded App Owner UID
+                ) {
+                    isAppOwner = true;
+                }
             }
 
             // 2. If Staff, check if their OWNER is the App Owner
-            if (!isAppOwner && userProfile.ownerId) {
+            if (!isAppOwner && !isPatient && userProfile.ownerId) {
                 // Check against Hardcoded App Owner UID
                 if (userProfile.ownerId === 'Lswb0erMZFUvbBCFfRXrwPwaPW93') {
                     console.log('✅ Staff of App Owner detected (UID Match)');

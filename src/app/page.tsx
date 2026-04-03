@@ -48,9 +48,14 @@ export default function HomePage() {
                 <i className="fas fa-th-large mr-2"></i>Dashboard
               </Link>
             ) : (
-              <Link href="/login" className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-full font-bold shadow-md transition no-underline flex items-center text-sm">
-                <i className="fas fa-user-md mr-2"></i>Dashboard Login
-              </Link>
+              <div className="flex items-center gap-3">
+                <Link href="/portal/login" className="bg-blue-50 hover:bg-blue-100 text-blue-600 px-5 py-2.5 rounded-full font-bold shadow-sm transition no-underline flex items-center text-sm border border-blue-200">
+                  <i className="fas fa-user-circle mr-2"></i>Patient Login
+                </Link>
+                <Link href="/login" className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-full font-bold shadow-md transition no-underline flex items-center text-sm">
+                  <i className="fas fa-user-md mr-2"></i>Dashboard Login
+                </Link>
+              </div>
             )}
           </div>
 
@@ -78,9 +83,14 @@ export default function HomePage() {
                   <i className="fas fa-th-large mr-2"></i>Dashboard
                 </Link>
               ) : (
-                <Link href="/login" className="bg-slate-900 text-white px-5 py-3 rounded-xl font-bold text-center flex items-center justify-center">
-                  <i className="fas fa-user-md mr-2"></i>Dashboard Login
-                </Link>
+                <div className="flex flex-col gap-3">
+                  <Link href="/portal/login" className="bg-blue-50 text-blue-600 px-5 py-3 rounded-xl font-bold text-center flex items-center justify-center border border-blue-200">
+                    <i className="fas fa-user-circle mr-2"></i>Patient Login
+                  </Link>
+                  <Link href="/login" className="bg-slate-900 text-white px-5 py-3 rounded-xl font-bold text-center flex items-center justify-center">
+                    <i className="fas fa-user-md mr-2"></i>Dashboard Login
+                  </Link>
+                </div>
               )}
             </div>
           )

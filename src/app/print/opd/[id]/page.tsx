@@ -26,7 +26,8 @@ export default function PrintOPDPage() {
                 let currentOwnerId = userProfile?.ownerId || user?.uid;
                 
                 if (!currentOwnerId && typeof window !== 'undefined') {
-                    currentOwnerId = localStorage.getItem('ownerId') || null;
+                    const urlParams = new URLSearchParams(window.location.search);
+                    currentOwnerId = urlParams.get('ownerId') || localStorage.getItem('ownerId') || localStorage.getItem('portal_owner_id') || null;
                 }
 
                 if (!currentOwnerId) {

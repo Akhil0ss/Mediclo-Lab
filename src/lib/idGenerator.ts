@@ -149,10 +149,37 @@ export async function generateRxId(ownerId: string, clinicName: string = 'CLINIC
     }
 }
 
+export async function generateInvoiceId(ownerId: string, clinicName: string = 'CLINIC', branchPrefix?: string): Promise<string> {
+    try {
+        const prefix = (branchPrefix || clinicName)
+            .replace(/[^A-Za-z0-9]/g, '')
+            .substring(0, 4)
+            .toUpperCase()
+            .padEnd(4, 'X');
+
+        const now = new Date();
+        const yy = String(now.getFullYear()).slice(-2);
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const yymm = `${yy}${mm}`;
+
+        const counterRef = ref(database, `counters/${ownerId}/invIds/${yymm}${dd}`);
+        const newCount = await runTransaction(counterRef, (currentCount) => {
+            return (currentCount || 0) + 1;
+        });
+
+        const sequence = String(newCount.snapshot.val()).padStart(2, '0');
+        return `${prefix}-${yymm}-${dd}${sequence}I`;
+    } catch (error) {
+        console.error('Error generating Invoice ID:', error);
+        return `I-${Date.now()}`;
+    }
+}
+
 /**
  * Helper to format ID from a specific date and sequence (for migration)
  */
-export function formatIdFromDate(labName: string, date: Date, sequence: number, type: 'P' | 'S' | 'R'): string {
+export function formatIdFromDate(labName: string, date: Date, sequence: number, type: 'P' | 'S' | 'R' | 'O' | 'X'): string {
     const prefix = labName
         .replace(/[^A-Za-z0-9]/g, '')
         .substring(0, 4)

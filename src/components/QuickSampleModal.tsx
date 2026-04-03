@@ -71,7 +71,7 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName }: 
         onValue(patientsRef, (snapshot) => {
             const data: any[] = [];
             snapshot.forEach(child => { data.push({ id: child.key, ...child.val() }); });
-            setPatients(data.sort((a,b) => a.name?.localeCompare(b.name)));
+            setPatients(data.sort((a,b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
         });
 
         // 2. Fetch Templates

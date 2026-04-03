@@ -66,7 +66,7 @@ export default function SettingsPage() {
     }, [user]);
 
     // UI State
-    const [settingsTab, setSettingsTab] = useState<'branding' | 'billing' | 'backup' | 'staff'>('branding');
+    const [settingsTab, setSettingsTab] = useState<'branding' | 'billing' | 'backup' | 'staff' | 'maintenance'>('branding');
     const [isEditing, setIsEditing] = useState(false);
 
     // Staff State
@@ -226,7 +226,7 @@ export default function SettingsPage() {
     const [isMigrating, setIsMigrating] = useState(false);
 
     const handleSyncLegacyData = async () => {
-        if (!user || userProfile?.role === 'staff') return;
+        if (!user) return;
         
         const confirmMsg = "⚠️ DANGER ZONE: This will RENAME all your existing Patient, Sample, and Report IDs to the new format (e.g., TES-2603-2901P).\n\nExisting internal links will still work, but readable IDs will change. Proceed?";
         if (!confirm(confirmMsg)) return;
@@ -239,6 +239,13 @@ export default function SettingsPage() {
             const updates: any = {};
             const patientIdMap: Record<string, string> = {};
             const sampleIdMap: Record<string, string> = {};
+            
+            // 0. FETCH INVOICES EARLY
+            const invoicesSnap = await get(ref(database, `invoices/${ownerId}`));
+            const invoices: any[] = [];
+            if (invoicesSnap.exists()) {
+                invoicesSnap.forEach(child => { invoices.push({ key: child.key, ...child.val() }); });
+            }
             
             // 1. MIGRATE PATIENTS
             const patientsSnap = await get(ref(database, `patients/${ownerId}`));
@@ -319,6 +326,17 @@ export default function SettingsPage() {
                         if (r.sampleId && sampleIdMap[r.sampleId]) {
                             updates[`${reportPath}/sampleId`] = sampleIdMap[r.sampleId];
                         }
+
+                        // BINDING: Update patient_records index
+                        if (r.patientId) {
+                            const newPatId = patientIdMap[r.patientId] || r.patientId;
+                            updates[`patient_records/${ownerId}/${newPatId}/reports/${r.key}`] = {
+                                reportId: newId,
+                                testName: r.testName || 'Lab Report',
+                                date: r.reportDate || r.date || r.createdAt || date,
+                                status: r.status || 'Completed'
+                            };
+                        }
                     });
                 });
             }
@@ -327,7 +345,7 @@ export default function SettingsPage() {
             const opdSnap = await get(ref(database, `opd/${ownerId}`));
             if (opdSnap.exists()) {
                 const visits: any[] = [];
-                opdSnap.forEach(child => { visits.push({ key: child.childKey || child.key, ...child.val() }); });
+                opdSnap.forEach(child => { visits.push({ key: child.key, ...child.val() }); });
                 
                 const groupedByDate: Record<string, any[]> = {};
                 visits.forEach(v => {
@@ -348,7 +366,35 @@ export default function SettingsPage() {
                         if (v.prescription) {
                             updates[`${opdPath}/prescription/rxId`] = newRxId;
                         }
+
+                        // BINDING: Update patient_records index
+                        if (v.patientId) {
+                            const newPatId = patientIdMap[v.patientId] || v.patientId;
+                            updates[`patient_records/${ownerId}/${newPatId}/visits/${v.key}`] = {
+                                opdId: newOpdId,
+                                rxId: newRxId,
+                                date: v.visitDate || v.createdAt || date,
+                                status: v.status || 'Verified'
+                            };
+                        }
                     });
+                });
+            }
+
+            // 5. MIGRATE INVOICES & BIND
+            if (invoices.length > 0) {
+                invoices.forEach(inv => {
+                    const invPath = `invoices/${ownerId}/${inv.key}`;
+                    const pid = inv.patientId;
+                    if (pid) {
+                        const newPatId = patientIdMap[pid] || pid;
+                        updates[`patient_records/${ownerId}/${newPatId}/invoices/${inv.key}`] = {
+                            invoiceId: inv.invoiceId || inv.invoiceNumber || inv.key,
+                            date: inv.date || inv.createdAt || new Date().toISOString().split('T')[0],
+                            total: inv.total || 0,
+                            status: inv.status || 'pending'
+                        };
+                    }
                 });
             }
 
@@ -740,7 +786,7 @@ export default function SettingsPage() {
                                         {/* Inputs Column */}
                                         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-5 w-full">
                                             <div className="md:col-span-2">
-                                                <label className="block text-xs font-bold text-gray-700 mb-1">Lab Name (App Title)</label>
+                                                <label className="block text-xs font-bold text-gray-700 mb-1">LAB or Clinic Name</label>
                                                 <input type="text" disabled={!isEditing} value={formData.labName} onChange={e => setFormData({ ...formData, labName: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-gray-800 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:text-gray-600 outline-none transition" placeholder="e.g. City Diagnostic Center" />
                                             </div>
                                             <div>

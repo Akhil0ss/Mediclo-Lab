@@ -38,23 +38,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         // 0. PATIENT PORTAL AUTH (Robust "Staff-Style" LocalStorage Check) - PRIORITY 1
         // This ensures patient state is hydrated immediately without waiting for Firebase
-        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/patient')) {
-            const patientMobile = localStorage.getItem('patient_mobile');
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')) {
+            const patientMobile = localStorage.getItem('portal_mobile');
 
             if (patientMobile) {
-                console.log('🔍 AuthContext: Patient session detected', { mobile: patientMobile });
+                console.log('🔍 AuthContext: Portal session detected', { mobile: patientMobile });
                 // Hydrate state immediately from localStorage
                 // This prevents "flicker" and ensures components have user data
                 setUser({
-                    uid: localStorage.getItem('patient_id') || 'patient_guest',
+                    uid: localStorage.getItem('portal_patient_uid') || 'patient_guest',
                     isAnonymous: true // Mark as anonymous/patient
                 } as any);
 
                 setUserProfile({
                     role: 'patient',
-                    name: localStorage.getItem('patient_name') || 'Patient',
+                    name: localStorage.getItem('portal_patient_name') || 'Patient',
                     email: '',
-                    ownerId: localStorage.getItem('patient_owner_id') || undefined
+                    ownerId: localStorage.getItem('portal_owner_id') || undefined
                 });
             } else {
                 // No patient session found
@@ -338,7 +338,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                             setUserProfile({ role: 'patient', name: 'Patient', email: '' });
                             setLoading(false);
                             if (typeof window !== 'undefined' &&
-                                !window.location.pathname.startsWith('/patient') &&
+                                    !window.location.pathname.startsWith('/portal') &&
                                 !window.location.pathname.includes('/print/') &&
                                 !window.location.pathname.includes('/verify/')
                             ) {
@@ -399,7 +399,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (typeof window !== 'undefined' &&
                     !window.location.pathname.includes('/login') &&
                     !window.location.pathname.includes('/register') &&
-                    !window.location.pathname.startsWith('/patient') && // Allow patient portal access
+                    !window.location.pathname.startsWith('/portal') && // Allow patient portal access
                     !window.location.pathname.includes('/print/') && // Allow public print access
                     !window.location.pathname.includes('/verify/') && // Allow public verification access
                     window.location.pathname !== '/') {

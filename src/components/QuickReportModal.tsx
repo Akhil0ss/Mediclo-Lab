@@ -6,7 +6,7 @@ import { createCriticalAlert } from '@/lib/notificationManager';
 import { useAuth } from '@/contexts/AuthContext';
 import { ref, onValue, push, set, update, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
-import { generateReportId } from '@/lib/idGenerator';
+import { generateReportId, generateInvoiceId } from '@/lib/idGenerator';
 import { useRouter } from 'next/navigation';
 import Modal from './Modal';
 import AIReportAnalysis from './AIReportAnalysis';
@@ -100,7 +100,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             onValue(samplesRef, (snapshot) => {
                 const data: any[] = [];
                 snapshot.forEach(child => { data.push({ id: child.key, ...child.val() }); });
-                setSamples(data.filter(s => s.status !== 'Completed'));
+                setSamples(data.filter(s => s.status !== 'Completed').sort((a,b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
             }),
             // 3. Unified Doctor Fetch (Internal + Correct External Path)
             onValue(ref(database, `externalDoctors/${ownerId}`), (snapshot) => {
@@ -349,6 +349,10 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                 ownerId, 
                 branding.labName || 'CLINIC'
             );
+            const invId = await generateInvoiceId(
+                ownerId,
+                branding.labName || 'CLINIC'
+            );
 
             // We use the existing sample ID
             const sampleId = sampleData?.sampleNumber || 'UNKNOWN';
@@ -457,6 +461,14 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
 
             await set(ref(database, `reports/${ownerId}/${reportId}`), reportData);
 
+            // BINDING: Update patient_records index for report
+            await update(ref(database, `patient_records/${ownerId}/${selectedPatientId}/reports/${reportId}`), {
+                reportId,
+                testName: reportData.testName,
+                date: reportDate,
+                status: 'Completed'
+            });
+
             // Trigger Physician Alert if Critical
             if (aiAnalysisResult?.riskLevel === 'high' || aiAnalysisResult?.abnormals?.length > 0) {
                 const criticalSubtest = reportData.testDetails
@@ -479,7 +491,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             // ---------------------------------------------------------
             try {
                 const today = new Date().toISOString().split('T')[0];
-                const invoiceKey = `inv_${selectedPatientId}_${today}`;
+                const invoiceKey = invId; // Use standardized ID as key
                 const invRef = ref(database, `invoices/${ownerId}/${invoiceKey}`);
                 const invSnapshot = await get(invRef);
                 
@@ -514,12 +526,11 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                         updatedAt: new Date().toISOString()
                     });
                 } else {
-                    const invNum = `INV-${Math.floor(Date.now() / 1000) % 10000}`;
                     const b = calculateBilling(newItemsToAdd, 0, 0, 0);
                     
                     const invData = {
-                        invoiceId: invoiceKey,
-                        invoiceNumber: invNum,
+                        invoiceId: invId,
+                        invoiceNumber: invId,
                         patientId: selectedPatientId,
                         patientName: patientData.name,
                         ...b,
@@ -531,6 +542,14 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                         createdBy: user.uid
                     };
                     await set(invRef, invData);
+
+                    // BINDING: Update patient_records index for invoice
+                    await update(ref(database, `patient_records/${ownerId}/${selectedPatientId}/invoices/${invoiceKey}`), {
+                        invoiceId: invId,
+                        date: today,
+                        total: b.total,
+                        status: 'pending'
+                    });
                 }
             } catch (invErr) {
                 console.error("Auto Invoice Error:", invErr);
