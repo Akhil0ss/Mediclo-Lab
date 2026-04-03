@@ -13,6 +13,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Modal from '@/components/Modal';
 import PatientHistoryModal from '@/components/PatientHistoryModal';
+import BillingModal from '@/components/BillingModal';
 
 export default function PatientsPage() {
     const { user, userProfile } = useAuth();
@@ -100,161 +101,7 @@ export default function PatientsPage() {
     // Billing Modal states
     const [showBillingModal, setShowBillingModal] = useState(false);
     const [billingPatient, setBillingPatient] = useState<any>(null);
-    const [billingDate, setBillingDate] = useState(new Date().toISOString().split('T')[0]);
-    const [billingItems, setBillingItems] = useState([createBillingItem('', 1, 0)]);
-    const [discount, setDiscount] = useState(0);
-    const [paid, setPaid] = useState(0);
-    const [paymentMode, setPaymentMode] = useState('Cash');
-    const [includeGST, setIncludeGST] = useState(false); // GST is optional, not pre-selected
-    const [selectedTests, setSelectedTests] = useState<string[]>([]);
-    const [selectedDoctor, setSelectedDoctor] = useState('');
-    const [testSearch, setTestSearch] = useState('');
-    const [customPrice, setCustomPrice] = useState('');
-    const [doctorSearch, setDoctorSearch] = useState('');
 
-    const updateBillingItem = (index: number, field: string, value: any) => {
-        const newItems = [...billingItems];
-        newItems[index] = { ...newItems[index], [field]: value };
-        if (field === 'quantity' || field === 'rate') {
-            newItems[index].amount = Math.round((newItems[index].quantity * newItems[index].rate) * 100) / 100;
-        }
-        setBillingItems(newItems);
-    };
-
-    const addTemplateToBilling = (template: any) => {
-        const rate = parseFloat(template.totalPrice || template.price || 0);
-        const newItem = createBillingItem(template.name, 1, rate);
-        setBillingItems(prev => {
-            const filtered = prev.filter(i => i.name && !['No tests', 'No reports found', 'No items found', ''].includes(i.name.trim()));
-            return [...filtered, newItem];
-        });
-        setTestSearch('');
-    };
-
-    const addCustomBillingItem = () => {
-        setBillingItems(prev => {
-            const filtered = prev.filter(i => i.name && !['No tests', 'No reports found', 'No items found', ''].includes(i.name.trim()));
-            const name = testSearch.trim() || '';
-            const price = parseFloat(customPrice) || 0;
-            return [...filtered, createBillingItem(name, 1, price)];
-        });
-        setTestSearch('');
-        setCustomPrice('');
-    };
-
-    // Auto-load billing items when modal opens
-    useEffect(() => {
-        const loadBillingData = async () => {
-            if (!showBillingModal || !billingPatient) return;
-
-            const latestDate = new Date().toISOString().split('T')[0];
-            setBillingDate(latestDate);
-
-            // Attempt to load existing invoice first
-            const dataSourceId = userProfile?.ownerId || user?.uid;
-            if (dataSourceId) {
-                try {
-                    const invRef = ref(database, `invoices/${dataSourceId}/inv_${billingPatient.id}_${latestDate}`);
-                    const invSnap = await get(invRef);
-                    if (invSnap.exists()) {
-                        const existInv = invSnap.val();
-                        if (existInv.items && existInv.items.length > 0) {
-                            setBillingItems(existInv.items);
-                            setDiscount(existInv.discount || 0);
-                            setPaid(existInv.paid || 0);
-                            setPaymentMode(existInv.paymentMode || 'Cash');
-                            setIncludeGST(existInv.includeGST || false);
-                            return; 
-                        }
-                    }
-                } catch (e) { console.error("Failed to load invoice:", e); }
-            }
-
-            // Get reports for this patient
-            const patientReports = reports.filter(r => r.patientId === billingPatient.id);
-
-            if (patientReports.length === 0) {
-                setBillingItems([createBillingItem('No reports found', 1, 0)]);
-            } else {
-                // Robust Date Extraction
-                const getDate = (r: any) => {
-                    let d = r.createdAt || r.reportDate || r.date;
-                    if (!d) return 'Unknown Date';
-                    try {
-                        if (typeof d === 'number') d = new Date(d).toISOString();
-                        return d.split('T')[0];
-                    } catch (e) { return 'Unknown Date'; }
-                };
-
-                const uniqueDates = Array.from(new Set(patientReports.map(getDate)));
-                uniqueDates.sort((a, b) => {
-                    if (a === 'Unknown Date') return 1;
-                    if (b === 'Unknown Date') return -1;
-                    return new Date(b).getTime() - new Date(a).getTime();
-                });
-
-                const rp = patientReports.filter(r => getDate(r) === latestDate);
-
-                const ni: any[] = [];
-                rp.forEach(r => {
-                    // ROBUST MATCHING & PRICE DETECTION
-                    // 1. Identify all tests listed in this report
-                    const testNamesForThisReport = new Set<string>();
-                    if (r.testName) {
-                        r.testName.split(',').forEach((s: string) => testNamesForThisReport.add(s.trim()));
-                    }
-                    if (r.testDetails && Array.isArray(r.testDetails)) {
-                        r.testDetails.forEach((td: any) => {
-                            if (td.testName) testNamesForThisReport.add(td.testName.trim());
-                        });
-                    }
-                    if (testNamesForThisReport.size === 0) testNamesForThisReport.add('Lab Report');
-
-                    let finalItemName = Array.from(testNamesForThisReport).join(', ');
-                    let finalItemPrice = 0;
-
-                    // Strategy 1: Trust direct price in report if it exists
-                    const reportPrice = parseFloat(String(r.price || r.amount || r.totalPrice || 0));
-
-                    if (!isNaN(reportPrice) && reportPrice > 0) {
-                        finalItemPrice = reportPrice;
-                    } else {
-                        // Strategy 2: Look up template prices for each test
-                        let calculatedPrice = 0;
-                        testNamesForThisReport.forEach(tn => {
-                            const t = templates.find(tt =>
-                                tt.name.toLowerCase().trim() === tn.toLowerCase() ||
-                                (r.testId === tt.id || r.templateId === tt.id)
-                            );
-                            if (t) {
-                                calculatedPrice += parseFloat(String(t.totalPrice || t.price || t.rate || 0));
-                            } else if (r.testDetails) {
-                                // Sub-strategy: check if testDetails has price for this specific test
-                                const detail = r.testDetails.find((td: any) => td.testName === tn);
-                                if (detail) {
-                                    calculatedPrice += parseFloat(String(detail.price || detail.amount || 0));
-                                }
-                            }
-                        });
-
-                        // Strategy 3: Absolute fallback - sum ALL details price if calculation still 0
-                        if (calculatedPrice === 0 && r.testDetails) {
-                            calculatedPrice = r.testDetails.reduce((sum: number, td: any) => {
-                                return sum + (parseFloat(String(td.price || td.amount || 0)) || 0);
-                            }, 0);
-                        }
-
-                        finalItemPrice = calculatedPrice;
-                    }
-
-                    ni.push(createBillingItem(finalItemName, 1, finalItemPrice));
-                });
-                setBillingItems(ni.length > 0 ? ni : [createBillingItem('No items found', 1, 0)]);
-            }
-        };
-        loadBillingData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [showBillingModal, billingPatient, reports, templates, userProfile, user]);
 
     useEffect(() => {
         if (!user || !userProfile) return;
@@ -264,7 +111,7 @@ export default function PatientsPage() {
         const patientsRef = ref(database, `patients/${dataSourceId}`);
         const reportsRef = ref(database, `reports/${dataSourceId}`);
         const commonTemplatesRef = ref(database, 'common_templates');
-        const doctorsRef = ref(database, `doctors/${dataSourceId}`);
+        const doctorsRef = ref(database, `users/${dataSourceId}/auth/staff`);
         const templatesRef = ref(database, `templates/${dataSourceId}`);
         const samplesRef = ref(database, `samples/${dataSourceId}`);
         const opdRef = ref(database, `opd/${dataSourceId}`);
@@ -326,7 +173,12 @@ export default function PatientsPage() {
 
         const unsubDoctors = onValue(doctorsRef, (snapshot) => {
             const data: any[] = [];
-            snapshot.forEach((child) => { data.push({ id: child.key, ...child.val() }); });
+            snapshot.forEach((child) => { 
+                const val = child.val();
+                if (['doctor', 'dr-staff'].includes(val.role)) {
+                    data.push({ id: child.key, ...val }); 
+                }
+            });
             data.sort((a: any, b: any) => a.name.localeCompare(b.name));
             setDoctors(data);
         });
@@ -808,9 +660,6 @@ export default function PatientsPage() {
                                                             onClick={() => {
                                                                 setBillingPatient(patient);
                                                                 setShowBillingModal(true);
-                                                                setBillingItems([createBillingItem('', 1, 0)]);
-                                                                setDiscount(0);
-                                                                setPaid(0);
                                                             }}
                                                             className="text-blue-600 hover:text-blue-800 transition-colors p-1"
                                                             title="Generate Bill"
@@ -1199,304 +1048,13 @@ export default function PatientsPage() {
             )}
 
             {/* Billing Modal */}
-            <Modal isOpen={showBillingModal} onClose={() => setShowBillingModal(false)}>
-                <h3 className="text-xl font-bold mb-4">Generate Bill - {billingPatient?.name}</h3>
-                <div className="space-y-4">
-                    <div>
-                        <label className="text-sm font-bold mb-1 block">Visit Date</label>
-                        <select
-                            className="w-full px-3 py-2 border rounded"
-                            value={billingDate}
-                            onChange={async (e) => {
-                                const d = e.target.value;
-                                setBillingDate(d);
-                                
-                                const dataSourceId = userProfile?.ownerId || user?.uid;
-                                if (dataSourceId) {
-                                    try {
-                                        const invRef = ref(database, `invoices/${dataSourceId}/inv_${billingPatient.id}_${d}`);
-                                        const invSnap = await get(invRef);
-                                        if (invSnap.exists()) {
-                                            const existInv = invSnap.val();
-                                            if (existInv.items && existInv.items.length > 0) {
-                                                setBillingItems(existInv.items);
-                                                setDiscount(existInv.discount || 0);
-                                                setPaid(existInv.paid || 0);
-                                                setPaymentMode(existInv.paymentMode || 'Cash');
-                                                setIncludeGST(existInv.includeGST || false);
-                                                return;
-                                            }
-                                        }
-                                    } catch (err) {}
-                                }
-
-                                const rp = reports.filter(r => r.patientId === billingPatient?.id && (r.createdAt?.startsWith(d) || r.reportDate?.startsWith(d)));
-                                const ni = [];
-                                rp.forEach(r => {
-                                    // ROBUST MATCHING & PRICE DETECTION
-                                    const testNamesForThisReport = new Set<string>();
-                                    if (r.testName) {
-                                        r.testName.split(',').forEach((s: string) => testNamesForThisReport.add(s.trim()));
-                                    }
-                                    if (r.testDetails && Array.isArray(r.testDetails)) {
-                                        r.testDetails.forEach((td: any) => {
-                                            if (td.testName) testNamesForThisReport.add(td.testName.trim());
-                                        });
-                                    }
-                                    if (testNamesForThisReport.size === 0) testNamesForThisReport.add('Lab Report');
-
-                                    let finalItemName = Array.from(testNamesForThisReport).join(', ');
-                                    let finalItemPrice = 0;
-
-                                    // Strategy 1: Trust direct price in report if it exists
-                                    const reportPrice = parseFloat(String(r.price || r.amount || r.totalPrice || 0));
-
-                                    if (!isNaN(reportPrice) && reportPrice > 0) {
-                                        finalItemPrice = reportPrice;
-                                    } else {
-                                        // Strategy 2: Look up template prices for each test
-                                        let calculatedPrice = 0;
-                                        testNamesForThisReport.forEach(tn => {
-                                            const t = templates.find(tt =>
-                                                tt.name.toLowerCase().trim() === tn.toLowerCase() ||
-                                                (r.testId === tt.id || r.templateId === tt.id)
-                                            );
-                                            if (t) {
-                                                calculatedPrice += parseFloat(String(t.totalPrice || t.price || t.rate || 0));
-                                            } else if (r.testDetails) {
-                                                const detail = r.testDetails.find((td: any) => td.testName === tn);
-                                                if (detail) {
-                                                    calculatedPrice += parseFloat(String(detail.price || detail.amount || 0));
-                                                }
-                                            }
-                                        });
-
-                                        // Strategy 3: Absolute fallback - sum ALL details price
-                                        if (calculatedPrice === 0 && r.testDetails) {
-                                            calculatedPrice = r.testDetails.reduce((sum: number, td: any) => {
-                                                return sum + (parseFloat(String(td.price || td.amount || 0)) || 0);
-                                            }, 0);
-                                        }
-
-                                        finalItemPrice = calculatedPrice;
-                                    }
-
-                                    ni.push(createBillingItem(finalItemName, 1, finalItemPrice));
-                                });
-                                setBillingItems(ni.length > 0 ? ni : [createBillingItem('No tests', 1, 0)]);
-                            }}
-                        >
-                            {(() => {
-                                const vd = new Set<string>();
-                                const today = new Date().toISOString().split('T')[0];
-                                vd.add(today); // Always include today
-                                reports.filter(r => r.patientId === billingPatient?.id).forEach(r => {
-                                    const d = r.createdAt || r.reportDate;
-                                    if (d) vd.add(d.split('T')[0]);
-                                });
-                                return Array.from(vd).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).map(dt => (
-                                    <option key={dt} value={dt}>{dt === today ? `Today (${new Date(dt).toLocaleDateString('en-IN')})` : new Date(dt).toLocaleDateString('en-IN')}</option>
-                                ));
-                            })()}
-                        </select>
-                        <p className="text-xs text-gray-500 mt-1">{billingItems.filter(i => i.name && i.name !== 'No tests').length} lab tests found for this date</p>
-                    </div>
-                    <div className="relative">
-                        <label className="text-sm font-bold mb-1 block">Quick Add Item</label>
-                        <div className="flex gap-2">
-                            <div className="relative flex-[2]">
-                                <i className="fas fa-search absolute left-3 top-3 text-gray-400"></i>
-                                <input
-                                    type="text"
-                                    placeholder="Search template or type custom name..."
-                                    value={testSearch}
-                                    onChange={(e) => setTestSearch(e.target.value)}
-                                    className="w-full pl-9 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 outline-none"
-                                />
-                            </div>
-                            <div className="relative flex-1">
-                                <i className="fas fa-tag absolute left-3 top-3 text-gray-400"></i>
-                                <input
-                                    type="number"
-                                    placeholder="Price"
-                                    value={customPrice}
-                                    onChange={(e) => setCustomPrice(e.target.value)}
-                                    className="w-full pl-9 pr-4 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 outline-none"
-                                />
-                            </div>
-                            <button
-                                onClick={addCustomBillingItem}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-bold text-sm whitespace-nowrap shadow-md"
-                            >
-                                <i className="fas fa-plus mr-1"></i> Add Custom
-                            </button>
-                        </div>
-
-                        {testSearch && (
-                            <div className="absolute z-[60] w-full mt-1 bg-white border-2 border-blue-100 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
-                                {templates
-                                    .filter(t => t.name.toLowerCase().includes(testSearch.toLowerCase()))
-                                    .slice(0, 10)
-                                    .map(t => (
-                                        <button
-                                            key={t.id}
-                                            onClick={() => addTemplateToBilling(t)}
-                                            className="w-full text-left px-4 py-3 hover:bg-blue-50 flex justify-between items-center border-b last:border-0 transition-colors"
-                                        >
-                                            <div>
-                                                <div className="font-bold text-gray-800">{t.name}</div>
-                                                <div className="text-xs text-gray-500">{t.category}</div>
-                                            </div>
-                                            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold text-sm">
-                                                ₹{t.totalPrice || t.price || 0}
-                                            </span>
-                                        </button>
-                                    ))
-                                }
-                                {templates.filter(t => t.name.toLowerCase().includes(testSearch.toLowerCase())).length === 0 && (
-                                    <div className="px-4 py-4 text-center text-gray-500">
-                                        <i className="fas fa-search mb-2 block opacity-20 text-2xl"></i>
-                                        No matching templates found.
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="border rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                            <thead className="bg-gray-50 border-b">
-                                <tr>
-                                    <th className="px-3 py-2 text-left font-semibold text-gray-600">Service/Item</th>
-                                    <th className="px-3 py-2 w-20 text-center font-semibold text-gray-600">Qty</th>
-                                    <th className="px-3 py-2 w-28 text-right font-semibold text-gray-600">Rate</th>
-                                    <th className="px-3 py-2 w-28 text-right font-semibold text-gray-600">Amount</th>
-                                    <th className="w-10"></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {billingItems.map((item, i) => {
-                                    const isPlaceholder = ['No tests', 'No reports found', 'No items found', ''].includes((item.name || '').trim());
-                                    return (
-                                        <tr key={item.id || i} className="border-b last:border-0 hover:bg-gray-50">
-                                            <td className="px-3 py-2">
-                                                <input
-                                                    type="text"
-                                                    value={item.name}
-                                                    onChange={(e) => updateBillingItem(i, 'name', e.target.value)}
-                                                    placeholder="e.g. CBC Test, Consultation..."
-                                                    className={`w-full bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 ${isPlaceholder ? 'text-gray-400 italic' : 'font-medium'}`}
-                                                />
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                <input
-                                                    type="number"
-                                                    value={item.quantity}
-                                                    onChange={(e) => updateBillingItem(i, 'quantity', parseFloat(e.target.value) || 0)}
-                                                    className="w-full text-center bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1"
-                                                    min="1"
-                                                />
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                <input
-                                                    type="number"
-                                                    value={item.rate}
-                                                    onChange={(e) => updateBillingItem(i, 'rate', parseFloat(e.target.value) || 0)}
-                                                    className="w-full text-right bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 font-semibold"
-                                                    min="0"
-                                                />
-                                            </td>
-                                            <td className="px-3 py-2 text-right font-bold text-gray-700">
-                                                {formatCurrency(item.amount)}
-                                            </td>
-                                            <td className="px-3 py-2 text-center">
-                                                {billingItems.length > 1 && (
-                                                    <button
-                                                        onClick={() => setBillingItems(billingItems.filter((_, idx) => idx !== i))}
-                                                        className="text-gray-400 hover:text-red-500 transition-colors"
-                                                    >
-                                                        <i className="fas fa-trash-alt"></i>
-                                                    </button>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <div><label className="text-sm font-medium">Discount (%)</label><input type="number" value={discount} onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border rounded" min="0" max="100" /></div>
-                            <div><label className="text-sm font-medium">Payment Mode</label><select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} className="w-full px-3 py-2 border rounded"><option>Cash</option><option>Card</option><option>UPI</option><option>Cheque</option></select></div>
-                            <div><label className="text-sm font-medium">Paid</label><input type="number" value={paid} onChange={(e) => setPaid(parseFloat(e.target.value) || 0)} className="w-full px-3 py-2 border rounded" min="0" /></div>
-                            <div className="flex items-center gap-2 pt-2"><input type="checkbox" id="includeGST" checked={includeGST} onChange={(e) => setIncludeGST(e.target.checked)} className="w-4 h-4" /><label htmlFor="includeGST" className="text-sm font-medium cursor-pointer">Include GST (18%)</label></div>
-                        </div>
-                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2 text-sm">
-                            {(() => {
-                                const validItems = billingItems.filter(i => i.name && !['No tests', 'No reports found', 'No items found', ''].includes(i.name.trim()));
-                                const b = calculateBilling(validItems, discount, includeGST ? 18 : 0, paid);
-                                return (
-                                    <>
-                                        <div className="flex justify-between text-gray-600"><span>Subtotal:</span><span>{formatCurrency(b.subtotal)}</span></div>
-                                        {b.discount > 0 && <div className="flex justify-between text-green-600 font-medium"><span>Discount ({discount}%):</span><span>- {formatCurrency(b.discount)}</span></div>}
-                                        {includeGST && <div className="flex justify-between text-gray-600"><span>GST (18%):</span><span>{formatCurrency(b.gst)}</span></div>}
-                                        <div className="flex justify-between font-bold text-xl border-t border-gray-300 pt-2 mt-2 text-gray-900"><span>Total:</span><span>{formatCurrency(b.total)}</span></div>
-                                        <div className="flex justify-between text-blue-600 font-medium"><span>Paid:</span><span>{formatCurrency(b.paid)}</span></div>
-                                        {b.due > 0 && <div className="flex justify-between text-red-600 font-bold border-t border-red-100 pt-1 mt-1"><span>Due Amount:</span><span>{formatCurrency(b.due)}</span></div>}
-                                    </>
-                                );
-                            })()}
-                        </div>
-                    </div>
-                    <div className="flex justify-end gap-2 pt-4 border-t">
-                        <button onClick={() => setShowBillingModal(false)} className="px-4 py-2 border rounded hover:bg-gray-50">Cancel</button>
-                        <button onClick={async () => {
-                            const validItems = billingItems.filter(i => i.name && !['No tests', 'No reports found', 'No items found', ''].includes(i.name.trim()));
-                            if (validItems.length === 0) {
-                                alert('Please add at least one valid item to the bill.');
-                                return;
-                            }
-                            const dataSourceId = userProfile?.ownerId || user.uid;
-                            const b = calculateBilling(validItems, discount, includeGST ? 18 : 0, paid);
-                            const invoiceKey = `inv_${billingPatient.id}_${billingDate}`;
-                            
-                            // Check if invoice already exists to preserve its Original ID and Date
-                            const invRef = ref(database, `invoices/${dataSourceId}/${invoiceKey}`);
-                            const invSnap = await get(invRef);
-                            
-                            let invNum = generateInvoiceNumber('INV', Math.floor(Date.now() / 1000) % 10000);
-                            let createdAt = new Date().toISOString();
-                            
-                            if (invSnap.exists()) {
-                                const existingData = invSnap.val();
-                                if (existingData.invoiceNumber) invNum = existingData.invoiceNumber;
-                                if (existingData.createdAt) createdAt = existingData.createdAt;
-                            }
-                            
-                            const invData = {
-                                invoiceId: invoiceKey,
-                                invoiceNumber: invNum,
-                                patientId: billingPatient.patientId || billingPatient.id,
-                                patientName: billingPatient.name,
-                                ...b,
-                                items: validItems, // Store items in invoice
-                                paymentMode,
-                                includeGST,
-                                visitDate: billingDate,
-                                createdAt: createdAt,
-                                createdBy: user.uid
-                            };
-                            await update(invRef, invData);
-                            window.open(`/print/invoice/${invNum}?data=${encodeURIComponent(JSON.stringify(invData))}`, '_blank');
-                            setShowBillingModal(false);
-                        }} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                            <i className="fas fa-print mr-2"></i>Save & Print
-                        </button>
-                    </div>
-                </div>
-            </Modal>
+            <BillingModal 
+                isOpen={showBillingModal} 
+                onClose={() => setShowBillingModal(false)}
+                patient={billingPatient}
+                ownerId={userProfile?.ownerId || user?.uid || ''}
+                userId={user?.uid || ''}
+            />
             {/* Success/Creds Modal */}
             <Modal isOpen={showSuccessModal} onClose={() => setShowSuccessModal(false)}>
                 <div className="text-center p-2">

@@ -126,11 +126,14 @@ function InvoiceContent() {
         <>
             {/* Print-Specific Styles for Darker Output */}
             <style jsx global>{`
+                @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+                
                 @media print {
                     * {
                         -webkit-print-color-adjust: exact !important;
                         print-color-adjust: exact !important;
                         color-adjust: exact !important;
+                        font-family: 'Inter', sans-serif !important;
                     }
                     
                     @page {
@@ -154,251 +157,203 @@ function InvoiceContent() {
                         height: 297mm !important;
                         margin: 0 !important;
                         box-shadow: none !important;
-                        position: absolute;
-                        top: 0;
-                        left: 0;
                     }
                     
-                    header {
-                        print-color-adjust: exact;
-                        -webkit-print-color-adjust: exact;
-                    }
-                    
-                    /* Darker text */
                     p, span, div, td, th {
                         color: #000 !important;
                     }
                     
-                    /* Stronger borders */
+                    .text-blue-600 {
+                        color: ${theme.primary} !important;
+                    }
+
                     .border, [class*="border-"] {
-                        border-color: #333 !important;
-                        border-width: 1px !important;
+                        border-color: #000 !important;
+                        border-width: 1.5px !important;
+                    }
+
+                    .border-2 {
+                        border-width: 2.5px !important;
+                        border-color: #000 !important;
                     }
                     
-                    /* Table borders darker */
-                    table, th, td {
-                        border-color: #333 !important;
-                    }
-                    
-                    /* Darker backgrounds */
-                    .bg-gray-50, .bg-gray-100 {
-                        background-color: #e5e5e5 !important;
-                    }
-                    
-                    /* Ensure gradients print */
-                    [style*="gradient"] {
-                        -webkit-print-color-adjust: exact !important;
-                        print-color-adjust: exact !important;
-                    }
-                    
-                    /* Darker text colors */
-                    .text-gray-600 {
-                        color: #333 !important;
-                    }
-                    
-                    .text-gray-700 {
-                        color: #222 !important;
-                    }
-                    
-                    .text-gray-800, .text-gray-900 {
-                        color: #000 !important;
-                    }
-                    
-                    /* Font weight for better visibility */
-                    .font-medium {
-                        font-weight: 600 !important;
-                    }
-                    
-                    .font-semibold {
-                        font-weight: 700 !important;
+                    .bg-slate-50 {
+                        background-color: #f5f5f5 !important;
                     }
                 }
             `}</style>
 
-            <div className="min-h-screen bg-gray-100 py-0 sm:py-10 print:bg-white print:py-0">
-                {/* Action Bar (Hidden when printing) */}
-                <div className="max-w-[210mm] mx-auto mb-4 flex justify-between items-center no-print px-4 sm:px-0">
+            <div className="min-h-screen bg-slate-50 py-0 sm:py-10 print:bg-white print:py-0 font-['Inter']">
+                {/* Action Bar */}
+                <div className="max-w-[210mm] mx-auto mb-6 flex justify-between items-center no-print px-4 sm:px-0 animate-in fade-in slide-in-from-top-4 duration-700">
                     <button
                         onClick={() => window.close()}
-                        className="bg-white text-gray-700 px-4 py-2 rounded-lg shadow-sm border font-bold hover:bg-gray-50 transition"
+                        className="bg-white text-slate-700 px-5 py-2.5 rounded-xl shadow-sm border border-slate-200 font-bold hover:bg-slate-50 transition active:scale-95 flex items-center gap-2"
                     >
-                        <i className="fas fa-arrow-left mr-2"></i> Back
+                        <i className="fas fa-arrow-left text-sm"></i> Back
                     </button>
                     <button
                         onClick={() => window.print()}
-                        className="bg-blue-600 text-white px-6 py-2 rounded-lg shadow-md font-bold hover:bg-blue-700 transition"
+                        className="bg-slate-900 text-white px-8 py-2.5 rounded-xl shadow-lg font-bold hover:bg-slate-800 transition active:scale-95 flex items-center gap-2"
                     >
-                        <i className="fas fa-print mr-2"></i> Print Invoice
+                        <i className="fas fa-print text-sm"></i> Print Invoice
                     </button>
                 </div>
 
-                {/* Invoice Container - Forced A4 Size */}
+                {/* Boxed Invoice Container */}
                 <div className="invoice-container bg-white mx-auto shadow-2xl relative flex flex-col overflow-hidden w-[210mm] min-h-[297mm] print:shadow-none print:w-full print:min-h-screen">
+                    {/* Top Branding Strip */}
+                    <div className="h-1.5 w-full" style={{ background: theme.gradient }} />
 
-                    {/* Header Section */}
-                    <header className="relative bg-white text-white overflow-hidden" style={{ background: theme.gradient }}>
-                        {/* Rainbow Strip */}
-                        <div className="h-1 w-full bg-gradient-to-r from-yellow-400 via-orange-500 to-red-500" />
-
-                        <div className="px-8 py-6 flex items-center justify-between gap-6">
-                            {/* 1. Logo */}
-                            <div className="flex-shrink-0 w-24 h-24 bg-white rounded-xl p-2 flex items-center justify-center shadow-inner">
-                                {branding.logoUrl ? (
-                                    <img src={branding.logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
-                                ) : (
-                                    <i className="fas fa-microscope text-blue-600 text-4xl"></i>
-                                )}
-                            </div>
-
-                            {/* 2. Brand Identity */}
-                            <div className="flex-1 text-center">
-                                <h1 className="text-2xl font-extrabold uppercase tracking-tight">{branding.labName || 'Mediclo Lab'}</h1>
-                                <p className="text-xs font-medium italic opacity-90 mt-0.5">{branding.tagline || 'Leading Excellence in Diagnostics'}</p>
-                                <div className="mt-3 text-[10px] space-y-0.5 opacity-80 font-medium">
-                                    {branding.address && <p>{branding.address}</p>}
-                                    <p>
-                                        {branding.contact && <span>📞 {branding.contact}</span>}
-                                        {branding.contact && branding.email && <span className="mx-2">|</span>}
-                                        {branding.email && <span>✉️ {branding.email}</span>}
-                                    </p>
+                    <div className="p-10 flex flex-col h-full">
+                        {/* Transparent Header Section */}
+                        <header className="flex items-start justify-between mb-8 pb-6 border-b-2 border-slate-100 print:border-slate-800">
+                            <div className="flex gap-6 items-center">
+                                <div className="w-20 h-20 bg-white rounded-2xl p-2.5 flex items-center justify-center border-2 border-slate-400">
+                                    {branding.logoUrl ? (
+                                        <img src={branding.logoUrl} alt="Logo" className="max-w-full max-h-full object-contain" />
+                                    ) : (
+                                        <i className="fas fa-plus-square text-blue-600 text-4xl"></i>
+                                    )}
+                                </div>
+                                <div className="max-w-md">
+                                    <h1 className="text-2xl font-black text-slate-900 tracking-tight leading-none mb-1 uppercase">{branding.labName || 'Mediclo Lab'}</h1>
+                                    <p className="text-sm font-bold text-blue-600 uppercase tracking-[0.2em] mb-3">{branding.tagline || 'Clinical Excellence'}</p>
+                                    <div className="text-[10px] text-slate-700 font-bold space-y-0.5 leading-relaxed">
+                                        <p className="flex items-center gap-2"><i className="fas fa-map-marker-alt opacity-30"></i> {branding.address}</p>
+                                        <p className="flex items-center gap-2"><i className="fas fa-phone opacity-30"></i> {branding.contact} <span className="opacity-20 mx-1">|</span> <i className="fas fa-envelope opacity-30"></i> {branding.email}</p>
+                                    </div>
                                 </div>
                             </div>
+                            <div className="text-right">
+                                <div className="border-2 border-slate-900 rounded-2xl px-6 py-4 bg-slate-50/30">
+                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Invoice Number</p>
+                                    <p className="text-2xl font-black text-slate-900 tracking-tighter">#{invoiceData.invoiceNumber}</p>
+                                </div>
+                            </div>
+                        </header>
 
-                            {/* 3. Invoice Badge */}
-                            <div className="text-right flex-shrink-0">
-                                <div className="inline-block bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2 border border-white/30">
-                                    <p className="text-[10px] font-black tracking-[0.2em] uppercase opacity-80 mb-0.5">Tax Invoice</p>
-                                    <p className="text-xl font-black">#{invoiceData.invoiceNumber}</p>
+                        {/* Boxed Patient & Meta Section */}
+                        <div className="grid grid-cols-2 gap-0 border-2 border-slate-900 rounded-2xl overflow-hidden mb-8 shadow-sm">
+                            <div className="p-5 border-r-2 border-slate-900">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                    <span className="w-2 h-2 bg-slate-900 rounded-full"></span> Billed To
+                                </p>
+                                <h2 className="text-xl font-black text-slate-900 leading-none mb-2">{invoiceData.patientName}</h2>
+                                <p className="text-xs font-bold text-slate-700 uppercase flex items-center gap-2">
+                                    PID: <span className="text-blue-600">#{invoiceData.patientId}</span> 
+                                    <span className="opacity-20">|</span> 
+                                    {invoiceData.patientAge}Y • {invoiceData.patientGender}
+                                </p>
+                            </div>
+                            <div className="p-5 bg-slate-50/50 flex flex-col justify-center text-right">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Invoice Information</p>
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-slate-800">Date: <span className="text-slate-600 ml-2">{new Date(invoiceData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></p>
+                                    <p className="text-xs font-bold text-slate-800">Time: <span className="text-slate-600 ml-2">{new Date(invoiceData.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span></p>
+                                    <p className="text-xs font-bold text-slate-800">Mode: <span className="text-slate-900 ml-2 uppercase font-black">{invoiceData.paymentMode}</span></p>
                                 </div>
                             </div>
                         </div>
-                    </header>
 
-                    <main className="flex-1 p-10 flex flex-col">
-                        {/* Patient & Invoice Metadata */}
-                        <section className="flex justify-between items-start mb-10 pb-6 border-b border-gray-100">
-                            <div>
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Billed To</p>
-                                <h2 className="text-lg font-bold text-gray-800">{invoiceData.patientName}</h2>
-                                <p className="text-xs text-gray-500 mt-1 font-semibold">Patient ID: <span className="text-blue-600">#{invoiceData.patientId?.slice(-6) || 'N/A'}</span></p>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Invoice Info</p>
-                                <div className="space-y-1">
-                                    <p className="text-xs font-bold text-gray-700">Date: <span className="font-normal">{new Date(invoiceData.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></p>
-                                    <p className="text-xs font-bold text-gray-700">Time: <span className="font-normal">{new Date(invoiceData.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span></p>
-                                </div>
-                            </div>
-                        </section>
-
-                        {/* Items Table */}
-                        <section className="flex-1">
-                            <table className="w-full border-collapse">
+                        {/* Boxed Items Table Section */}
+                        <div className="flex-1 border-2 border-slate-900 rounded-2xl overflow-hidden mb-8 shadow-sm">
+                            <table className="w-full">
                                 <thead>
-                                    <tr className="bg-gray-50 text-gray-500 text-[10px] font-black uppercase tracking-widest border-y border-gray-200">
-                                        <th className="px-4 py-3 text-left">Description of Services</th>
-                                        <th className="px-4 py-3 text-center w-24">Quantity</th>
-                                        <th className="px-4 py-3 text-right w-32">Rate (₹)</th>
-                                        <th className="px-4 py-3 text-right w-32">Amount (₹)</th>
+                                    <tr className="bg-slate-900 text-white">
+                                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-[0.2em]">Clinical Service Description</th>
+                                        <th className="px-4 py-4 text-center text-[10px] font-black uppercase tracking-[0.2em] w-24 border-x border-white/10">Qty</th>
+                                        <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-[0.2em] w-32">Rate (₹)</th>
+                                        <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-[0.2em] w-32 border-l border-white/10">Amount (₹)</th>
                                     </tr>
                                 </thead>
-                                <tbody className="text-sm">
+                                <tbody>
                                     {(invoiceData.items || []).map((item: any, idx: number) => (
-                                        <tr key={idx} className="border-b border-gray-50 hover:bg-blue-50/30 transition-colors">
-                                            <td className="px-4 py-4 font-bold text-gray-800">{item.name}</td>
-                                            <td className="px-4 py-4 text-center text-gray-600">{item.quantity}</td>
-                                            <td className="px-4 py-4 text-right text-gray-600">{item.rate.toFixed(2)}</td>
-                                            <td className="px-4 py-4 text-right font-black text-gray-900">{item.amount.toFixed(2)}</td>
+                                        <tr key={idx} className="border-b-2 border-slate-300 last:border-0">
+                                            <td className="px-6 py-5">
+                                                <p className="font-extrabold text-slate-900 text-sm leading-tight mb-0.5">{item.name}</p>
+                                                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tight italic">Clinical Diagnostics / Consultation</p>
+                                            </td>
+                                            <td className="px-4 py-5 text-center text-sm font-black text-slate-800 border-x-2 border-slate-100">{item.quantity}</td>
+                                            <td className="px-6 py-5 text-right text-sm font-bold text-slate-700">{item.rate.toFixed(2)}</td>
+                                            <td className="px-6 py-5 text-right text-sm font-black text-slate-900 border-l-2 border-slate-100 group-hover:bg-slate-50 transition-colors">{item.amount.toFixed(2)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
-                        </section>
+                        </div>
 
-                        {/* Totals & Payments Section */}
-                        <section className="mt-10 pt-6 border-t-2 border-gray-100 flex justify-between items-start gap-10">
-                            {/* Payment Details */}
-                            <div className="bg-gray-50 rounded-xl p-6 flex-1 max-w-sm">
-                                <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Payment Summary</h3>
-                                <div className="grid grid-cols-2 gap-y-3 text-xs">
-                                    <span className="text-gray-500 font-semibold">Mode:</span>
-                                    <span className="font-black text-right text-gray-800">{invoiceData.paymentMode}</span>
-
-                                    <span className="text-gray-500 font-semibold">Status:</span>
-                                    <span className={`font-black text-right uppercase ${invoiceData.due > 0 ? 'text-red-500' : 'text-green-600'}`}>
-                                        {invoiceData.due > 0 ? 'Partial Payment' : 'Fully Paid'}
-                                    </span>
+                        {/* Boxed Summary & Payments */}
+                        <div className="mt-auto grid grid-cols-5 gap-0 border-2 border-slate-900 rounded-2xl overflow-hidden shadow-sm">
+                            {/* T&C Section */}
+                            <div className="col-span-3 p-6 border-r-2 border-slate-900 bg-slate-50/50">
+                                <h3 className="text-[10px] font-black text-slate-900 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                    <i className="fas fa-gavel opacity-30"></i> Terms & Conditions
+                                </h3>
+                                <div className="space-y-2">
+                                    <p className="text-[9px] text-slate-500 font-bold flex items-start gap-1.5"><span className="text-slate-900">01.</span> Services provided are non-refundable once performed.</p>
+                                    <p className="text-[9px] text-slate-500 font-bold flex items-start gap-1.5"><span className="text-slate-900">02.</span> Reports issued after verified clinical examination.</p>
+                                    <p className="text-[9px] text-slate-500 font-bold flex items-start gap-1.5"><span className="text-slate-900">03.</span> Computer generated - Digital Record ID: {invoiceData.invoiceId}</p>
                                 </div>
-                                {invoiceData.due > 0 && (
-                                    <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg">
-                                        <p className="text-[10px] text-red-600 font-bold text-center">Balance of ₹{invoiceData.due.toFixed(2)} is pending.</p>
-                                    </div>
-                                )}
                             </div>
 
-                            {/* Calculation Box */}
-                            <div className="w-72 space-y-2">
-                                <div className="flex justify-between text-sm text-gray-600 font-semibold">
-                                    <span>Subtotal:</span>
-                                    <span>₹{invoiceData.subtotal.toFixed(2)}</span>
-                                </div>
-                                {invoiceData.discount > 0 && (
-                                    <div className="flex justify-between text-sm text-green-600 font-semibold">
-                                        <span>Discount ({invoiceData.discountPercent}%):</span>
-                                        <span>- ₹{invoiceData.discount.toFixed(2)}</span>
+                            {/* Totals Section */}
+                            <div className="col-span-2">
+                                <div className="p-4 space-y-1.5 bg-white">
+                                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
+                                        <span>SUBTOTAL</span>
+                                        <span className="text-slate-900 font-black">₹{invoiceData.subtotal.toFixed(2)}</span>
                                     </div>
-                                )}
-                                {invoiceData.gst > 0 && (
-                                    <div className="flex justify-between text-sm text-gray-600 font-semibold">
-                                        <span>GST ({invoiceData.gstPercent}%):</span>
-                                        <span>₹{invoiceData.gst.toFixed(2)}</span>
+                                    {invoiceData.discount > 0 && (
+                                        <div className="flex justify-between items-center text-[10px] font-black text-green-600">
+                                            <span>DISCOUNT ({invoiceData.discountPercent}%)</span>
+                                            <span>- ₹{invoiceData.discount.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    {invoiceData.gst > 0 && (
+                                        <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
+                                            <span>TAX / GST</span>
+                                            <span className="text-slate-900 font-black">₹{invoiceData.gst.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="bg-slate-900 p-5 text-white">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Grand Total</span>
+                                        <span className="text-2xl font-black tracking-tighter">₹{invoiceData.total.toFixed(2)}</span>
                                     </div>
-                                )}
-                                <div className="flex justify-between items-center pt-3 border-t-2 border-gray-200 mt-2">
-                                    <span className="text-base font-black text-gray-800">Grand Total:</span>
-                                    <span className="text-2xl font-black" style={{ color: theme.primary }}>₹{invoiceData.total.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between text-sm font-bold pt-2 text-blue-600">
-                                    <span>Amount Paid:</span>
-                                    <span>₹{invoiceData.paid.toFixed(2)}</span>
-                                </div>
-                                {invoiceData.due > 0 && (
-                                    <div className="flex justify-between text-sm font-bold text-red-500">
-                                        <span>Balance Due:</span>
-                                        <span>₹{invoiceData.due.toFixed(2)}</span>
+                                    <div className="space-y-1 mt-4 pt-4 border-t border-white/20">
+                                        <div className="flex justify-between items-center text-[10px] font-black text-green-400">
+                                            <span className="tracking-widest">PAID AMOUNT</span>
+                                            <span>₹{invoiceData.paid.toFixed(2)}</span>
+                                        </div>
+                                        {invoiceData.due > 0 && (
+                                            <div className="flex justify-between items-center text-[10px] font-black text-red-500">
+                                                <span className="tracking-widest">BALANCE DUE</span>
+                                                <span className="animate-pulse">₹{invoiceData.due.toFixed(2)}</span>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
-                        </section>
-                    </main>
-
-                    {/* Footer Section */}
-                    <footer className="mt-auto border-t border-gray-100 bg-white">
-                        <div className="px-10 py-8 flex items-end justify-between">
-                            {/* Thank You Note */}
-                            <div className="max-w-xs">
-                                <p className="text-xs text-gray-400 italic font-medium leading-relaxed">
-                                    * Thank you for choosing {branding.labName}. This is a computer-generated invoice and doesn't require a physical signature.
-                                </p>
-                            </div>
-
-                            {/* Signature */}
-                            <div className="text-center w-48">
-                                <div className="h-14 flex items-center justify-center italic text-gray-400 opacity-50 text-xs">
-                                    {branding.director ? `Seal of ${branding.director}` : 'Authorized Signatory'}
                                 </div>
-                                <div className="pt-2 border-t border-gray-300 font-black text-[11px] uppercase tracking-wider text-gray-700">
-                                    Authorized Signatory
-                                </div>
-                                <p className="text-[9px] text-gray-500 mt-1 font-bold">{branding.director || 'Lab Director'}</p>
                             </div>
                         </div>
 
-                        {/* Bottom Identity Bar */}
-                        <div className="py-3 px-8 text-center text-[9px] font-black text-gray-400 uppercase tracking-widest border-t border-gray-50 bg-gray-50/50">
-                            Generated via Mediclo MedOS • {new Date().toLocaleDateString('en-IN')} {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                    </footer>
+                        {/* Footer Section - Director Only */}
+                        <footer className="mt-12 flex items-end justify-between px-2">
+                            <div className="flex-1 text-[8px] text-slate-400 font-black tracking-widest uppercase mb-1">
+                                System Generated Document ID: {invoiceData.invoiceId} <br/>
+                                Issued on: {new Date().toLocaleDateString('en-IN')}
+                            </div>
+
+                            <div className="text-right">
+                                <div className="h-16 w-52 mb-3 flex items-center justify-center border-b-2 border-slate-900 bg-slate-50/10">
+                                    <span className="text-[9px] text-slate-300 font-black uppercase tracking-[0.4em] opacity-40 italic">LAB DIRECTOR SEAL</span>
+                                </div>
+                                <p className="text-[11px] font-black text-slate-900 uppercase tracking-[0.1em]">{branding.director || 'Lab Director'}</p>
+                                <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mt-0.5">Authorized Signatory</p>
+                            </div>
+                        </footer>
+                    </div>
                 </div>
             </div>
         </>

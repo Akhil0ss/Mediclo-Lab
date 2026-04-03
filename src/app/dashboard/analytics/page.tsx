@@ -40,15 +40,21 @@ export default function AnalyticsPage() {
 
     // Combined Core Metrics
     const [metrics, setMetrics] = useState({
-        totalRevenue: { value: 0, growth: 0 },
+        netCollections: { value: 0, growth: 0 },
+        grossRevenue: { value: 0 },
         labRevenue: { value: 0, growth: 0 },
         opdRevenue: { value: 0, growth: 0 },
         totalPatients: { value: 0 },
         labVolume: 0,
         opdVolume: 0,
+        activeLabLoad: 0,
+        activeOpdQueue: 0,
+        emergencyToday: 0,
         avgTAT: { value: 0, unit: 'hrs' },
-        outstanding: 0
+        outstanding: 0,
+        efficiency: 0
     });
+
 
     // Charts & Lists Data
     const [trendData, setTrendData] = useState<any>(null);
@@ -84,20 +90,28 @@ export default function AnalyticsPage() {
             const prevStart = new Date();
             const prevEnd = new Date();
 
+            end.setHours(23, 59, 59, 999); // End of today
+
             if (tf === 'today') {
                 start.setHours(0, 0, 0, 0);
                 prevStart.setDate(start.getDate() - 1);
                 prevStart.setHours(0, 0, 0, 0);
-                prevEnd.setHours(0, 0, 0, 0);
-                prevEnd.setMilliseconds(-1);
+                prevEnd.setDate(start.getDate() - 1);
+                prevEnd.setHours(23, 59, 59, 999);
             } else if (tf === 'week') {
                 start.setDate(now.getDate() - 7);
+                start.setHours(0, 0, 0, 0);
                 prevStart.setDate(start.getDate() - 7);
+                prevStart.setHours(0, 0, 0, 0);
                 prevEnd.setDate(start.getDate());
+                prevEnd.setHours(23, 59, 59, 999);
             } else {
                 start.setDate(now.getDate() - 30);
+                start.setHours(0, 0, 0, 0);
                 prevStart.setDate(start.getDate() - 30);
+                prevStart.setHours(0, 0, 0, 0);
                 prevEnd.setDate(start.getDate());
+                prevEnd.setHours(23, 59, 59, 999);
             }
             return { start, end, prevStart, prevEnd };
         };
@@ -128,15 +142,20 @@ export default function AnalyticsPage() {
             const staffRaw = results[8].exists() ? Object.values(results[8].val() as object) as any[] : [];
 
 
-            // Staff Fee Map
+            // Staff & Template Maps for Instant Lookup
             const staffFeeMap: Record<string, number> = {};
             staffRaw.forEach((s: any) => { if (s.id && s.fee) staffFeeMap[s.id] = parseFloat(s.fee) || 0; });
+            
+            const templatePriceMap: Record<string, number> = {};
+            templates.forEach((t: any) => { if (t.name) templatePriceMap[t.name.toLowerCase().trim()] = parseFloat(t.totalPrice || t.price || 0); });
 
             const filterByRange = (data: any[], s: Date, e: Date) =>
                 data.filter(item => {
                     const dateStr = item.createdAt || item.visitDate || item.date;
                     if (!dateStr) return false;
                     const d = new Date(dateStr);
+                    // Handle simple date strings (YYYY-MM-DD) by ensuring they aren't hit by UTC shifts
+                    if (dateStr.length === 10) d.setHours(12, 0, 0, 0); 
                     return d >= s && d <= e;
                 });
 
@@ -144,22 +163,39 @@ export default function AnalyticsPage() {
             const prevInvoices = filterByRange(invoices, prevStart, prevEnd);
             const currOpd = filterByRange(opdRaw, start, end);
             const prevOpd = filterByRange(opdRaw, prevStart, prevEnd);
+            const currSamples = filterByRange(samples, start, end);
+            const prevSamples = filterByRange(samples, prevStart, prevEnd);
             const currReports = filterByRange(reports, start, end);
 
-            // Revenue
-            const currLabRev = currInvoices.reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0);
-            const prevLabRev = prevInvoices.reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0);
-            const currOpdRev = currOpd.filter(v => (v as any).status === 'completed').reduce((sum, v) => sum + (staffFeeMap[(v as any).doctorId] || 0), 0);
-            const prevOpdRev = prevOpd.filter(v => (v as any).status === 'completed').reduce((sum, v) => sum + (staffFeeMap[(v as any).doctorId] || 0), 0);
+            // CLINICAL-FIRST REVENUE AUDIT (Workload based)
+            // Lab Gross = All test prices from Samples (even if unbilled)
+            const calculateSampleGross = (samps: any[]) => samps.reduce((sum, s) => {
+                let sSum = 0;
+                if (s.tests && Array.isArray(s.tests)) {
+                    s.tests.forEach(tn => (sSum += (templatePriceMap[tn.toLowerCase().trim()] || 0)));
+                }
+                return sum + sSum;
+            }, 0);
 
+            const currLabGross = calculateSampleGross(currSamples);
+            const prevLabGross = calculateSampleGross(prevSamples);
 
-            const totalCurrRev = currLabRev + currOpdRev;
-            const totalPrevRev = prevLabRev + prevOpdRev;
+            // OPD Gross = All Consultation Fees (regardless of status)
+            const currOpdBilled = currOpd.reduce((sum, v) => sum + (staffFeeMap[v.doctorId] || 0), 0);
+            const prevOpdBilled = prevOpd.reduce((sum, v) => sum + (staffFeeMap[v.doctorId] || 0), 0);
+
+            // Actual Collections (Paid amount from invoices)
+            const totalCurrPaid = currInvoices.reduce((sum, inv) => sum + (parseFloat(inv.paid) || 0), 0);
+            const totalPrevPaid = prevInvoices.reduce((sum, inv) => sum + (parseFloat(inv.paid) || 0), 0);
+ 
+            const totalCurrGross = currLabGross + currOpdBilled;
+            const totalPrevGross = prevLabGross + prevOpdBilled;
 
             const calculateGrowth = (curr: number, prev: number) => {
                 if (prev === 0) return curr > 0 ? 100 : 0;
                 return Math.round(((curr - prev) / prev) * 100);
             };
+
 
             // Unique Patients
             const uniquePatientIds = new Set([
@@ -179,9 +215,12 @@ export default function AnalyticsPage() {
                 const dStr = d.toISOString().split('T')[0];
                 chartLabels.push(d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }));
                 
-                labRevTrend.push(invoices.filter((inv: any) => (inv.createdAt || inv.date)?.startsWith(dStr)).reduce((sum, inv) => sum + (parseFloat(inv.total) || 0), 0));
-                opdRevTrend.push(opdRaw.filter((v: any) => (v as any).status === 'completed' && (v.createdAt || (v as any).visitDate)?.startsWith(dStr)).reduce((sum, v) => sum + (staffFeeMap[(v as any).doctorId] || 0), 0));
-                volTrend.push(reports.filter((r: any) => r.createdAt?.startsWith(dStr)).length + opdRaw.filter((v: any) => (v.createdAt || (v as any).visitDate)?.startsWith(dStr)).length);
+                const daySamples = samples.filter((s: any) => (s.createdAt || s.date)?.startsWith(dStr));
+                const dayOpd = opdRaw.filter((v: any) => (v.createdAt || v.visitDate)?.startsWith(dStr));
+                
+                labRevTrend.push(calculateSampleGross(daySamples));
+                opdRevTrend.push(dayOpd.reduce((sum, v) => sum + (staffFeeMap[v.doctorId] || 0), 0));
+                volTrend.push(daySamples.length + dayOpd.length);
             }
 
             setTrendData({
@@ -209,7 +248,7 @@ export default function AnalyticsPage() {
                 const dName = v.doctorName || 'Unknown';
                 if (!docPerf[dName]) docPerf[dName] = { visits: 0, revenue: 0 };
                 docPerf[dName].visits++;
-                if (s === 'completed') docPerf[dName].revenue += (staffFeeMap[v.doctorId] || 0);
+                docPerf[dName].revenue += (staffFeeMap[v.doctorId] || 0); // Gross revenue per doctor
             });
 
             setOpdStatusData({
@@ -251,11 +290,14 @@ export default function AnalyticsPage() {
             const catRevenue: Record<string, number> = {};
             const testVol: Record<string, number> = {};
 
-            currInvoices.forEach((inv: any) => {
-                if (inv.items) inv.items.forEach((item: any) => {
-                    const cat = templateMap[item.name] || 'Others';
-                    catRevenue[cat] = (catRevenue[cat] || 0) + (parseFloat(item.amount) || 0);
-                });
+            currSamples.forEach((s: any) => {
+                if (s.tests && Array.isArray(s.tests)) {
+                    s.tests.forEach((tn: string) => {
+                        const cat = templateMap[tn] || 'Others';
+                        const price = templatePriceMap[tn.toLowerCase().trim()] || 0;
+                        catRevenue[cat] = (catRevenue[cat] || 0) + price;
+                    });
+                }
             });
             currReports.forEach((r: any) => {
                 const name = r.testName || 'Unknown';
@@ -295,15 +337,21 @@ export default function AnalyticsPage() {
             const avgTAT = compSamples.length > 0 ? (totalTAT / compSamples.length / (1000 * 3600)).toFixed(1) : 0;
 
             setMetrics({
-                totalRevenue: { value: totalCurrRev, growth: calculateGrowth(totalCurrRev, totalPrevRev) },
-                labRevenue: { value: currLabRev, growth: calculateGrowth(currLabRev, prevLabRev) },
-                opdRevenue: { value: currOpdRev, growth: calculateGrowth(currOpdRev, prevOpdRev) },
+                netCollections: { value: totalCurrPaid, growth: calculateGrowth(totalCurrPaid, totalPrevPaid) },
+                grossRevenue: { value: totalCurrGross },
+                labRevenue: { value: currLabGross, growth: calculateGrowth(currLabGross, prevLabGross) },
+                opdRevenue: { value: currOpdBilled, growth: calculateGrowth(currOpdBilled, prevOpdBilled) },
                 totalPatients: { value: uniquePatientIds.size },
-                labVolume: currReports.length,
+                labVolume: currSamples.length,
                 opdVolume: currOpd.length,
+                activeLabLoad: currSamples.filter((s: any) => s.status !== 'Completed').length,
+                activeOpdQueue: currOpd.filter((v: any) => (v.status || 'pending').toLowerCase() === 'pending').length,
+                emergencyToday: currOpd.filter((v: any) => v.isEmergency).length,
                 avgTAT: { value: Number(avgTAT), unit: 'hrs' },
-                outstanding: invoices.reduce((sum, inv) => sum + (parseFloat(inv.due) || 0), 0)
+                outstanding: totalCurrGross - totalCurrPaid,
+                efficiency: totalCurrGross > 0 ? Math.round((totalCurrPaid / totalCurrGross) * 100) : 100
             });
+
 
             setLoading(false);
         } catch (error) {
@@ -340,12 +388,46 @@ export default function AnalyticsPage() {
             </div>
 
             {/* Metrics Grid - Compact Row */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <MetricCard title="Total Revenue" value={`₹${metrics.totalRevenue.value.toLocaleString()}`} growth={metrics.totalRevenue.growth} icon="fas fa-coins" color="emerald" />
-                <MetricCard title="Lab Revenue" value={`₹${metrics.labRevenue.value.toLocaleString()}`} growth={metrics.labRevenue.growth} icon="fas fa-microscope" color="sky" />
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                <MetricCard 
+                    title="Revenue" 
+                    value={`₹${metrics.grossRevenue.value.toLocaleString()}`} 
+                    growth={metrics.netCollections.growth} 
+                    icon="fas fa-coins" 
+                    color="emerald" 
+                    subtitle={`Collected: ₹${metrics.netCollections.value.toLocaleString()}`}
+                />
+                <MetricCard 
+                    title="Net Collections" 
+                    value={`₹${metrics.netCollections.value.toLocaleString()}`} 
+                    growth={metrics.netCollections.growth} 
+                    icon="fas fa-wallet" 
+                    color="sky" 
+                    subtitle={`Efficiency: ${metrics.efficiency}%`}
+                />
                 <MetricCard title="OPD Revenue" value={`₹${metrics.opdRevenue.value.toLocaleString()}`} growth={metrics.opdRevenue.growth} icon="fas fa-user-md" color="indigo" />
-                <MetricCard title="Total Patients" value={metrics.totalPatients.value.toString()} icon="fas fa-users" color="purple" hideGrowth />
+                
+                <MetricCard 
+                    title="Total Reports" 
+                    value={metrics.labVolume.toString()} 
+                    icon="fas fa-file-medical" 
+                    color="amber" 
+                />
+                <MetricCard 
+                    title="OPD Visits" 
+                    value={metrics.opdVolume.toString()} 
+                    icon="fas fa-stethoscope" 
+                    color="rose" 
+                />
+                <MetricCard 
+                    title="Unique Patients" 
+                    value={metrics.totalPatients.value.toString()} 
+                    icon="fas fa-users" 
+                    color="purple" 
+                    subtitle={`Eff: ${metrics.efficiency}%`}
+                />
             </div>
+
 
 
             {/* Main Content Grid */}
@@ -466,15 +548,24 @@ export default function AnalyticsPage() {
                                     <span>₹{p.value.toLocaleString()}</span>
                                 </div>
                                 <div className="w-full h-1 bg-gray-50 rounded-full overflow-hidden">
-                                    <div className="h-full bg-slate-800" style={{ width: `${(p.value / (metrics.totalRevenue.value || 1)) * 100}%` }} />
+                                    <div className="h-full bg-slate-800" style={{ width: `${(p.value / (metrics.netCollections.value || 1)) * 100}%` }} />
                                 </div>
+
                             </div>
                         ))}
                     </div>
                     <div className="mt-4 bg-indigo-600 p-3 rounded-2xl text-white">
-                        <p className="text-[8px] font-black opacity-70 uppercase">Financial Efficiency</p>
-                        <p className="text-xl font-black">₹{(metrics.totalRevenue.value / (metrics.totalPatients.value || 1)).toFixed(0)} <span className="text-xs font-bold opacity-60">/ PATIENT</span></p>
+                        <div className="flex justify-between items-end">
+                            <div>
+                                <p className="text-[8px] font-black opacity-70 uppercase">Financial Efficiency</p>
+                                <p className="text-xl font-black">₹{(metrics.netCollections.value / (metrics.totalPatients.value || 1)).toFixed(0)} <span className="text-xs font-bold opacity-60">/ PATIENT</span></p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-[10px] font-bold opacity-60">{metrics.efficiency}% collected</p>
+                            </div>
+                        </div>
                     </div>
+
                 </div>
             </div>
         </div>
@@ -482,34 +573,38 @@ export default function AnalyticsPage() {
 }
 
 // Helper Components
-function MetricCard({ title, value, growth, icon, color, hideGrowth = false }: any) {
+function MetricCard({ title, value, growth, icon, color, subtitle }: any) {
     const colors: any = {
         emerald: 'from-emerald-50 to-green-50 text-emerald-700 bg-emerald-500 border-emerald-100',
         sky: 'from-sky-50 to-blue-50 text-sky-700 bg-sky-500 border-sky-100',
         indigo: 'from-indigo-50 to-violet-50 text-indigo-700 bg-indigo-500 border-indigo-100',
         purple: 'from-purple-50 to-fuchsia-50 text-purple-700 bg-purple-500 border-purple-100',
+        amber: 'from-amber-50 to-orange-50 text-amber-700 bg-amber-500 border-amber-100',
+        rose: 'from-rose-50 to-red-50 text-rose-700 bg-rose-500 border-rose-100',
     };
 
     return (
-        <div className={`bg-gradient-to-br ${colors[color].split(' text-')[0]} p-3 rounded-2xl shadow-sm border ${colors[color].split(' border-')[1]} relative overflow-hidden group`}>
-            <div className="flex justify-between items-start">
-                <div>
-                    <p className={`text-[9px] font-black uppercase tracking-tight mb-1 ${colors[color].split(' text-')[1].split(' bg-')[0]} opacity-70`}>{title}</p>
-                    <h3 className="text-xl font-black text-gray-900">{value}</h3>
+        <div className={`bg-gradient-to-br ${colors[color].split(' text-')[0]} px-3 py-2.5 rounded-2xl shadow-sm border ${colors[color].split(' border-')[1]} relative overflow-hidden group`}>
+            <div className="flex flex-col h-full justify-between">
+                <div className="flex justify-between items-start">
+                    <p className={`text-[9px] font-black uppercase tracking-tight ${colors[color].split(' text-')[1].split(' bg-')[0]} opacity-70`}>{title}</p>
+                    <div className={`w-6 h-6 bg-white/60 backdrop-blur-sm rounded-lg flex items-center justify-center ${colors[color].split(' text-')[1].split(' bg-')[0]} text-[10px] border border-white/50`}>
+                        <i className={icon} />
+                    </div>
                 </div>
-                <div className={`w-8 h-8 bg-white/60 backdrop-blur-sm rounded-xl shadow-sm flex items-center justify-center ${colors[color].split(' text-')[1].split(' bg-')[0]} shrink-0 border border-white/50`}>
-                    {icon.length > 3 ? <i className={icon} /> : <span className="text-sm font-black">{icon}</span>}
+                
+                <div className="mt-1">
+                    <div className="flex items-baseline gap-2">
+                        <h3 className="text-lg font-black text-gray-900 tracking-tight leading-none">{value}</h3>
+                        {growth !== undefined && growth !== 0 && (
+                            <span className={`text-[9px] font-black ${growth >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                {growth > 0 ? '↑' : '↓'}{Math.abs(growth)}%
+                            </span>
+                        )}
+                    </div>
+                    {subtitle && <p className="text-[8px] font-black text-gray-400 uppercase mt-0.5 tracking-tighter truncate">{subtitle}</p>}
                 </div>
             </div>
-            {!hideGrowth && growth !== undefined && (
-
-                <div className="mt-2">
-                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-lg ${growth >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                        <i className={`fas fa-caret-${growth >= 0 ? 'up' : 'down'} mr-0.5`} />
-                        {Math.abs(growth)}%
-                    </span>
-                </div>
-            )}
         </div>
     );
 }
