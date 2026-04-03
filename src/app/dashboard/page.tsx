@@ -271,7 +271,7 @@ export default function DashboardPage() {
             });
         }
 
-    }, [user, dataOwnerId, today, isDoctor, userProfile, selectedRxDate]);
+    }, [user, dataOwnerId, today, isDoctor, userProfile, selectedRxDate, patientsMap]);
 
     if (!user) return null;
 
@@ -397,7 +397,7 @@ export default function DashboardPage() {
                                                     {v.patientName}
                                                 </td>
                                                 <td className="px-4 py-2.5 font-bold text-gray-500 whitespace-nowrap">
-                                                    <i className="fas fa-phone-alt text-[7px] mr-1.5 opacity-50"></i>{v.patientPhone || v.mobile || <span className="opacity-30 font-normal italic">N/A</span>}
+                                                    <i className="fas fa-phone-alt text-[7px] mr-1.5 opacity-50"></i>{patientsMap[v.patientId]?.mobile || v.patientPhone || v.mobile || <span className="opacity-30 font-normal italic">N/A</span>}
                                                 </td>
                                                 <td className="px-4 py-2.5 whitespace-nowrap">
                                                     <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded font-black tracking-tighter uppercase whitespace-nowrap border border-blue-100">Dr. {v.doctorName}</span>
@@ -405,7 +405,7 @@ export default function DashboardPage() {
                                                 <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                                     <div className="flex justify-end gap-1.5">
                                                         <button 
-                                                            onClick={() => { setHistoryPatient(v); setHistoryTab('ai'); }}
+                                                            onClick={() => setActiveRxVisit(v)}
                                                             className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 transition-colors shrink-0"
                                                             title="View RX"
                                                         >
@@ -434,6 +434,29 @@ export default function DashboardPage() {
                         </div>
                     </div>
                 </div>
+
+                <PatientHistoryModal 
+                    isOpen={!!historyPatient}
+                    onClose={() => { setHistoryPatient(null); setHistoryTab('visits'); }}
+                    patientId={historyPatient?.id || ''}
+                    patientName={historyPatient?.name || ''}
+                    ownerId={dataOwnerId}
+                    role={userProfile?.role}
+                    defaultTab={historyTab === 'samples' ? 'visits' : historyTab}
+                    onViewRx={setActiveRxVisit}
+                />
+
+                <RxModal
+                    isOpen={!!activeRxVisit}
+                    onClose={() => setActiveRxVisit(null)}
+                    visit={activeRxVisit}
+                    ownerId={dataOwnerId}
+                    doctorName={userProfile?.name?.split(' ')[0]}
+                    labName={userProfile?.labName}
+                    readOnly={!isDoctor}
+                    isPharmacy={isPharmacy}
+                    patientDisplayId={patientsMap[activeRxVisit?.patientId]?.patientId}
+                />
             </div>
         );
     }
@@ -1159,6 +1182,8 @@ export default function DashboardPage() {
                 doctorName={userProfile?.name?.split(' ')[0]}
                 labName={userProfile?.labName}
                 readOnly={!isDoctor}
+                isPharmacy={isPharmacy}
+                patientDisplayId={patientsMap[activeRxVisit?.patientId]?.patientId}
             />
         </div>
     );
