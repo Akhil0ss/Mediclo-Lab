@@ -539,17 +539,6 @@ export default function OPDPage() {
                                             >
                                                 <i className="fas fa-print text-[10px]"></i>
                                             </button>
-                                            {visit.status === 'referred' && (
-                                                <button 
-                                                    onClick={() => {
-                                                        setSelectedVisitForLab(visit);
-                                                        setShowQuickSampleModal(true);
-                                                    }}
-                                                    className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-lg transition-colors border border-purple-50" title="Add Lab Sample"
-                                                >
-                                                    <i className="fas fa-flask text-[10px]"></i>
-                                                </button>
-                                            )}
                                         </div>
                                     </td>
                                 </tr>

@@ -413,8 +413,20 @@ export default function DashboardPage() {
                                                 <td className="px-4 py-2.5 font-bold text-gray-600 whitespace-nowrap">
                                                     {v.patientReadableId || <span className="opacity-30 italic text-[9px]">N/A</span>}
                                                 </td>
-                                                <td className="px-4 py-2.5 font-black text-gray-900 uppercase tracking-tighter whitespace-nowrap">
-                                                    {v.patientName}
+                                                <td className="px-4 py-2.5 whitespace-nowrap">
+                                                     <div className="flex flex-col">
+                                                         <span className="font-black text-gray-900 uppercase tracking-tighter">{v.patientName}</span>
+                                                         {/* Inline Medicine List for Pharmacy Dispatch */}
+                                                         {v.prescription?.medicines?.length > 0 && (
+                                                             <div className="flex flex-wrap gap-1 mt-1.5 max-w-[250px]">
+                                                                 {v.prescription.medicines.map((m: any, mi: number) => m.name && (
+                                                                     <span key={mi} className="text-[7.5px] font-black bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100 uppercase tracking-tighter">
+                                                                         {m.name} {m.dosage ? `(${m.dosage})` : ''}
+                                                                     </span>
+                                                                 ))}
+                                                             </div>
+                                                         )}
+                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-2.5 font-bold text-gray-500 whitespace-nowrap">
                                                     <i className="fas fa-phone-alt text-[7px] mr-1.5 opacity-50"></i>{patientsMap[v.patientId]?.mobile || v.patientPhone || v.mobile || <span className="opacity-30 font-normal italic">N/A</span>}
