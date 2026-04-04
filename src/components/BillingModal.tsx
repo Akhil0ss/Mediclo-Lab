@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ref, onValue, get, update, push, set } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { calculateBilling, createBillingItem, formatCurrency } from '@/lib/billingCalculator';
+import { mergeTemplates, getPriceMap } from '@/lib/templateUtils';
 import { generateInvoiceId } from '@/lib/idGenerator';
 import Modal from './Modal';
 
@@ -56,9 +57,12 @@ export default function BillingModal({ isOpen, onClose, patient, ownerId, userId
                 // Templates
                 const userT = await get(templatesRef);
                 const commonT = await get(commonTemplatesRef);
-                const combinedT: any[] = [];
-                userT.forEach(c => { combinedT.push({ id: c.key, ...c.val() }); });
-                commonT.forEach(c => { combinedT.push({ id: c.key, ...c.val() }); });
+                const userTList: any[] = [];
+                userT.forEach(c => { userTList.push({ id: c.key, ...c.val() }); });
+                const commonTList: any[] = [];
+                commonT.forEach(c => { commonTList.push({ id: c.key, ...c.val() }); });
+                
+                const combinedT = mergeTemplates(userTList, commonTList);
                 setTemplates(combinedT);
 
                 // Staff/Doctors
@@ -140,6 +144,7 @@ export default function BillingModal({ isOpen, onClose, patient, ownerId, userId
         }
 
         // 2. Scan clinical nodes for NEW items not yet in the bill
+        const priceMap = getPriceMap(temps || templates);
         
         // A. OPD Consultations
         const dateOpd = (visits || opdVisits).filter(v => v.visitDate?.startsWith(date));
@@ -169,18 +174,19 @@ export default function BillingModal({ isOpen, onClose, patient, ownerId, userId
 
             const newTestsInReport: string[] = [];
             rItems.forEach(tn => {
-                if (tn && !billedNames.has(tn.toLowerCase())) {
+                const lowerTn = tn?.toLowerCase().trim();
+                if (lowerTn && !billedNames.has(lowerTn)) {
                     newTestsInReport.push(tn);
-                    billedNames.add(tn.toLowerCase());
+                    billedNames.add(lowerTn);
                 }
             });
 
             if (newTestsInReport.length > 0) {
-                let finalPrice = parseFloat(String(r.price || r.totalPrice || 0));
-                if (finalPrice === 0) {
+                let finalPrice = parseFloat(String(r.price || r.totalPrice || 0)) || 0;
+                if (finalPrice <= 0) {
                     newTestsInReport.forEach(tn => {
-                        const t = (temps || templates).find(tt => tt.name.toLowerCase() === tn.toLowerCase());
-                        if (t) finalPrice += parseFloat(String(t.totalPrice || t.price || 0));
+                        const price = priceMap[tn.toLowerCase().trim()] || 0;
+                        finalPrice += price;
                     });
                 }
                 newItems.push(createBillingItem(newTestsInReport.join(', '), 1, finalPrice));
@@ -194,8 +200,7 @@ export default function BillingModal({ isOpen, onClose, patient, ownerId, userId
             sampleTests.forEach((testName: string) => {
                 const trimmed = testName.trim();
                 if (trimmed && !billedNames.has(trimmed.toLowerCase())) {
-                    const template = (temps || templates).find(t => t.name.toLowerCase() === trimmed.toLowerCase());
-                    const price = template ? parseFloat(template.totalPrice || template.price || 0) : 0;
+                    const price = priceMap[trimmed.toLowerCase()] || 0;
                     newItems.push(createBillingItem(trimmed, 1, price));
                     billedNames.add(trimmed.toLowerCase());
                 }
@@ -419,7 +424,10 @@ export default function BillingModal({ isOpen, onClose, patient, ownerId, userId
                     {testSearch && (
                         <div className="absolute z-20 w-full mt-1 bg-white border-2 border-blue-100 rounded-xl shadow-2xl max-h-48 overflow-y-auto">
                             {templates
-                                .filter(t => t.name?.toLowerCase().includes(testSearch.toLowerCase()))
+                                .filter(t => 
+                                    t.name?.toLowerCase().includes(testSearch.toLowerCase()) ||
+                                    t.subtests?.some((st: any) => (st.name || st.testName || "").toLowerCase().includes(testSearch.toLowerCase()))
+                                )
                                 .slice(0, 5)
                                 .map(t => (
                                     <button
@@ -535,30 +543,30 @@ export default function BillingModal({ isOpen, onClose, patient, ownerId, userId
                         </div>
                     </div>
 
-                    <div className="bg-gray-800 text-white p-4 rounded-2xl space-y-1 shadow-xl">
-                        <div className="flex justify-between text-xs opacity-60">
+                    <div className="bg-slate-50 p-4 rounded-2xl space-y-1 shadow-sm border border-slate-200">
+                        <div className="flex justify-between text-xs text-slate-500 font-bold uppercase tracking-wider">
                             <span>Subtotal</span>
                             <span>{formatCurrency(b.subtotal)}</span>
                         </div>
                         {b.discount > 0 && (
-                            <div className="flex justify-between text-xs text-green-400">
+                            <div className="flex justify-between text-xs text-emerald-600 font-bold">
                                 <span>Discount ({discount}%)</span>
                                 <span>- {formatCurrency(b.discount)}</span>
                             </div>
                         )}
                         {includeGST && (
-                            <div className="flex justify-between text-xs opacity-60">
+                            <div className="flex justify-between text-xs text-slate-500 font-bold uppercase tracking-wider">
                                 <span>GST (18%)</span>
                                 <span>{formatCurrency(b.gst)}</span>
                             </div>
                         )}
-                        <div className="flex justify-between text-xl font-black border-t border-white/10 pt-2 mt-2">
+                        <div className="flex justify-between text-xl font-black border-t border-slate-200 pt-2 mt-2 text-slate-900">
                             <span>Total</span>
                             <span>{formatCurrency(b.total)}</span>
                         </div>
-                        <div className="flex justify-between text-sm text-blue-300 font-bold border-t border-white/10 pt-2">
+                        <div className="flex justify-between text-sm text-indigo-600 font-black border-t border-slate-200 pt-2">
                             <span>Balance Due</span>
-                            <span className={b.due > 0 ? 'text-red-400' : 'text-green-400'}>
+                            <span className={b.due > 0 ? 'text-rose-600' : 'text-emerald-600'}>
                                 {formatCurrency(b.due)}
                             </span>
                         </div>

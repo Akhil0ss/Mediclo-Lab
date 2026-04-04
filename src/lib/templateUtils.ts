@@ -109,3 +109,35 @@ export function mergeTemplates(userTemplates: any[], commonTemplates: any[] = []
 
     return Array.from(uniqueMap.values());
 }
+
+/**
+ * Returns a flat mapping of test/template names to their prices.
+ * Includes both top-level template names and individual subtest names.
+ * Priority: Top-level price (totalPrice) > individual subtest price.
+ */
+export function getPriceMap(templates: Template[]): Record<string, number> {
+    const priceMap: Record<string, number> = {};
+
+    templates.forEach(t => {
+        const templateName = (t.name || '').toLowerCase().trim();
+        if (templateName) {
+            priceMap[templateName] = parseFloat(String(t.totalPrice || 0));
+        }
+
+        if (t.subtests && Array.isArray(t.subtests)) {
+            t.subtests.forEach(st => {
+                const subtestName = (st.name || st.testName || '').toLowerCase().trim();
+                if (subtestName) {
+                    // Only set if not already present or if we want specific subtest prices 
+                    // (Subtests usually have lower prices than the whole group)
+                    // If a subtest name is the same as a group name, group price wins.
+                    if (!priceMap[subtestName]) {
+                        priceMap[subtestName] = parseFloat(String(st.price || 0));
+                    }
+                }
+            });
+        }
+    });
+
+    return priceMap;
+}

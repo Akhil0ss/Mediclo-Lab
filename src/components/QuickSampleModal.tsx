@@ -82,7 +82,7 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName }: 
             userSnap.forEach(c => { ut.push({ id: c.key, ...c.val() }); });
             const ct: any[] = [];
             commSnap.forEach(c => { ct.push({ id: c.key, ...c.val() }); });
-            setTemplates(mergeTemplates(ut));
+            setTemplates(mergeTemplates(ut, ct));
         });
 
         // 3. Fetch Clinicians (Internal + External)
@@ -316,7 +316,10 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName }: 
                             <input type="text" placeholder="Search tests..." value={testSearch} onChange={e => setTestSearch(e.target.value)} className="w-full pl-9 pr-4 py-2.5 bg-white border border-gray-200 rounded-t-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
                         </div>
                         <div className="max-h-44 overflow-y-auto border border-t-0 rounded-b-xl grid grid-cols-1 md:grid-cols-2 gap-px bg-gray-100">
-                            {(testSearch ? templates.filter(t => t.name.toLowerCase().includes(testSearch.toLowerCase())) : templates.slice(0, 30)).map(t => (
+                            {(testSearch ? templates.filter(t => 
+                                t.name?.toLowerCase().includes(testSearch.toLowerCase()) || 
+                                t.subtests?.some((st: any) => (st.name || st.testName || "").toLowerCase().includes(testSearch.toLowerCase()))
+                            ) : templates.slice(0, 30)).map(t => (
                                 <div key={t.id} onClick={() => toggleTest(t.id)} className={`px-4 py-2 bg-white flex items-center gap-3 cursor-pointer select-none transition-colors ${form.selectedTests.includes(t.id) ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
                                     <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${form.selectedTests.includes(t.id) ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300'}`}>
                                         {form.selectedTests.includes(t.id) && <i className="fas fa-check text-[8px]"></i>}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { database } from '@/lib/firebase';
-import { ref, onValue, query, orderByChild, equalTo, limitToLast, get } from 'firebase/database';
+import { ref, onValue, query, orderByChild, equalTo, limitToLast, get, update, remove } from 'firebase/database';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -97,9 +97,16 @@ export default function PatientDashboard() {
                 const appts: any[] = [];
                 Object.keys(indexData.appointments).forEach(apptKey => {
                     const data = indexData.appointments[apptKey];
-                    appts.push({ id: apptKey, ...data });
+                    // Hide void and cancelled appointments from the portal
+                    if (data.status !== 'void' && data.status !== 'cancelled') {
+                        appts.push({ id: apptKey, ...data });
+                    }
                 });
-                setAppointments(appts.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+                setAppointments(appts.sort((a,b) => {
+                    const dateA = new Date(a.date || 0).getTime();
+                    const dateB = new Date(b.date || 0).getTime();
+                    return dateB - dateA;
+                }));
             }
 
             const results = await Promise.all(fetchPromises);
@@ -121,6 +128,41 @@ export default function PatientDashboard() {
             unsubIndex();
         };
     }, [ownerId]);
+    
+    const handleCancelAppointment = async (appt: any) => {
+        if (!window.confirm("Are you sure you want to cancel this appointment request?")) return;
+        try {
+            const updates: any = {};
+            // 1. Update main appointment node
+            updates[`appointments/${ownerId}/${appt.id}/status`] = 'cancelled';
+            updates[`appointments/${ownerId}/${appt.id}/cancelledAt`] = new Date().toISOString();
+            updates[`appointments/${ownerId}/${appt.id}/cancelledBy`] = 'patient';
+
+            // 2. Update patient records index
+            updates[`patient_records/${ownerId}/${patientId}/appointments/${appt.id}/status`] = 'cancelled';
+
+            // 3. Mark linked OPD visit as cancelled (if any)
+            if (appt.opdVisitId) {
+                updates[`opd/${ownerId}/${appt.opdVisitId}/status`] = 'cancelled';
+            }
+
+            await update(ref(database), updates);
+            alert("Appointment cancelled successfully.");
+        } catch (error) {
+            console.error("Cancel error:", error);
+            alert("Failed to cancel appointment.");
+        }
+    };
+
+    const handleDeleteHistory = async (apptId: string) => {
+        if (!window.confirm("Remove this record from your history?")) return;
+        try {
+            await remove(ref(database, `patient_records/${ownerId}/${patientId}/appointments/${apptId}`));
+        } catch (error) {
+            console.error("Delete error:", error);
+            alert("Failed to remove record.");
+        }
+    };
 
     // Filtered data based on active tab
     const filteredRecords = allRecords.filter(r => activeTab === 'all' || r.type === activeTab);
@@ -172,12 +214,18 @@ export default function PatientDashboard() {
                                     <div>
                                         <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Appointment On</p>
                                         <h4 className="font-black text-slate-900 uppercase tracking-tighter">
-                                            {new Date(appt.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} • {appt.time}
+                                            {(() => {
+                                                const d = new Date(appt.date);
+                                                if (isNaN(d.getTime())) return appt.date || 'Today';
+                                                return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                                            })()} • {appt.time}
                                         </h4>
                                     </div>
                                     <div className="flex flex-col">
                                         <span className={`text-[8px] font-black uppercase px-2 py-1 rounded-lg self-end mb-2 ${
-                                            appt.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                                            appt.status === 'pending' ? 'bg-amber-100 text-amber-700' : 
+                                            appt.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' :
+                                            'bg-rose-100 text-rose-700'
                                         }`}>
                                             {appt.status}
                                         </span>
@@ -195,6 +243,24 @@ export default function PatientDashboard() {
                                     <div>
                                         <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Consultant</p>
                                         <p className="text-[10px] font-black text-slate-900 uppercase">Dr. {appt.doctor}</p>
+                                    </div>
+                                    <div className="ml-auto flex gap-2">
+                                        {appt.status === 'rejected' ? (
+                                            <button 
+                                                onClick={() => handleDeleteHistory(appt.id)}
+                                                className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all"
+                                                title="Delete"
+                                            >
+                                                <i className="fas fa-trash"></i>
+                                            </button>
+                                        ) : (
+                                            <button 
+                                                onClick={() => handleCancelAppointment(appt)}
+                                                className="px-3 py-1.5 rounded-lg bg-slate-50 text-slate-400 hover:bg-rose-50 hover:text-rose-600 text-[8px] font-black uppercase tracking-widest border border-slate-100 transition-all flex items-center gap-1.5"
+                                            >
+                                                <i className="fas fa-times"></i> Cancel
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>

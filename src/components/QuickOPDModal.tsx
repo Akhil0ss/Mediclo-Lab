@@ -31,6 +31,7 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
         patientAge: '',
         patientGender: '',
         patientPhone: '',
+        patientUHID: '',
         doctorId: '',
         doctorName: '',
         vitals: {
@@ -53,6 +54,7 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
                 patientAge: editData.patientAge || '',
                 patientGender: editData.patientGender || '',
                 patientPhone: editData.patientPhone || '',
+                patientUHID: editData.patientUHID || '',
                 doctorId: editData.doctorId || '',
                 doctorName: editData.doctorName || '',
                 vitals: editData.vitals || { bp: '', pulse: '', weight: '', temp: '', spo2: '' },
@@ -64,7 +66,7 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
             // Reset for new entry
             setForm({
                 patientId: '', patientName: '', patientAge: '', patientGender: '',
-                patientPhone: '',
+                patientPhone: '', patientUHID: '',
                 doctorId: '', doctorName: '',
                 vitals: { bp: '', pulse: '', weight: '', temp: '', spo2: '' },
                 complaints: '',
@@ -136,7 +138,8 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
             patientName: p.name,
             patientAge: p.age || '',
             patientGender: p.gender || '',
-            patientPhone: p.mobile || ''
+            patientPhone: p.mobile || '',
+            patientUHID: p.patientId || ''
         });
         setSearchQuery(p.name);
         setShowDropdown(false);

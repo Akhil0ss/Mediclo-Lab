@@ -113,7 +113,9 @@ export default function OnlineAppointmentModal({ isOpen, onClose, ownerId }: Onl
                 // We should sync the status there too.
                 await update(ref(database, `patient_records/${ownerId}/${appointment.patientId}/appointments/${appointment.id}`), {
                     status: 'confirmed',
-                    opdVisitId: visitKey
+                    opdVisitId: visitKey,
+                    date: today,
+                    time: targetTime
                 });
             }
 

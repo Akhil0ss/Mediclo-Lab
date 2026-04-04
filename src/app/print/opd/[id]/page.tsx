@@ -12,6 +12,7 @@ export default function PrintOPDPage() {
     const [visit, setVisit] = useState<any>(null);
     const [branding, setBranding] = useState<any>(null);
     const [doctor, setDoctor] = useState<any>(null);
+    const [patient, setPatient] = useState<any>(null);
     const [ownerId, setOwnerId] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const printTriggeredRef = useRef(false);
@@ -43,6 +44,13 @@ export default function PrintOPDPage() {
                     const docSnap = await get(ref(database, `users/${currentOwnerId}/auth/staff/${visitData.doctorId}`));
                     setDoctor(docSnap.val());
                 }
+                
+                if (visitData.patientId) {
+                    const patSnap = await get(ref(database, `patients/${currentOwnerId}/${visitData.patientId}`));
+                    if (patSnap.exists()) {
+                        setPatient(patSnap.val());
+                    }
+                }
                 setLoading(false);
             } catch (error) {
                 console.error('Error fetching print data:', error);
@@ -67,7 +75,7 @@ export default function PrintOPDPage() {
     const accentGradient = 'linear-gradient(90deg, #fbbf24, #f97316, #ef4444, #ec4899)';
 
     const displayRxId = (visit.prescription?.rxId || visit.opdId || visitId).toUpperCase();
-    const displayPatientId = (visit.patientUHID || visit.patientId || 'N/A').toUpperCase();
+    const displayPatientId = (patient?.patientId || visit.patientUHID || visit.patientId || 'N/A').toUpperCase();
 
     const currentVitals = [
         { label: 'BP', val: visit.vitals?.bp, color: 'text-red-700' },

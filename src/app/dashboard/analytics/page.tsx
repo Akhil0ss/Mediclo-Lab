@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ref, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import { mergeTemplates, getPriceMap } from '@/lib/templateUtils';
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -131,6 +132,7 @@ export default function AnalyticsPage() {
                 get(ref(database, `doctors/${dataSourceId}`)),
                 get(ref(database, `externalDoctors/${dataSourceId}`)),
                 get(ref(database, `templates/${dataSourceId}`)),
+                get(ref(database, `common_templates`)),
                 get(ref(database, `opd/${dataSourceId}`)),
                 get(ref(database, `users/${dataSourceId}/auth/staff`)),
                 get(ref(database, `appointments/${dataSourceId}`))
@@ -142,18 +144,21 @@ export default function AnalyticsPage() {
             const samples = results[3].exists() ? Object.values(results[3].val() as object) as any[] : [];
             const doctors = results[4].exists() ? Object.values(results[4].val() as object) as any[] : [];
             const externalDoctors = results[5].exists() ? Object.values(results[5].val() as object) as any[] : [];
-            const templates = results[6].exists() ? Object.values(results[6].val() as object) as any[] : [];
-            const opdRaw = results[7].exists() ? Object.values(results[7].val() as object) as any[] : [];
-            const staffRaw = results[8].exists() ? Object.values(results[8].val() as object) as any[] : [];
-            const appointments = results[9].exists() ? Object.values(results[9].val() as object) as any[] : [];
+            
+            const userT = results[6].exists() ? Object.values(results[6].val() as object) as any[] : [];
+            const commonT = results[7].exists() ? Object.values(results[7].val() as object) as any[] : [];
+            const mergedTemplates = mergeTemplates(userT, commonT);
+
+            const opdRaw = results[8].exists() ? Object.values(results[8].val() as object) as any[] : [];
+            const staffRaw = results[9].exists() ? Object.values(results[9].val() as object) as any[] : [];
+            const appointments = results[10].exists() ? Object.values(results[10].val() as object) as any[] : [];
 
 
             // Staff & Template Maps for Instant Lookup
             const staffFeeMap: Record<string, number> = {};
             staffRaw.forEach((s: any) => { if (s.id && s.fee) staffFeeMap[s.id] = parseFloat(s.fee) || 0; });
             
-            const templatePriceMap: Record<string, number> = {};
-            templates.forEach((t: any) => { if (t.name) templatePriceMap[t.name.toLowerCase().trim()] = parseFloat(t.totalPrice || t.price || 0); });
+            const templatePriceMap = getPriceMap(mergedTemplates);
 
             const filterByRange = (data: any[], s: Date, e: Date) =>
                 data.filter(item => {
@@ -294,15 +299,17 @@ export default function AnalyticsPage() {
                     barThickness: 12
                 }]
             });
-            const templateMap: Record<string, string> = {};
-            templates.forEach((t: any) => { if (t.name && t.category) templateMap[t.name] = t.category; });
             const catRevenue: Record<string, number> = {};
             const testVol: Record<string, number> = {};
 
             currSamples.forEach((s: any) => {
                 if (s.tests && Array.isArray(s.tests)) {
                     s.tests.forEach((tn: string) => {
-                        const cat = templateMap[tn] || 'Others';
+                        const template = mergedTemplates.find(mt => 
+                            mt.name.toLowerCase().trim() === tn.toLowerCase().trim() || 
+                            mt.subtests?.some(st => (st.name || st.testName || '').toLowerCase().trim() === tn.toLowerCase().trim())
+                        );
+                        const cat = template?.category || 'Others';
                         const price = templatePriceMap[tn.toLowerCase().trim()] || 0;
                         catRevenue[cat] = (catRevenue[cat] || 0) + price;
                     });

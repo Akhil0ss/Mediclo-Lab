@@ -21,7 +21,7 @@ export default function BookAppointment() {
         mobile: '',
         age: '',
         gender: 'Male',
-        date: '',
+        date: new Date().toISOString().split('T')[0],
         time: '',
         doctorId: '',
         type: 'Consultation',
@@ -157,11 +157,25 @@ export default function BookAppointment() {
             </div>
 
             <div className="text-center animate-in fade-in slide-in-from-top-4 duration-700">
-                <span className="bg-blue-100 text-blue-700 text-[10px] font-black uppercase tracking-[0.2em] px-4 py-1.5 rounded-full mb-4 inline-block">
-                    {isLoggedIn ? 'Welcome Back' : 'New Visit Request'}
-                </span>
-                <h1 className="text-3xl lg:text-4xl font-black text-slate-900 tracking-tight uppercase">Request Appointment</h1>
-                <p className="text-slate-400 text-sm font-medium mt-2">Skip the queue, book your slot at our Lab / Clinic.</p>
+                <h1 className="text-3xl lg:text-4xl font-black text-slate-900 tracking-tight uppercase mb-2">Request Appointment</h1>
+                <p className="text-slate-400 text-sm font-medium">Skip the queue, book your slot at our Lab / Clinic.</p>
+            </div>
+
+            {/* Same-Day Booking Notice */}
+            <div className="bg-blue-600 rounded-[2rem] p-6 lg:p-8 text-white shadow-2xl shadow-blue-600/20 relative overflow-hidden animate-in zoom-in-95 duration-500">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-16 translate-x-16 blur-2xl"></div>
+                <div className="relative z-10 flex flex-col md:flex-row items-center gap-6">
+                    <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center text-2xl shrink-0">
+                        <i className="fas fa-calendar-star"></i>
+                    </div>
+                    <div className="text-center md:text-left">
+                        <h3 className="text-lg font-black uppercase tracking-tight mb-1">Same-Day Priority Booking</h3>
+                        <p className="text-blue-100 text-xs font-bold leading-relaxed">
+                            We are currently accepting online appointments for <span className="text-white underline decoration-white/30 underline-offset-4">Today Only</span>. 
+                            For future consultations, please contact our reception directly or visit us during working hours.
+                        </p>
+                    </div>
+                </div>
             </div>
 
             <div className="bg-white rounded-[2.5rem] shadow-2xl shadow-slate-200/50 p-8 lg:p-12 border border-slate-50 animate-in zoom-in-95 duration-500">
@@ -244,6 +258,7 @@ export default function BookAppointment() {
                                     <input 
                                         type="date" 
                                         min={new Date().toISOString().split('T')[0]}
+                                        max={new Date().toISOString().split('T')[0]}
                                         value={form.date}
                                         onChange={e => setForm({...form, date: e.target.value})}
                                         className="w-full bg-slate-50 border-2 border-slate-50 rounded-2xl px-6 py-4 text-sm font-bold text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all"
