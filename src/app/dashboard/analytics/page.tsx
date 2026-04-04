@@ -77,12 +77,12 @@ export default function AnalyticsPage() {
     const docsPerPage = 4;
 
     useEffect(() => {
-        if (!user?.uid) {
-            setLoading(false);
+        if (!user?.uid || !dataSourceId) {
+            if (!user?.uid) setLoading(false);
             return;
         }
         fetchAnalytics();
-    }, [user, timeframe]);
+    }, [user, userProfile, timeframe, dataSourceId]);
 
     const fetchAnalytics = async () => {
         if (!user?.uid) return;
@@ -149,14 +149,15 @@ export default function AnalyticsPage() {
             const commonT = results[7].exists() ? Object.values(results[7].val() as object) as any[] : [];
             const mergedTemplates = mergeTemplates(userT, commonT);
 
-            const opdRaw = results[8].exists() ? Object.values(results[8].val() as object) as any[] : [];
-            const staffRaw = results[9].exists() ? Object.values(results[9].val() as object) as any[] : [];
-            const appointments = results[10].exists() ? Object.values(results[10].val() as object) as any[] : [];
+            const opdRaw = results[8].exists() ? Object.values(results[8].val() as object) : [];
+            const staffRaw = results[9].exists() ? results[9].val() as Record<string, any> : {};
+            const appointments = results[10].exists() ? Object.values(results[10].val() as object) : [];
 
-
-            // Staff & Template Maps for Instant Lookup
+            // Staff & Template Maps for Instant Lookup (Using Keys for Mapping)
             const staffFeeMap: Record<string, number> = {};
-            staffRaw.forEach((s: any) => { if (s.id && s.fee) staffFeeMap[s.id] = parseFloat(s.fee) || 0; });
+            Object.entries(staffRaw).forEach(([id, s]: [string, any]) => { 
+                if (s.fee) staffFeeMap[id] = parseFloat(s.fee) || 0; 
+            });
             
             const templatePriceMap = getPriceMap(mergedTemplates);
 

@@ -179,24 +179,27 @@ export default function DashboardChat({ dataOwnerId, userRole, userName, channel
                         <div className="bg-gray-100 p-1 flex gap-1">
                             <button 
                                 onClick={() => setActiveChannel('lab')}
-                                className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 ${activeChannel === 'lab' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center relative ${activeChannel === 'lab' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                title="Laboratory Coordination"
                             >
-                                <i className="fas fa-microscope text-[10px]"></i> LAB
-                                {unreadCounts.lab > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
+                                <i className="fas fa-vial text-sm"></i>
+                                {unreadCounts.lab > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse border-2 border-white"></span>}
                             </button>
                             <button 
                                 onClick={() => setActiveChannel('doctor')}
-                                className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 ${activeChannel === 'doctor' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center relative ${activeChannel === 'doctor' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                title="Doctor Coordination"
                             >
-                                <i className="fas fa-user-md text-[10px]"></i> PHYSICIAN
-                                {unreadCounts.doctor > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
+                                <i className="fas fa-user-md text-sm"></i>
+                                {unreadCounts.doctor > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse border-2 border-white"></span>}
                             </button>
                             <button 
                                 onClick={() => setActiveChannel('pharmacy')}
-                                className={`flex-1 py-1.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 ${activeChannel === 'pharmacy' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center relative ${activeChannel === 'pharmacy' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                                title="Pharmacy Coordination"
                             >
-                                <i className="fas fa-pills text-[10px]"></i> PHARMACY
-                                {unreadCounts.pharmacy > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>}
+                                <i className="fas fa-pills text-sm"></i>
+                                {unreadCounts.pharmacy > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full animate-pulse border-2 border-white"></span>}
                             </button>
                         </div>
                     )}

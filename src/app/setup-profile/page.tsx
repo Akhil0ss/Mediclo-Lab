@@ -24,7 +24,7 @@ export default function SetupProfilePage() {
 
         // Validate lab name
         if (!formData.labName.trim()) {
-            setErrors(['Lab name is required']);
+            setErrors(['Clinic or Lab name is required']);
             return;
         }
 
@@ -53,22 +53,22 @@ export default function SetupProfilePage() {
                     <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
                         <i className="fas fa-flask text-3xl text-purple-600"></i>
                     </div>
-                    <h1 className="text-3xl font-bold text-gray-800 mb-2">Setup Your Lab</h1>
-                    <p className="text-gray-600">Enter your lab details to get started</p>
+                    <h1 className="text-3xl font-bold text-gray-800 mb-2">Setup Your Profile</h1>
+                    <p className="text-gray-600 font-medium">Enter your Lab or Clinic details to get started</p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                     {/* Lab Name */}
                     <div>
                         <label className="block text-sm font-semibold mb-2 text-gray-700">
-                            <i className="fas fa-hospital text-purple-600 mr-2"></i>Lab Name *
+                            <i className="fas fa-hospital text-purple-600 mr-2"></i>LAB or Clinic name *
                         </label>
                         <input
                             type="text"
-                            placeholder="e.g., Spotnet MedOS"
+                            placeholder="e.g., City Lab or Apollo Clinic"
                             value={formData.labName}
                             onChange={(e) => setFormData({ ...formData, labName: e.target.value })}
-                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            className="w-full px-4 py-3 border-2 border-gray-100 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all outline-none"
                             required
                         />
                         <p className="text-xs text-gray-500 mt-1">

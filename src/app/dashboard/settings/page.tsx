@@ -486,7 +486,7 @@ export default function SettingsPage() {
             const reqRef = push(ref(database, `payment_requests/${user.uid}`));
             await set(reqRef, {
                 utr: utrNumber,
-                amount: 5999,
+                amount: 19999,
                 plan: 'premium_annual',
                 status: 'pending',
                 createdAt: new Date().toISOString(),
@@ -513,23 +513,52 @@ export default function SettingsPage() {
                 // Helper to convert object array to CSV
                 const toCSV = (data: any[], filename: string) => {
                     if (!data || data.length === 0) return;
-                    const headers = Object.keys(data[0]).join(',');
-                    const rows = data.map(obj => Object.values(obj).map(v => `"${v}"`).join(','));
-                    const csv = [headers, ...rows].join('\n');
-                    const blob = new Blob([csv], { type: 'text/csv' });
+                    
+                    const headers = Object.keys(data[0]);
+                    const csvContent = [
+                        headers.join(','), // Header row
+                        ...data.map(obj => 
+                            headers.map(header => {
+                                let val = obj[header];
+                                if (val === null || val === undefined) return '""';
+                                if (typeof val === 'object') val = JSON.stringify(val);
+                                // Escape double quotes by doubling them
+                                const escapable = String(val).replace(/"/g, '""');
+                                return `"${escapable}"`;
+                            }).join(',')
+                        )
+                    ].join('\n');
+
+                    // Add UTF-8 BOM for Excel compatibility
+                    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8' });
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
                     a.download = `${filename}.csv`;
+                    document.body.appendChild(a);
                     a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
                 };
 
                 const dateStr = new Date().toISOString().split('T')[0];
 
                 // Export Patients
                 if ((category === 'patients' || category === 'all') && backupData.data.patients) {
-                    const patients = Object.values(backupData.data.patients);
-                    if (patients.length) toCSV(patients, `patients_backup_${dateStr}`);
+                    const patients = Object.values(backupData.data.patients).map((p: any) => ({
+                        uhid: p.patientId || 'N/A',
+                        name: `${p.title || ''} ${p.name || ''}`.trim(),
+                        mobile: p.mobile || '',
+                        gender: p.gender || '',
+                        age: p.age || '',
+                        address: p.address || '',
+                        refDoctor: p.refDoctor || '',
+                        registeredAt: p.createdAt || ''
+                    }));
+                    if (patients.length) {
+                        toCSV(patients, `patients_backup_${dateStr}`);
+                        if (category === 'all') await new Promise(r => setTimeout(r, 100));
+                    }
                     else if (category === 'patients') alert('No patients found.');
                 }
 
@@ -540,15 +569,25 @@ export default function SettingsPage() {
                         patientName: r.patientName,
                         date: r.date,
                         testName: r.testName,
-                        status: r.status
+                        status: r.status,
+                        doctor: r.refDoctor || 'Self'
                     }));
-                    if (reports.length) toCSV(reports, `reports_backup_${dateStr}`);
+                    if (reports.length) {
+                        toCSV(reports, `reports_backup_${dateStr}`);
+                        if (category === 'all') await new Promise(r => setTimeout(r, 100));
+                    }
                     else if (category === 'reports') alert('No reports found.');
                 }
 
                 // Export Doctors
                 if ((category === 'doctors' || category === 'all') && backupData.data.doctors) {
-                    const doctors = Object.values(backupData.data.doctors);
+                    const doctors = Object.values(backupData.data.doctors).map((d: any) => ({
+                        name: d.name || 'Unknown',
+                        specialization: d.specialization || '',
+                        contact: d.contact || '',
+                        address: d.address || '',
+                        commissionRate: d.commissionRate || 0
+                    }));
                     if (doctors.length) toCSV(doctors, `doctors_backup_${dateStr}`);
                     else if (category === 'doctors') alert('No doctors found.');
                 }
@@ -581,7 +620,7 @@ export default function SettingsPage() {
                     </button>
 
                     <button onClick={() => setSettingsTab('billing')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${settingsTab === 'billing' ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-                        Billing
+                        Subscription
                     </button>
                     <button onClick={() => setSettingsTab('backup')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${settingsTab === 'backup' ? 'bg-gray-100 text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
                         Backup
@@ -1082,17 +1121,31 @@ export default function SettingsPage() {
                         <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md text-center">
                             {paymentStep === 1 ? (
                                 <>
-                                    <h2 className="text-xl font-bold mb-2">Premium Upgrade</h2>
-                                    <h3 className="text-3xl font-bold text-indigo-600 mb-4">₹5999<span className="text-sm text-gray-500">/yr</span></h3>
-                                    <button onClick={() => setPaymentStep(2)} className="w-full bg-black text-white py-2 rounded font-bold mb-2">Pay Now</button>
+                                    <h2 className="text-xl font-black text-gray-900 mb-2 uppercase tracking-tight">Premium Activation</h2>
+                                    <div className="relative inline-block mb-4">
+                                        <div className="absolute -top-3 -right-6 bg-red-600 text-white text-[8px] font-black px-2 py-1 rounded-full shadow-lg animate-bounce uppercase">Flash Offer</div>
+                                        <h3 className="text-4xl font-black text-indigo-600 flex items-center justify-center gap-3">
+                                            ₹19,999
+                                            <span className="text-sm text-gray-400 line-through font-bold">₹24,999</span>
+                                        </h3>
+                                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mt-1">First 100 Buyers Only</p>
+                                    </div>
+                                    <button onClick={() => setPaymentStep(2)} className="w-full bg-slate-900 hover:bg-blue-600 text-white py-3 rounded-xl font-black text-sm uppercase tracking-widest transition-all active:scale-95 shadow-xl shadow-slate-200">Activate Plan</button>
                                     <button onClick={() => setShowPaymentModal(false)} className="text-sm text-gray-500">Back</button>
                                 </>
                             ) : (
                                 <>
-                                    <h2 className="font-bold mb-4">Scan & Pay</h2>
-                                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent('upi://pay?pa=spotnet@upi&pn=Spotnet MedOS&am=5999&cu=INR')}`} className="mx-auto mb-4 border p-2 rounded" />
-                                    <input type="text" placeholder="Enter UTR Number" value={utrNumber} onChange={e => setUtrNumber(e.target.value)} className="w-full border p-2 rounded mb-2" />
-                                    <button onClick={submitPayment} className="w-full bg-green-600 text-white py-2 rounded font-bold mb-2">Submit</button>
+                                    <h2 className="font-black text-gray-900 uppercase tracking-widest mb-4 flex items-center justify-center gap-2">
+                                        <i className="fas fa-qrcode text-blue-600"></i> Scan to Pay
+                                    </h2>
+                                    <div className="bg-white p-4 rounded-3xl border-2 border-gray-100 inline-block mb-4 shadow-inner">
+                                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent('upi://pay?pa=spotnet@upi&pn=Spotnet MedOS&am=19999&cu=INR')}`} className="w-32 h-32" />
+                                    </div>
+                                    <div className="space-y-3 px-4">
+                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Pay exactly <span className="text-indigo-600 font-black">₹19,999</span> and enter UTR below</p>
+                                        <input type="text" placeholder="Transaction ID / UTR Number" value={utrNumber} onChange={e => setUtrNumber(e.target.value)} className="w-full bg-gray-50 border-2 border-gray-100 p-3 rounded-xl text-center font-bold text-blue-600 outline-none focus:border-blue-500 transition-all uppercase" />
+                                        <button onClick={submitPayment} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-black text-sm uppercase tracking-widest shadow-lg shadow-blue-100 transition-all active:scale-95">Complete Activation</button>
+                                    </div>
                                     <button onClick={() => setPaymentStep(1)} className="text-sm text-gray-500">Back</button>
                                 </>
                             )}
