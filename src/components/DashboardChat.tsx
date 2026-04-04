@@ -44,6 +44,7 @@ export default function DashboardChat({ dataOwnerId, userRole, userName, channel
         }
     }, [messages, isOpen]);
 
+    // 1. Data Listener (Only setMessages, No side-effects)
     useEffect(() => {
         if (!dataOwnerId) return;
 
@@ -57,30 +58,37 @@ export default function DashboardChat({ dataOwnerId, userRole, userName, channel
                     id: key,
                     ...data[key]
                 })).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-                
                 setMessages(msgs);
-
-                if (isOpen && (!isOwner || (isOwner && activeChannel === currentChannel))) {
-                    const unreadUpdates: Record<string, any> = {};
-                    let hasUnread = false;
-                    msgs.forEach(m => {
-                        if (m.senderRole !== userRole && !m.isRead) {
-                            unreadUpdates[`chats/v2/${dataOwnerId}/${currentChannel}/${m.id}/isRead`] = true;
-                            hasUnread = true;
-                        }
-                    });
-                    if (hasUnread) {
-                        update(ref(database), unreadUpdates).catch(console.error);
-                    }
-                }
             } else {
                 setMessages([]);
             }
         });
 
         return () => unsubscribe();
-    }, [dataOwnerId, isOwner, isOpen, userRole, activeChannel, channel]);
+    }, [dataOwnerId, isOwner, activeChannel, channel]);
 
+    // 2. Mark as Read (Separate effect, triggered by messages or opening chat)
+    useEffect(() => {
+        if (!isOpen || !dataOwnerId || messages.length === 0) return;
+
+        const currentChannel = isOwner ? activeChannel : channel;
+        const unreadUpdates: Record<string, any> = {};
+        let hasUnread = false;
+
+        messages.forEach(m => {
+            if (m.senderRole !== userRole && !m.isRead) {
+                unreadUpdates[`chats/v2/${dataOwnerId}/${currentChannel}/${m.id}/isRead`] = true;
+                hasUnread = true;
+            }
+        });
+
+        if (hasUnread) {
+            // Only update if there are actually unread messages to prevent loops
+            update(ref(database), unreadUpdates).catch(console.error);
+        }
+    }, [isOpen, messages, dataOwnerId, isOwner, activeChannel, channel, userRole]);
+
+    // 3. Unread Counts for Tabs (Owner only)
     useEffect(() => {
         if (!dataOwnerId || !isOwner) return;
 
@@ -100,8 +108,9 @@ export default function DashboardChat({ dataOwnerId, userRole, userName, channel
         });
 
         return () => unsubscribes.forEach(unsub => unsub());
-    }, [dataOwnerId, isOwner]);
+    }, [dataOwnerId, isOwner, userRole]);
 
+    // 4. Staff-specific Unread Count
     useEffect(() => {
         if (!dataOwnerId || isOwner) return;
 

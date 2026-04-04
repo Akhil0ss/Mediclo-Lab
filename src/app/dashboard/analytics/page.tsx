@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { ref, get } from 'firebase/database';
+import { ref, get, query, orderByChild, startAt, limitToLast } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { mergeTemplates, getPriceMap } from '@/lib/templateUtils';
 import {
@@ -125,17 +125,17 @@ export default function AnalyticsPage() {
 
         try {
             const results = await Promise.all([
-                get(ref(database, `patients/${dataSourceId}`)),
-                get(ref(database, `reports/${dataSourceId}`)),
-                get(ref(database, `invoices/${dataSourceId}`)),
-                get(ref(database, `samples/${dataSourceId}`)),
+                get(query(ref(database, `patients/${dataSourceId}`), limitToLast(200))), // Only need recent patients
+                get(query(ref(database, `reports/${dataSourceId}`), orderByChild('createdAt'), startAt(prevStart.toISOString()))),
+                get(ref(database, `invoices/${dataSourceId}`)), // Pending index optimization
+                get(query(ref(database, `samples/${dataSourceId}`), orderByChild('createdAt'), startAt(prevStart.toISOString()))),
                 get(ref(database, `doctors/${dataSourceId}`)),
                 get(ref(database, `externalDoctors/${dataSourceId}`)),
                 get(ref(database, `templates/${dataSourceId}`)),
                 get(ref(database, `common_templates`)),
-                get(ref(database, `opd/${dataSourceId}`)),
+                get(query(ref(database, `opd/${dataSourceId}`), orderByChild('createdAt'), startAt(prevStart.toISOString()))),
                 get(ref(database, `users/${dataSourceId}/auth/staff`)),
-                get(ref(database, `appointments/${dataSourceId}`))
+                get(query(ref(database, `appointments/${dataSourceId}`), limitToLast(100)))
             ]);
 
             const patients = results[0].exists() ? Object.values(results[0].val() as object) as any[] : [];

@@ -120,7 +120,7 @@ export default function PrintOPDPage() {
                 </div>
             </header>
 
-            {/* 2. PHYSICIAN META STRIP (Standard Font Sizes) */}
+            {/* 2. PHYSICIAN META STRIP (Optimized Layout) */}
             <div className="mx-6 -mt-4 relative z-20">
                 <div className="doctor-strip">
                     <div className="flex items-center gap-3">
@@ -137,9 +137,9 @@ export default function PrintOPDPage() {
                             </span>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1.5 border-l border-white/20 pl-3 whitespace-nowrap"><span className="text-slate-400 uppercase text-[8.5px] font-black tracking-wider leading-none">Rx ID:</span><span className="text-white font-black text-[10px]">{displayRxId}</span></div>
-                        <div className="flex items-center gap-1.5 border-l border-white/20 pl-3 whitespace-nowrap"><span className="text-slate-400 uppercase text-[8.5px] font-black tracking-wider leading-none">UHID:</span><span className="text-white font-black text-[10px]">{displayPatientId}</span></div>
+                    <div className="flex items-center gap-2 overflow-hidden shrink-0">
+                        <div className="flex items-center gap-1.5 border-l border-white/20 pl-2 pointer-events-none"><span className="text-slate-400 uppercase text-[8px] font-black tracking-wider leading-none">Rx ID:</span><span className="text-white font-black text-[9.5px] tracking-tight">{displayRxId}</span></div>
+                        <div className="flex items-center gap-1.5 border-l border-white/20 pl-2 overflow-hidden"><span className="text-slate-400 uppercase text-[8px] font-black tracking-wider leading-none">UHID:</span><span className="text-white font-black text-[9.5px] tracking-tight truncate">{displayPatientId}</span></div>
                     </div>
                 </div>
             </div>
@@ -160,70 +160,70 @@ export default function PrintOPDPage() {
                 </div>
             </div>
 
-            {/* 4. MAIN CLINICAL LAYOUT (GRID OPTIMIZED) */}
-            <div className="mx-6 mt-6 grid grid-cols-2 gap-x-6 gap-y-4">
-                {/* 4.1 Complaints (Row 1, Col 1) */}
-                <div className="h-[75px] overflow-hidden flex flex-col py-2 px-4 bg-slate-50/50 rounded-xl border border-slate-200 border-l-4 border-l-slate-400">
-                    <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1.5">Chief Complaints</label>
-                    <p className="text-[11px] italic text-slate-700 leading-tight font-semibold line-clamp-3">{visit.complaints || 'None specific recorded for this session.'}</p>
+            {/* 4. MAIN CLINICAL LAYOUT (L-Shape Design) */}
+            <div className="mx-6 mt-6 grid grid-cols-2 gap-x-6 h-[180px]">
+                {/* Column 1: Complaints + Pinned Medicines Heading (L-Segment) */}
+                <div className="flex flex-col h-full gap-0">
+                    <div className="h-[125px] overflow-hidden flex flex-col py-2.5 px-4 bg-slate-50/50 rounded-xl rounded-b-none border border-slate-200 border-l-4 border-l-slate-400 border-b-0">
+                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1.5">Chief Complaints</label>
+                        <p className="text-[11px] italic text-slate-700 leading-tight font-semibold line-clamp-5">{visit.complaints || 'None recorded for this session.'}</p>
+                    </div>
+                    <div className="h-[55px] flex items-center gap-3 px-4 bg-white border border-slate-200 border-l-4 border-l-indigo-600 rounded-xl rounded-t-none">
+                        <div className="rx-icon !w-7 !h-7 !text-base bg-indigo-700">℞</div>
+                        <div className="flex-1 flex items-center gap-2">
+                            <h2 className="text-[13px] font-black text-slate-900 uppercase tracking-tighter leading-none">Prescribed Medications</h2>
+                            <i className="fas fa-chevron-down text-[10px] text-indigo-500"></i>
+                        </div>
+                    </div>
                 </div>
 
-                {/* 4.2 Diagnosis (Row 1-2, Col 2) - Higher Visibility */}
-                <div className="row-span-2 h-[145px] overflow-hidden flex flex-col py-2.5 px-4 bg-amber-50/40 rounded-xl border border-amber-200 border-l-4 border-l-amber-500 shadow-sm">
+                {/* Column 2: Diagnosis (Spans full height of grid) */}
+                <div className="h-full overflow-hidden flex flex-col py-3 px-4 bg-amber-50/40 rounded-xl border border-amber-200 border-l-4 border-l-amber-500 shadow-sm">
                     <label className="text-[8px] font-black text-amber-600 uppercase tracking-widest leading-none mb-1.5">Observation / Diagnosis</label>
-                    <p className="text-[12px] font-black text-slate-800 leading-relaxed italic line-clamp-6">
+                    <p className="text-[12px] font-black text-slate-800 leading-relaxed italic line-clamp-[7]">
                         {visit.prescription?.diagnosis || visit.diagnosis || 'Clinical session assessment and evaluation.'}
                     </p>
                 </div>
+            </div>
 
-                {/* 4.3 Prescribed Medicines Heading (Row 2, Col 1) */}
-                <div className="flex items-center gap-3 h-[50px] -mt-2">
-                    <div className="rx-icon !w-8 !h-8 !text-lg bg-indigo-700">℞</div>
-                    <div className="flex-1">
-                        <h2 className="text-[14px] font-black text-slate-900 uppercase tracking-tighter leading-none mb-0.5">Prescribed Medications</h2>
-                        <div className="h-[2px] w-12 bg-indigo-200"></div>
-                    </div>
-                </div>
-
-                {/* 4.4 Full Width Medication Table (Row 3, Spans both columns) */}
-                <div className="col-span-2 mt-2 min-h-[350px]">
-                    <div className="overflow-hidden border border-slate-300 rounded-2xl shadow-sm bg-white">
-                        <table className="w-full text-left border-collapse">
-                            <thead className="bg-slate-50 border-b border-slate-300">
-                                <tr className="text-[9px] font-black text-slate-700 uppercase tracking-widest">
-                                    <th className="p-3 border-r border-slate-200 text-center w-10">Sn</th>
-                                    <th className="p-3 border-r border-slate-200">Medicine & Frequency</th>
-                                    <th className="p-3 border-r border-slate-200 text-center w-24">Dosage</th>
-                                    <th className="p-3 border-r border-slate-200 text-center w-28">Frequency</th>
-                                    <th className="p-3 text-center w-24">Days</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-[11px]">
-                                {visit.prescription?.medicines?.length > 0 ? (
-                                    visit.prescription.medicines.map((med: any, idx: number) => (
-                                        <tr key={idx} className="hover:bg-slate-50/30">
-                                            <td className="p-3 border-r border-slate-100 text-center text-slate-400 font-bold">{idx + 1}</td>
-                                            <td className="p-3 border-r border-slate-100">
-                                                <div className="font-black text-slate-950 leading-none mb-1 uppercase text-[12px]">{med.name}</div>
-                                                <div className="text-[10px] text-slate-500 italic font-bold leading-none">{med.instructions || 'As advised by the physician'}</div>
-                                            </td>
-                                            <td className="p-3 border-r border-slate-100 text-center font-black text-indigo-800">{med.dosage}</td>
-                                            <td className="p-3 border-r border-slate-100 text-center">
-                                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-900 text-[10px] font-black rounded-lg border border-indigo-100 uppercase italic">{med.frequency}</span>
-                                            </td>
-                                            <td className="p-3 text-center font-black text-slate-800 italic tracking-tighter text-[12px]">{med.duration}</td>
-                                        </tr>
-                                    ))
-                                ) : (
-                                    <tr><td colSpan={5} className="p-20 text-center text-slate-300 font-black italic uppercase tracking-widest opacity-50">Authorized Prescription: No medicines recorded</td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+            {/* 6. MEDICATION TABLE */}
+            <div className="mx-6 mt-2 flex-grow min-h-[350px]">
+                <div className="overflow-hidden border border-slate-300 rounded-2xl shadow-sm bg-white">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-slate-50 border-b border-slate-300">
+                            <tr className="text-[9px] font-black text-slate-700 uppercase tracking-widest">
+                                <th className="p-3 border-r border-slate-200 text-center w-10">Sn</th>
+                                <th className="p-3 border-r border-slate-200">Medicine & Frequency</th>
+                                <th className="p-3 border-r border-slate-200 text-center w-24">Dosage</th>
+                                <th className="p-3 border-r border-slate-200 text-center w-28">Frequency</th>
+                                <th className="p-3 text-center w-24">Days</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-[11px]">
+                            {visit.prescription?.medicines?.length > 0 ? (
+                                visit.prescription.medicines.map((med: any, idx: number) => (
+                                    <tr key={idx} className="hover:bg-slate-50/30">
+                                        <td className="p-3 border-r border-slate-100 text-center text-slate-400 font-bold">{idx + 1}</td>
+                                        <td className="p-3 border-r border-slate-100">
+                                            <div className="font-black text-slate-950 leading-none mb-1 uppercase text-[12px]">{med.name}</div>
+                                            <div className="text-[10px] text-slate-500 italic font-bold leading-none">{med.instructions || 'As advised by the physician'}</div>
+                                        </td>
+                                        <td className="p-3 border-r border-slate-100 text-center font-black text-indigo-800">{med.dosage}</td>
+                                        <td className="p-3 border-r border-slate-100 text-center">
+                                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-900 text-[10px] font-black rounded-lg border border-indigo-100 uppercase italic">{med.frequency}</span>
+                                        </td>
+                                        <td className="p-3 text-center font-black text-slate-800 italic tracking-tighter text-[12px]">{med.duration}</td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <tr><td colSpan={5} className="p-20 text-center text-slate-300 font-black italic uppercase tracking-widest opacity-50">No medicines recorded</td></tr>
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            {/* 6. LEGAL & CLINICAL FOOTER (A4 OPTIMIZED) */}
+            {/* 7. LEGAL & CLINICAL FOOTER (A4 OPTIMIZED) */}
             <div className="mt-auto">
                 <div className="mx-6 py-4 border-t-2 border-slate-300 flex justify-between items-center gap-8">
                     {/* Left: Digital Verification */}
@@ -246,19 +246,14 @@ export default function PrintOPDPage() {
                     {/* Right: Physician Info (Legal) */}
                     <div className="text-center min-w-[240px] h-[85px] flex flex-col items-center justify-between py-1">
                         <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none">Digitally Signed By</p>
-                        
                         <div className="relative inline-block">
-                             {/* Watermark Seal */}
                              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center opacity-[0.08] pointer-events-none rotate-[-8deg] z-0">
                                 <span className="text-[28px] font-black tracking-[0.2em] text-indigo-600 italic whitespace-nowrap">AUTHORISED</span>
                              </div>
-                             
-                             {/* Physician Name */}
                              <p className="text-[18px] font-black text-indigo-950 italic leading-none uppercase tracking-tighter relative z-10">
                                 Dr. {visit.doctorName || doctor?.name}
                              </p>
                         </div>
-
                         <div className="flex flex-col gap-0.5 border-t border-slate-100 pt-1 w-full">
                             <p className="text-[10px] font-black text-indigo-700 uppercase tracking-wide leading-none">{doctor?.specialization || 'Authorized Medical Practitioner'}</p>
                             <p className="text-[9px] font-black text-slate-600 uppercase tracking-tight bg-slate-50 px-2 py-0.5 rounded-full border border-slate-100 inline-block mx-auto mt-0.5 leading-none">
