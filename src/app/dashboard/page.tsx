@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { ref, onValue, query, limitToLast, orderByChild, update, remove } from 'firebase/database';
+import { ref, push, onValue, get, query, orderByChild, limitToLast, remove, update } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import { getArrivedReportsForVisit } from '@/lib/clinicLogic';
 import { getDataOwnerId } from '@/lib/dataUtils';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -30,6 +31,8 @@ export default function DashboardPage() {
     const [historyPatient, setHistoryPatient] = useState<any>(null);
     const [historyTab, setHistoryTab] = useState<'visits' | 'samples' | 'reports' | 'ai'>('visits');
     const [showQuickSampleModal, setShowQuickSampleModal] = useState(false);
+    const [allRecentReports, setAllRecentReports] = useState<any[]>([]);
+    const [selectedVisitForLab, setSelectedVisitForLab] = useState<any>(null);
     const [selectedSample, setSelectedSample] = useState('');
     const [queueSearch, setQueueSearch] = useState('');
     const [rxSearch, setRxSearch] = useState('');
@@ -148,9 +151,15 @@ export default function DashboardPage() {
         }
 
         // 3. Reports
-        onValue(query(ref(database, 'reports/' + dataOwnerId), orderByChild('createdAt'), limitToLast(100)), (snap) => {
+        onValue(query(ref(database, 'reports/' + dataOwnerId), orderByChild('createdAt'), limitToLast(50)), (snap) => {
             let rCount = 0;
-            snap.forEach(c => { if (c.val().createdAt?.includes(today)) rCount++; });
+            const list: any[] = [];
+            snap.forEach(c => { 
+                const val = c.val();
+                if (val.createdAt?.includes(today)) rCount++; 
+                list.push({ id: c.key, ...val });
+            });
+            setAllRecentReports(list.reverse());
             setStats(p => ({ ...p, todayReports: rCount }));
         });
 
@@ -870,12 +879,21 @@ export default function DashboardPage() {
                                                                 </div>
                                                             </td>
                                                             <td className="px-4 py-2 text-right">
-                                                                <button
-                                                                    onClick={() => setActiveRxVisit(v)}
-                                                                    className="px-3 py-1.5 bg-purple-50 hover:bg-purple-600 text-purple-600 hover:text-white text-[9px] font-black uppercase tracking-widest rounded border border-purple-100 transition-all active:scale-95 flex items-center gap-2 ml-auto"
-                                                                >
-                                                                    <i className="fas fa-eye"></i> View Rx
-                                                                </button>
+                                                                <div className="flex justify-end gap-2 items-center">
+                                                                    <button
+                                                                        onClick={() => window.open(`/print/opd/${v.id}`, '_blank')}
+                                                                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors border border-blue-100 shadow-sm"
+                                                                        title="Direct Print Prescription"
+                                                                    >
+                                                                        <i className="fas fa-print text-[10px]"></i>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setActiveRxVisit(v)}
+                                                                        className="px-3 py-1.5 bg-purple-50 hover:bg-purple-600 text-purple-600 hover:text-white text-[9px] font-black uppercase tracking-widest rounded border border-purple-100 transition-all active:scale-95 flex items-center gap-2"
+                                                                    >
+                                                                        <i className="fas fa-eye"></i> View Rx
+                                                                    </button>
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                     ))
@@ -1096,11 +1114,20 @@ export default function DashboardPage() {
                                     {fullOPDQueue.length === 0 ? (
                                         <tr><td colSpan={4} className="p-12 text-center text-gray-400 italic text-sm">No clinical arrivals for today.</td></tr>
                                     ) : (
-                                        fullOPDQueue.map(v => (
+                                        fullOPDQueue.map(v => {
+                                            const arrivedReports = getArrivedReportsForVisit(v, allRecentReports);
+                                            const hasReports = arrivedReports.length > 0;
+                                            
+                                            return (
                                             <tr key={v.id} className={`hover:bg-blue-50/30 transition ${v.isEmergency && v.status === 'pending' ? 'bg-red-50/50 border-l-4 border-red-500' : ''}`}>
                                                 <td className="px-3 py-2 flex items-center gap-1.5">
                                                     <span className={`text-sm font-black ${v.isEmergency && v.status === 'pending' ? 'text-red-700 animate-pulse' : 'text-blue-600'}`}>#{v.token}</span>
                                                     {v.isEmergency && v.status === 'pending' && <i className="fas fa-circle text-[6px] text-red-600 animate-ping"></i>}
+                                                    {hasReports && (v.status === 'referred' || v.status === 'pending') && (
+                                                        <span className="bg-emerald-500 text-white px-1.5 py-0.5 rounded-full text-[7px] font-black animate-bounce shadow-sm flex items-center gap-0.5">
+                                                            REPORT <i className="fas fa-check text-[6px]"></i>
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="px-3 py-2 font-bold text-gray-800 text-xs truncate max-w-[100px] md:max-w-[140px]" title={v.patientName}>{v.patientName}</td>
                                                 <td className="px-3 py-2 text-[10px] font-semibold text-gray-500 whitespace-nowrap">Dr. {v.doctorName?.split(' ')[0]}</td>
@@ -1169,7 +1196,8 @@ export default function DashboardPage() {
                                                     )}
                                                 </td>
                                             </tr>
-                                        ))
+                                            );
+                                        })
                                     )}
                                 </tbody>
                             </table>
@@ -1188,7 +1216,16 @@ export default function DashboardPage() {
                 <QuickPatientModal isOpen={showQuickPatientModal} onClose={() => setShowQuickPatientModal(false)} ownerId={dataOwnerId} />
             )}
             {showQuickSampleModal && (
-                <QuickSampleModal isOpen={showQuickSampleModal} onClose={() => setShowQuickSampleModal(false)} ownerId={dataOwnerId} labName={userProfile?.labName} />
+                <QuickSampleModal 
+                    isOpen={showQuickSampleModal} 
+                    onClose={() => {
+                        setShowQuickSampleModal(false);
+                        setSelectedVisitForLab(null);
+                    }} 
+                    ownerId={dataOwnerId} 
+                    labName={userProfile?.labName} 
+                    initialVisit={selectedVisitForLab}
+                />
             )}
 
             {historyPatient && (

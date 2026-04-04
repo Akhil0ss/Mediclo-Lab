@@ -13,9 +13,11 @@ interface QuickSampleModalProps {
     onClose: () => void;
     ownerId: string;
     labName?: string;
+    initialVisit?: any;
+    initialPatient?: any;
 }
 
-export default function QuickSampleModal({ isOpen, onClose, ownerId, labName }: QuickSampleModalProps) {
+export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, initialVisit, initialPatient }: QuickSampleModalProps) {
     const { showToast } = useToast();
     const [patients, setPatients] = useState<any[]>([]);
     const [templates, setTemplates] = useState<any[]>([]);
@@ -107,7 +109,31 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName }: 
             setForm(prev => ({ ...prev, sampleNumber: id }));
         });
 
-    }, [isOpen, ownerId, labName]);
+        // 5. Handle Initial Context (Auto-fill from Doctor Referral)
+        if (initialVisit) {
+            setForm(prev => ({
+                ...prev,
+                patientId: initialVisit.patientId || '',
+                patientName: initialVisit.patientName || '',
+                patientAge: initialVisit.patientAge || '',
+                patientGender: initialVisit.patientGender || 'Male',
+                patientMobile: initialVisit.patientMobile || '',
+                refDoctor: initialVisit.doctorName || 'Self',
+                selectedTests: initialVisit.prescription?.referredTests || []
+            }));
+        } else if (initialPatient) {
+            setForm(prev => ({
+                ...prev,
+                patientId: initialPatient.id || initialPatient.patientId || '',
+                patientName: initialPatient.name || '',
+                patientAge: initialPatient.age || '',
+                patientGender: initialPatient.gender || 'Male',
+                patientMobile: initialPatient.mobile || '',
+                refDoctor: initialPatient.refDoctor || 'Self'
+            }));
+        }
+
+    }, [isOpen, ownerId, labName, initialVisit, initialPatient]);
 
     const selectPatient = (p: any) => {
         setForm({

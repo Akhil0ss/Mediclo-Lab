@@ -3,9 +3,11 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { ref, onValue, push, update, remove, get, query, orderByChild, equalTo } from 'firebase/database';
+import { ref, onValue, push, update, remove, get, query, orderByChild, equalTo, limitToLast } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { formatIdFromDate, generateRxId } from '@/lib/idGenerator';
+import { getArrivedReportsForVisit } from '@/lib/clinicLogic';
+import QuickSampleModal from '@/components/QuickSampleModal';
 import Modal from '@/components/Modal';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
@@ -30,6 +32,9 @@ export default function OPDPage() {
 
     // UI State
     const [searchQuery, setSearchQuery] = useState('');
+    const [allRecentReports, setAllRecentReports] = useState<any[]>([]);
+    const [showQuickSampleModal, setShowQuickSampleModal] = useState(false);
+    const [selectedVisitForLab, setSelectedVisitForLab] = useState<any>(null);
     const [selectedDoctorId, setSelectedDoctorId] = useState('');
     const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
@@ -116,14 +121,12 @@ export default function OPDPage() {
             setDoctors(data);
         });
 
-        // Fetch Reports
-        const reportsRef = ref(database, `reports/${ownerId}`);
-        const unsubReports = onValue(reportsRef, (snapshot) => {
-            const data: any[] = [];
-            snapshot.forEach((child) => {
-                data.push({ id: child.key, ...child.val() });
-            });
-            setReports(data);
+        // Fetch Reports for diagnostic correlation
+        const reportsRef = query(ref(database, `reports/${ownerId}`), limitToLast(50));
+        const unsubReports = onValue(reportsRef, (snap) => {
+            const list: any[] = [];
+            snap.forEach(c => { list.push({ id: c.key, ...c.val() }); });
+            setAllRecentReports(list.reverse());
         });
 
         // Fetch Templates for Referrals
@@ -208,8 +211,6 @@ export default function OPDPage() {
     // Pagination
     const totalPages = Math.ceil(filteredVisits.length / itemsPerPage);
     const paginatedVisits = filteredVisits.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-    // handleRegisterVisit removed as it is now handled by QuickOPDModal
 
     // 1. AI Assistive Diagnosis Trigger
     useEffect(() => {
@@ -362,24 +363,6 @@ export default function OPDPage() {
         }
     };
 
-    const addMedicine = () => {
-        setPrescriptionForm({
-            ...prescriptionForm,
-            medicines: [...prescriptionForm.medicines, { name: '', dosage: '', frequency: '', duration: '', instructions: '' }]
-        });
-    };
-
-    const updateMedicine = (index: number, field: string, value: string) => {
-        const newMedicines = [...prescriptionForm.medicines];
-        newMedicines[index] = { ...newMedicines[index], [field]: value };
-        setPrescriptionForm({ ...prescriptionForm, medicines: newMedicines });
-    };
-
-    const removeMedicine = (index: number) => {
-        const newMedicines = prescriptionForm.medicines.filter((_, i) => i !== index);
-        setPrescriptionForm({ ...prescriptionForm, medicines: newMedicines });
-    };
-
     return (
         <div className="space-y-4">
             {/* Ultra-Compact Unified Header & Filters */}
@@ -467,11 +450,20 @@ export default function OPDPage() {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                            {paginatedVisits.map((visit) => (
+                            {paginatedVisits.map((visit) => {
+                                const arrivedReports = getArrivedReportsForVisit(visit, allRecentReports);
+                                const hasReports = arrivedReports.length > 0;
+
+                                return (
                                 <tr key={visit.id} className="hover:bg-indigo-50/20 transition-colors group">
                                     <td className="px-3 py-1.5 whitespace-nowrap">
                                         <div className="flex items-center gap-2">
                                             <span className="text-[11px] font-black text-blue-600">#{visit.token}</span>
+                                            {hasReports && (visit.status === 'referred' || visit.status === 'pending') && (
+                                                <span className="bg-emerald-500 text-white px-1 py-0.5 rounded-full text-[6px] font-black animate-bounce shadow-sm flex items-center gap-0.5">
+                                                    REPORT <i className="fas fa-check text-[5px]"></i>
+                                                </span>
+                                            )}
                                             <span className="text-gray-300">|</span>
                                             <span className="text-[9px] font-black text-gray-400 uppercase tracking-tighter" title={visit.opdId || visit.id}>
                                                 {visit.opdId || visit.id}
@@ -543,14 +535,25 @@ export default function OPDPage() {
                                             </button>
                                             <button 
                                                 onClick={() => window.open(`/print/opd/${visit.id}`, '_blank')}
-                                                className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Print Prescription"
+                                                className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors border border-blue-50" title="Print Prescription"
                                             >
                                                 <i className="fas fa-print text-[10px]"></i>
                                             </button>
+                                            {visit.status === 'referred' && (
+                                                <button 
+                                                    onClick={() => {
+                                                        setSelectedVisitForLab(visit);
+                                                        setShowQuickSampleModal(true);
+                                                    }}
+                                                    className="p-1.5 text-purple-600 hover:bg-purple-100 rounded-lg transition-colors border border-purple-50" title="Add Lab Sample"
+                                                >
+                                                    <i className="fas fa-flask text-[10px]"></i>
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
-                            ))}
+                                )})}
                         </tbody>
                     </table>
                 </div>
@@ -583,6 +586,19 @@ export default function OPDPage() {
                 ownerId={ownerId} 
                 editData={editVisit}
             />
+
+            {/* Quick Sample Modal Integration */}
+            {showQuickSampleModal && (
+                <QuickSampleModal
+                    isOpen={showQuickSampleModal}
+                    onClose={() => {
+                        setShowQuickSampleModal(false);
+                        setSelectedVisitForLab(null);
+                    }}
+                    ownerId={ownerId}
+                    initialVisit={selectedVisitForLab}
+                />
+            )}
 
             {/* Prescription Modal */}
             <Modal 

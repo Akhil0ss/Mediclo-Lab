@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import QuickReportModal from '@/components/QuickReportModal';
+import QuickSampleModal from '@/components/QuickSampleModal';
 
 export default function LabDashboard() {
     const { user, userProfile } = useAuth();
@@ -14,6 +15,8 @@ export default function LabDashboard() {
     const [clinicalReferrals, setClinicalReferrals] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showQuickReportModal, setShowQuickReportModal] = useState(false);
+    const [showQuickSampleModal, setShowQuickSampleModal] = useState(false);
+    const [selectedReferral, setSelectedReferral] = useState<any>(null);
     const [expandedTestsRow, setExpandedTestsRow] = useState<string | null>(null);
 
     useEffect(() => {
@@ -55,7 +58,9 @@ export default function LabDashboard() {
             if (snapshot.exists()) {
                 snapshot.forEach(child => {
                     const val = child.val();
-                    if (val.visitDate === today && val.status === 'referred' && val.prescription?.referredTests?.length > 0) {
+                    const isToday = val.visitDate === today || val.createdAt?.includes(today);
+                    // Match referred (in-progress) or completed (finalized) visits that have pending lab tests
+                    if (isToday && (val.status === 'referred' || val.status === 'completed') && val.prescription?.referredTests?.length > 0) {
                         referrals.push({ id: child.key, ...val });
                     }
                 });
@@ -131,42 +136,57 @@ export default function LabDashboard() {
             {/* Clinical Referrals Monitor (Real-time sync with Doctor) */}
             {clinicalReferrals.length > 0 && (
                 <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
-                    <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden">
-                        <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div className="bg-gradient-to-r from-orange-400 to-red-600 rounded-2xl p-6 text-white shadow-xl relative overflow-hidden backdrop-blur-lg">
+                        <div className="flex justify-between items-center mb-6 relative z-10">
                             <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center text-2xl backdrop-blur-md">
+                                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-xl backdrop-blur-md">
                                     <i className="fas fa-bullhorn animate-bounce"></i>
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-bold">In-Clinic Referrals</h3>
-                                    <p className="text-orange-100 text-xs opacity-80">Doctors are currently referring these patients to lab.</p>
+                                    <h3 className="text-xl font-bold">New Clinical Referrals</h3>
+                                    <p className="text-orange-100 text-[10px] opacity-80 uppercase tracking-widest font-black">Patients awaiting sample collection</p>
                                 </div>
                             </div>
-                            <div className="flex flex-wrap gap-2 transition-all">
-                                {clinicalReferrals.map((r, i) => (
-                                    <div key={r.id} className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl px-4 py-3 flex items-center gap-4 group transition-all">
-                                        <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-orange-600 font-black shadow-lg">
+                            <div className="bg-white/20 px-3 py-1 rounded-full text-xs font-black backdrop-blur-md">
+                                {clinicalReferrals.length} PENDING
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 relative z-10">
+                            {clinicalReferrals.map((r) => (
+                                <div key={r.id} className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl p-4 flex items-center justify-between group transition-all">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-orange-600 font-black shadow-lg uppercase">
                                             {r.patientName.charAt(0)}
                                         </div>
                                         <div className="flex flex-col">
                                             <span className="font-black text-sm">{r.patientName}</span>
                                             <div className="flex flex-wrap gap-1 mt-1">
-                                                {r.prescription?.referredTests?.map((t: string, ti: number) => (
-                                                    <span key={ti} className="text-[8px] font-black bg-orange-600/50 text-white px-1.5 py-0.5 rounded border border-orange-400/30 uppercase tracking-tighter">
+                                                {r.prescription?.referredTests?.slice(0, 2).map((t: string, ti: number) => (
+                                                    <span key={ti} className="text-[7px] font-black bg-white/20 text-white px-1.5 py-0.5 rounded border border-white/10 uppercase">
                                                         {t}
                                                     </span>
-                                                )) || <span className="text-[8px] opacity-60">No specific tests listed</span>}
+                                                ))}
+                                                {(r.prescription?.referredTests?.length || 0) > 2 && (
+                                                    <span className="text-[7px] font-black bg-white/20 text-white px-1.5 py-0.5 rounded border border-white/10">
+                                                        +{r.prescription.referredTests.length - 2} MORE
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                            <button onClick={() => router.push('/dashboard/samples?action=add')} className="px-6 py-2 bg-white text-orange-600 rounded-xl font-bold text-sm hover:bg-orange-50 transition-all shadow-lg active:scale-95">
-                                REGISTER SAMPLES
-                            </button>
-                        </div>
-                        <div className="absolute top-0 right-0 p-8 opacity-10">
-                            <i className="fas fa-flask text-8xl -rotate-12"></i>
+                                    <button 
+                                        onClick={() => {
+                                            setSelectedReferral(r);
+                                            setShowQuickSampleModal(true);
+                                        }}
+                                        className="w-10 h-10 flex items-center justify-center bg-white text-orange-600 rounded-xl shadow-lg hover:bg-orange-50 active:scale-95 transition-all"
+                                        title="Initiate Sample Collection"
+                                    >
+                                        <i className="fas fa-flask text-sm"></i>
+                                    </button>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
@@ -297,11 +317,16 @@ export default function LabDashboard() {
                 )}
             </div>
 
-            {/* Quick Report Modal */}
-            {showQuickReportModal && (
-                <QuickReportModal
-                    onClose={() => setShowQuickReportModal(false)}
-                    ownerId={userProfile?.ownerId || user?.uid || ''}
+            {/* Quick Sample Modal (Referral Handling) */}
+            {showQuickSampleModal && (
+                <QuickSampleModal
+                    isOpen={showQuickSampleModal}
+                    onClose={() => {
+                        setShowQuickSampleModal(false);
+                        setSelectedReferral(null);
+                    }}
+                    ownerId={userProfile.ownerId || user.uid}
+                    initialVisit={selectedReferral}
                 />
             )}
         </div>

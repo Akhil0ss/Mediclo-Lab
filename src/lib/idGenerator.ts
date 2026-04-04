@@ -8,17 +8,32 @@ import { ref, get, set, runTransaction } from 'firebase/database';
 import { database } from './firebase';
 
 /**
+ * Helper to extract a 4-char prefix from a clinic/brand name
+ * Splits by space and takes the first significant word (skipping Dr, The, Clinic, etc.)
+ */
+function extractPrefix(name: string): string {
+    const rawName = name.trim();
+    const words = rawName.split(/\s+/).filter(w => {
+        const clean = w.toLowerCase().replace(/[^a-z]/g, '');
+        return !['the', 'dr', 'mr', 'mrs', 'ms', 'clinic', 'lab', 'diagnostic', 'diagnostics', 'center', 'medical', 'hospital'].includes(clean);
+    });
+    
+    const targetWord = words[0] || rawName;
+    return targetWord
+        .replace(/[^A-Za-z0-9]/g, '')
+        .substring(0, 4)
+        .toUpperCase()
+        .padEnd(4, 'X');
+}
+
+/**
  * Generate Auto Patient ID
  * Format: {CLINIC_CODE}-{YYYYMM}-{SEQUENCE}
  * Example: SPOT-202512-0001
  */
 export async function generatePatientId(ownerId: string, clinicName: string = 'CLINIC'): Promise<string> {
     try {
-        const prefix = clinicName
-            .replace(/[^A-Za-z0-9]/g, '')
-            .substring(0, 4)
-            .toUpperCase()
-            .padEnd(4, 'X');
+        const prefix = extractPrefix(clinicName);
 
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);
@@ -43,11 +58,7 @@ export async function generatePatientId(ownerId: string, clinicName: string = 'C
 
 export async function generateReportId(ownerId: string, clinicName: string = 'CLINIC', branchPrefix?: string): Promise<string> {
     try {
-        const prefix = (branchPrefix || clinicName)
-            .replace(/[^A-Za-z0-9]/g, '')
-            .substring(0, 4)
-            .toUpperCase()
-            .padEnd(4, 'X');
+        const prefix = extractPrefix(branchPrefix || clinicName);
 
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);
@@ -70,11 +81,7 @@ export async function generateReportId(ownerId: string, clinicName: string = 'CL
 
 export async function generateSampleId(ownerId: string, clinicName: string = 'CLINIC', branchPrefix?: string): Promise<string> {
     try {
-        const prefix = (branchPrefix || clinicName)
-            .replace(/[^A-Za-z0-9]/g, '')
-            .substring(0, 4)
-            .toUpperCase()
-            .padEnd(4, 'X');
+        const prefix = extractPrefix(branchPrefix || clinicName);
 
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);
@@ -97,11 +104,7 @@ export async function generateSampleId(ownerId: string, clinicName: string = 'CL
 
 export async function generateOpdId(ownerId: string, clinicName: string = 'CLINIC', branchPrefix?: string): Promise<string> {
     try {
-        const prefix = (branchPrefix || clinicName)
-            .replace(/[^A-Za-z0-9]/g, '')
-            .substring(0, 4)
-            .toUpperCase()
-            .padEnd(4, 'X');
+        const prefix = extractPrefix(branchPrefix || clinicName);
 
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);
@@ -124,11 +127,7 @@ export async function generateOpdId(ownerId: string, clinicName: string = 'CLINI
 
 export async function generateRxId(ownerId: string, clinicName: string = 'CLINIC', branchPrefix?: string): Promise<string> {
     try {
-        const prefix = (branchPrefix || clinicName)
-            .replace(/[^A-Za-z0-9]/g, '')
-            .substring(0, 4)
-            .toUpperCase()
-            .padEnd(4, 'X');
+        const prefix = extractPrefix(branchPrefix || clinicName);
 
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);
@@ -151,11 +150,7 @@ export async function generateRxId(ownerId: string, clinicName: string = 'CLINIC
 
 export async function generateInvoiceId(ownerId: string, clinicName: string = 'CLINIC', branchPrefix?: string): Promise<string> {
     try {
-        const prefix = (branchPrefix || clinicName)
-            .replace(/[^A-Za-z0-9]/g, '')
-            .substring(0, 4)
-            .toUpperCase()
-            .padEnd(4, 'X');
+        const prefix = extractPrefix(branchPrefix || clinicName);
 
         const now = new Date();
         const yy = String(now.getFullYear()).slice(-2);

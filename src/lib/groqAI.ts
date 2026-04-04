@@ -210,9 +210,10 @@ Suggest prescription (JSON):
 
 export async function suggestLifestyleAdvice(
     diagnosis: string,
-    symptoms: string
+    symptoms: string,
+    history?: string
 ): Promise<string> {
-    const prompt = `Diagnosis: ${diagnosis}, Symptoms: ${symptoms}.
+    const prompt = `Diagnosis: ${diagnosis}, Symptoms: ${symptoms}. ${history ? `Patient History: ${history}` : ''}
     Provide EXACTLY 3 short, professional clinical advice bullet points.
     Rules:
     - Use "-" for bullets
@@ -235,18 +236,45 @@ export async function suggestLifestyleAdvice(
 }
 
 /**
- * 3.2 AI Dosage Prediction
+ * 3.2 AI Medicine Intelligence - Dosage, Frequency, and Side Effects
  */
-export async function predictDosage(
+export async function getMedicineIntelligence(
     medicineName: string,
     patientAge: number
-): Promise<{ dosage: string; frequency: string; duration: string }> {
-    const prompt = `Medicine: ${medicineName}, Age: ${patientAge}Y. Standard dosage frequency/duration (JSON): {"dosage": "500mg", "frequency": "1-0-1", "duration": "5 days"}`;
-    const result = await callGroq([{ role: 'system', content: 'Pharmacology dosage AI. Output JSON only.' }, { role: 'user', content: prompt }], 150, 0.1);
+): Promise<{ 
+    dosage: string; 
+    frequency: string; 
+    duration: string;
+    instructions: string;
+    complications: string;
+    doctorTips: string;
+}> {
+    const prompt = `Medicine: ${medicineName}, Patient Age: ${patientAge}Y.
+    Provide standard clinical guidance (JSON):
+    {
+      "dosage": "e.g. 500mg",
+      "frequency": "OD/BD/TDS",
+      "duration": "5 Days",
+      "instructions": "After Food/Empty Stomach",
+      "complications": "Max 5 words (e.g. Nausea, Gastric irritation)",
+      "doctorTips": "Max 10 words (e.g. Check renal function if long term)"
+    }`;
+    const result = await callGroq([
+        { role: 'system', content: 'Pharmacology AI. Provide concise medical guidance. Output raw JSON only.' }, 
+        { role: 'user', content: prompt }
+    ], 200, 0.1);
     try {
-        return JSON.parse(result.response);
+        const cleanResponse = result.response.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(cleanResponse);
     } catch {
-        return { dosage: '', frequency: '1-0-1', duration: '5 days' };
+        return { 
+            dosage: '', 
+            frequency: 'BD', 
+            duration: '5 Days', 
+            instructions: 'After Food',
+            complications: 'No common complications noted.',
+            doctorTips: 'Follow standard adult dosage guidelines.'
+        };
     }
 }
 
@@ -511,7 +539,8 @@ export async function suggestDiagnosis(
     complaints: string,
     vitals: { bp?: string; pulse?: string; temp?: string; spo2?: string; weight?: string },
     age: number,
-    gender: string
+    gender: string,
+    history?: string
 ): Promise<{
     possibleDiagnoses: Array<{ name: string; probability: string; reasoning: string }>;
     recommendedTests: string[];
@@ -522,6 +551,7 @@ export async function suggestDiagnosis(
 Age: ${age}Y, Gender: ${gender}
 Complaints: ${complaints}
 Vitals: BP=${vitals.bp || 'N/A'}, Pulse=${vitals.pulse || 'N/A'}, Temp=${vitals.temp || 'N/A'}, SpO2=${vitals.spo2 || 'N/A'}
+${history ? `Clinical History Context: ${history}` : ''}
 
 Provide differential diagnosis (JSON):
 {
@@ -543,10 +573,11 @@ Provide differential diagnosis (JSON):
             role: 'user',
             content: prompt
         }
-    ], 400, 0.2);
+    ], 800, 0.2);
 
     try {
-        return JSON.parse(result.response);
+        const cleanResponse = result.response.replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(cleanResponse);
     } catch {
         return {
             possibleDiagnoses: [],

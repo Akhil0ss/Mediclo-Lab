@@ -60,11 +60,7 @@ export default function PrintOPDPage() {
         fetchData();
     }, [visitId, authLoading, user, userProfile]);
 
-    useEffect(() => {
-        if (loading || !visit || !branding || printTriggeredRef.current) return;
-        printTriggeredRef.current = true;
-        setTimeout(() => { window.print(); }, 1200);
-    }, [loading, visit, branding]);
+    // Auto-Print trigger was removed to allow for digital review first.
 
     if (loading) return <div className="p-10 text-center font-bold text-slate-400 italic">Formatting for A4 High-Clarity Print...</div>;
     if (!visit) return <div className="p-10 text-center font-bold text-red-600">Prescription not found!</div>;
@@ -74,7 +70,7 @@ export default function PrintOPDPage() {
         : 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)';
     const accentGradient = 'linear-gradient(90deg, #fbbf24, #f97316, #ef4444, #ec4899)';
 
-    const displayRxId = (visit.prescription?.rxId || visit.opdId || visitId).toUpperCase();
+    const displayRxId = (visit.prescription?.rxId || visit.rxId || visitId).toUpperCase();
     const displayPatientId = (patient?.patientId || visit.patientUHID || visit.patientId || 'N/A').toUpperCase();
 
     const currentVitals = [
@@ -82,7 +78,6 @@ export default function PrintOPDPage() {
         { label: 'Pulse', val: visit.vitals?.pulse, color: 'text-orange-700' },
         { label: 'Temp', val: visit.vitals?.temp || visit.vitals?.temperature, color: 'text-emerald-700' },
         { label: 'Wt.', val: visit.vitals?.weight, color: 'text-blue-700' },
-        { label: 'Ht.', val: visit.vitals?.height, color: 'text-purple-700' },
         { label: 'SpO2', val: visit.vitals?.spo2, color: 'text-cyan-700' },
     ];
 
@@ -113,8 +108,7 @@ export default function PrintOPDPage() {
                     <div className="header-meta-text">
                         <p className="meta-label">Clinical Prescription</p>
                         <p className="meta-date">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                        <p className="meta-time">{capturedTime}</p>
-                        <p className="meta-id">{displayRxId}</p>
+                         <p className="meta-time">{capturedTime}</p>
                     </div>
                     <div className="header-qr"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(`https://medlab.spotnet.in/verify/${visitId}?oid=${ownerId}&type=rx`)}`} alt="QR" /></div>
                 </div>
@@ -137,42 +131,42 @@ export default function PrintOPDPage() {
                             </span>
                         </div>
                     </div>
-                    <div className="flex items-center gap-2 overflow-hidden shrink-0">
-                        <div className="flex items-center gap-1.5 border-l border-white/20 pl-2 pointer-events-none"><span className="text-slate-400 uppercase text-[8px] font-black tracking-wider leading-none">Rx ID:</span><span className="text-white font-black text-[9.5px] tracking-tight">{displayRxId}</span></div>
+                     <div className="flex items-center gap-2 overflow-hidden shrink-0">
+                        <div className="flex items-center gap-1.5 border-l border-white/20 pl-2 pointer-events-none"><span className="text-slate-400 uppercase text-[8px] font-black tracking-wider leading-none">Record:</span><span className="text-white font-black text-[9.5px] tracking-tight">{displayRxId}</span></div>
                         <div className="flex items-center gap-1.5 border-l border-white/20 pl-2 overflow-hidden"><span className="text-slate-400 uppercase text-[8px] font-black tracking-wider leading-none">UHID:</span><span className="text-white font-black text-[9.5px] tracking-tight truncate">{displayPatientId}</span></div>
                     </div>
                 </div>
             </div>
 
-            {/* 3. PATIENT & VITALS STRIP (A4 Print Optimized) */}
+            {/* 3. PATIENT & VITALS STRIP (A4 Print Optimized - Strict Inline) */}
             <div className="mx-6 mt-3 relative z-10">
-                <div className="patient-strip !h-[38px]">
-                    <div className="flex items-center gap-5">
-                        <div className="flex items-center gap-1.5 whitespace-nowrap"><span className="text-slate-600 uppercase text-[9px] font-black tracking-wider">Patient:</span><span className="text-slate-900 font-extrabold text-[12px] uppercase">{visit.patientName}</span></div>
-                        <div className="w-[1px] h-3 bg-slate-300"></div>
-                        <div className="flex items-center gap-1.5 whitespace-nowrap"><span className="text-slate-600 uppercase text-[9px] font-black tracking-wider">Age/Gen:</span><span className="text-slate-800 text-[11px] font-bold">{visit.patientAge || 'N/A'} / {visit.patientGender || '---'}</span></div>
+                <div className="patient-strip h-[32px] flex items-center justify-between px-4 overflow-hidden">
+                    <div className="flex items-center gap-4 shrink-0">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap"><span className="text-slate-600 uppercase text-[8.5px] font-black tracking-wider">Patient:</span><span className="text-slate-900 font-extrabold text-[11px] uppercase truncate max-w-[140px]">{visit.patientName}</span></div>
+                        <div className="w-[1px] h-3 bg-slate-200"></div>
+                        <div className="flex items-center gap-1.5 whitespace-nowrap"><span className="text-slate-600 uppercase text-[8.5px] font-black tracking-wider">Age/Gen:</span><span className="text-slate-800 text-[10px] font-bold">{visit.patientAge || 'N/A'} / {visit.patientGender || '---'}</span></div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 shrink-0">
                         {currentVitals.map((vit, i) => (
-                            <div key={i} className="flex items-center gap-1.5 border-l border-slate-200 pl-3 first:border-l-0 first:pl-0 whitespace-nowrap"><span className="text-slate-600 uppercase text-[9.5px] font-black tracking-tighter leading-none">{vit.label}:</span><span className={`font-black tracking-tight text-[13px] ${vit.color}`}>{vit.val || '---'}</span></div>
+                            <div key={i} className="flex items-center gap-1 border-l border-slate-200 pl-3 first:border-l-0 first:pl-0 whitespace-nowrap"><span className="text-slate-600 uppercase text-[8.5px] font-black tracking-tighter leading-none">{vit.label}:</span><span className={`font-black tracking-tight text-[11px] ${vit.color}`}>{vit.val || '---'}</span></div>
                         ))}
                     </div>
                 </div>
             </div>
 
-            {/* 4. MAIN CLINICAL LAYOUT (L-Shape Design) */}
-            <div className="mx-6 mt-6 grid grid-cols-2 gap-x-6 h-[180px]">
+            {/* 4. MAIN CLINICAL LAYOUT (L-Shape Design - High Density) */}
+            <div className="mx-6 mt-6 grid grid-cols-2 gap-x-6 h-[125px]">
                 {/* Column 1: Complaints + Pinned Medicines Heading (L-Segment) */}
                 <div className="flex flex-col h-full gap-0">
-                    <div className="h-[125px] overflow-hidden flex flex-col py-2.5 px-4 bg-slate-50/50 rounded-xl rounded-b-none border border-slate-200 border-l-4 border-l-slate-400 border-b-0">
+                    <div className="h-[85px] overflow-hidden flex flex-col py-2 px-4 bg-slate-50/50 rounded-xl rounded-b-none border border-slate-200 border-l-4 border-l-slate-400 border-b-0">
                         <label className="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mb-1.5">Chief Complaints</label>
-                        <p className="text-[11px] italic text-slate-700 leading-tight font-semibold line-clamp-5">{visit.complaints || 'None recorded for this session.'}</p>
+                        <p className="text-[10px] italic text-slate-700 leading-tight font-semibold line-clamp-4">{visit.complaints || 'None recorded for this session.'}</p>
                     </div>
-                    <div className="h-[55px] flex items-center gap-3 px-4 bg-white border border-slate-200 border-l-4 border-l-indigo-600 rounded-xl rounded-t-none">
-                        <div className="rx-icon !w-7 !h-7 !text-base bg-indigo-700">℞</div>
+                    <div className="h-[40px] flex items-center gap-3 px-4 bg-white border border-slate-200 border-l-4 border-l-indigo-600 rounded-xl rounded-t-none">
+                        <div className="rx-icon !w-6 !h-6 !text-sm bg-indigo-700">℞</div>
                         <div className="flex-1 flex items-center gap-2">
-                            <h2 className="text-[13px] font-black text-slate-900 uppercase tracking-tighter leading-none">Prescribed Medications</h2>
-                            <i className="fas fa-chevron-down text-[10px] text-indigo-500"></i>
+                            <h2 className="text-[12px] font-black text-slate-900 uppercase tracking-tighter leading-none">Prescribed Medications</h2>
+                            <i className="fas fa-chevron-down text-[9px] text-indigo-500"></i>
                         </div>
                     </div>
                 </div>
@@ -180,7 +174,7 @@ export default function PrintOPDPage() {
                 {/* Column 2: Diagnosis (Spans full height of grid) */}
                 <div className="h-full overflow-hidden flex flex-col py-3 px-4 bg-amber-50/40 rounded-xl border border-amber-200 border-l-4 border-l-amber-500 shadow-sm">
                     <label className="text-[8px] font-black text-amber-600 uppercase tracking-widest leading-none mb-1.5">Observation / Diagnosis</label>
-                    <p className="text-[12px] font-black text-slate-800 leading-relaxed italic line-clamp-[7]">
+                    <p className="text-[11px] font-black text-slate-800 leading-relaxed italic line-clamp-5">
                         {visit.prescription?.diagnosis || visit.diagnosis || 'Clinical session assessment and evaluation.'}
                     </p>
                 </div>
@@ -227,37 +221,41 @@ export default function PrintOPDPage() {
             <div className="mt-auto">
                 <div className="mx-6 py-4 border-t-2 border-slate-300 flex justify-between items-center gap-8">
                     {/* Left: Digital Verification */}
-                    <div className="flex flex-col gap-2 min-w-[200px] h-[85px] justify-center">
-                        <div className="digital-sign-box !py-2.5 !px-3 !w-[195px] !h-full flex flex-col justify-center border-slate-200">
-                             <p className="flex items-center gap-1 font-black text-slate-700 text-[7.5px]"><span className="text-emerald-600 text-[9px]">✔</span> 🔐 AUTHORIZED DIGITAL SIGNATURE</p>
-                             <div className="hash-text !text-[6px] text-slate-500 mt-1 uppercase">HASH: {visitId.replace(/-/g, '').substring(0, 18).toUpperCase()}...</div>
-                             <p className="mt-1.5 font-black text-slate-400 text-[7px] uppercase tracking-tighter italic leading-none">Verified • MedOS Secure</p>
+                    <div className="flex flex-col gap-2 min-w-[160px] h-[85px] justify-center text-center">
+                        <div className="digital-sign-box !py-2.5 !px-3 !w-full !h-full flex flex-col items-center justify-center border-slate-200">
+                             <p className="flex items-center justify-center gap-1 font-black text-slate-700 text-[6.5px] whitespace-nowrap"><span className="text-emerald-600 text-[8px]">✔</span> 🔐 DIGITAL SIGN</p>
+                             <div className="hash-text !text-[5.5px] text-slate-500 mt-1 uppercase tracking-tighter">HASH: {visitId.replace(/-/g, '').substring(0, 16).toUpperCase()}</div>
+                             <p className="mt-1.5 font-black text-slate-400 text-[6.5px] uppercase tracking-tighter italic leading-none">Verified • Secure Record</p>
                         </div>
                     </div>
 
                     {/* Center: CLINICAL SUGGESTIONS (advice) */}
-                    <div className="flex-1 min-h-[85px] p-4 bg-slate-50/50 rounded-xl border border-slate-200 border-dashed relative flex items-center justify-center">
-                        <label className="absolute -top-2 left-4 px-2 bg-white text-[8px] font-black text-indigo-500 uppercase tracking-[0.2em] border border-slate-200 rounded-full">Clinical Suggestions</label>
-                        <p className="text-[11px] text-slate-800 font-bold italic leading-relaxed whitespace-pre-wrap text-center">
-                            {visit.prescription?.advice || 'Monitor clinical symptoms. Maintain hydration and adequate rest. SOS if complaints persist.'}
-                        </p>
+                    <div className="flex-[2.5] min-h-[85px] p-3 bg-slate-50/50 rounded-xl border border-slate-200 border-dashed flex flex-col items-center justify-center overflow-hidden">
+                        <div className="text-[7.5px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-2 border-b border-indigo-100 pb-1 px-4">Clinical Suggestions</div>
+                        <div className="w-full text-[9px] text-slate-800 font-bold italic leading-tight whitespace-nowrap text-center space-y-0.5">
+                            {visit.prescription?.advice ? visit.prescription.advice.split('\n').map((line: string, i: number) => (
+                                <div key={i} className="truncate">{line}</div>
+                            )) : (
+                                <div className="truncate">Monitor clinical symptoms. Maintain hydration. SOS if complaints persist.</div>
+                            )}
+                        </div>
                     </div>
 
                     {/* Right: Physician Info (Legal) */}
-                    <div className="text-center min-w-[240px] h-[85px] flex flex-col items-center justify-between py-1">
-                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none">Digitally Signed By</p>
+                    <div className="text-center min-w-[200px] h-[85px] flex flex-col items-center justify-between py-1">
+                        <p className="text-[7px] font-black text-slate-500 uppercase tracking-widest leading-none">Digitally Signed By</p>
                         <div className="relative inline-block">
                              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center opacity-[0.08] pointer-events-none rotate-[-8deg] z-0">
-                                <span className="text-[28px] font-black tracking-[0.2em] text-indigo-600 italic whitespace-nowrap">AUTHORISED</span>
+                                <span className="text-[20px] font-black tracking-[0.2em] text-indigo-600 italic whitespace-nowrap">AUTHORISED</span>
                              </div>
-                             <p className="text-[18px] font-black text-indigo-950 italic leading-none uppercase tracking-tighter relative z-10">
+                             <p className="text-[15px] font-black text-indigo-950 italic leading-none uppercase tracking-tighter relative z-10">
                                 Dr. {visit.doctorName || doctor?.name}
                              </p>
                         </div>
                         <div className="flex flex-col gap-0.5 border-t border-slate-100 pt-1 w-full">
-                            <p className="text-[10px] font-black text-indigo-700 uppercase tracking-wide leading-none">{doctor?.specialization || 'Authorized Medical Practitioner'}</p>
-                            <p className="text-[9px] font-black text-slate-600 uppercase tracking-tight bg-slate-50 px-2 py-0.5 rounded-full border border-slate-100 inline-block mx-auto mt-0.5 leading-none">
-                                Reg No: {doctor?.registrationNumber || doctor?.regNo || 'VERIFIED MEDICAL PROFESSIONAL'}
+                            <p className="text-[9px] font-black text-indigo-700 uppercase tracking-wide leading-none">{doctor?.specialization?.substring(0, 25) || 'Medical Professional'}</p>
+                            <p className="text-[8px] font-black text-slate-600 uppercase tracking-tight bg-slate-50 px-2 py-0.5 rounded-full border border-slate-100 inline-block mx-auto mt-0.5 leading-none">
+                                Reg: {doctor?.registrationNumber || doctor?.regNo || 'VERIFIED'}
                             </p>
                         </div>
                     </div>
@@ -289,7 +287,7 @@ export default function PrintOPDPage() {
             </div>
 
             <style jsx global>{`
-                @media print { @page { margin: 0; size: auto; } body { background: white !important; margin: 0; padding: 0; } .report-container { width: 100% !important; min-height: 297mm !important; margin: 0 !important; } .header { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } .no-print { display: none !important; } }
+                @media print { @page { margin: 0; size: auto; } body { background: white !important; margin: 0; padding: 0; } .report-container { width: 100% !important; min-height: 297mm !important; margin: 0 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } .header { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } .doctor-strip { -webkit-print-color-adjust: exact !important; border-radius: 8px !important; } .final-px-bar { -webkit-print-color-adjust: exact !important; } .no-print { display: none !important; } }
                 .header { background: ${themeGradient}; color: white; padding: 16px 20px; display: flex; align-items: center; position: relative; }
                 .header::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: ${accentGradient}; }
                 .header-logo-container { flex: 0 0 180px; display: flex; align-items: center; justify-content: flex-start; }
@@ -313,7 +311,7 @@ export default function PrintOPDPage() {
                 .rx-icon { background: #4f46e5; color: white; border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-family: serif; font-style: italic; font-size: 20px; font-weight: 900; }
                 .sig-line { width: 220px; border-bottom: 2px solid #e0e7ff; display: flex; align-items: center; justify-content: center; opacity: 0.6; }
                 .sig-text { font-family: serif; font-weight: 900; color: #6366f1; text-transform: uppercase; tracking: 0.4em; transform: rotate(-6deg); }
-                .digital-sign-box { text-align: left; padding: 10px 14px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; width: 220px; }
+                .digital-sign-box { text-align: center; padding: 10px 14px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; }
                 .hash-text { font-family: 'Courier New', monospace; font-size: 7px; color: #64748b; margin-top: 2px; word-break: break-all; font-weight: 900; }
                 .final-px-bar { padding: 12px; color: white; font-weight: 900; font-size: 9px; text-transform: uppercase; tracking: 0.1em; }
                 .f-bar-inner { display: flex; justify-content: space-between; padding: 0 16px; opacity: 1; }
