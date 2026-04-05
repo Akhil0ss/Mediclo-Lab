@@ -450,6 +450,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
                 reportDate,
                 createdAt: new Date().toISOString(),
                 sampleId,
+                visitId: sampleData?.visitId || '', // Inherit visit link from sample
                 sampleType: sampleData?.sampleType || 'Other',
                 sampleCollectionTime: sampleData?.date ? new Date(sampleData.date).toTimeString().slice(0, 5) : '',
                 fastingStatus: 'Not Specified',

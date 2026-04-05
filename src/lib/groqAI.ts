@@ -211,26 +211,31 @@ Suggest prescription (JSON):
 export async function suggestLifestyleAdvice(
     diagnosis: string,
     symptoms: string,
+    treatment?: string,
     history?: string
 ): Promise<string> {
-    const prompt = `Diagnosis: ${diagnosis}, Symptoms: ${symptoms}. ${history ? `Patient History: ${history}` : ''}
-    Provide EXACTLY 3 short, professional clinical advice bullet points.
-    Rules:
-    - Use "-" for bullets
-    - NO markdown stars (** or *)
-    - NO bold or headers
-    - Max 10 words per point
-    - Clinical tone only
+    const prompt = `Patient Diagnosis: ${diagnosis || 'General Wellness'}. 
+    Presenting Symptoms: ${symptoms || 'None recorded'}. 
+    Current Treatment (Meds): ${treatment || 'Not specified'}.
     
-    Format example:
-    - Advice point one
-    - Advice point two
-    - Advice point three`;
+    TASK: Generate the BEST 3 Clinical Suggestions for this patient.
+    Focus on specific categories: DIET, REST, ACTIVITY, or HABITS.
+    
+    RULES:
+    - Return EXACTLY 3 points.
+    - Start each with a "- ".
+    - NO markdown (no stars, no bold).
+    - Max 10 words per point.
+    - Professional clinical tone.
+    - FORMAT:
+    - Advice 1
+    - Advice 2
+    - Advice 3`;
     
     const result = await callGroq([
-        { role: 'system', content: 'Professional Medical Advisor. Clean text output only, no formatting.' },
+        { role: 'system', content: 'Medical Assistant. Provides clean, short, professional clinical advice in 3 bullets only.' },
         { role: 'user', content: prompt }
-    ], 150, 0.2);
+    ], 100, 0.1); 
     
     return result.response.trim();
 }

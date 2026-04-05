@@ -44,7 +44,7 @@ export default function PrintOPDPage() {
                     const docSnap = await get(ref(database, `users/${currentOwnerId}/auth/staff/${visitData.doctorId}`));
                     setDoctor(docSnap.val());
                 }
-                
+
                 if (visitData.patientId) {
                     const patSnap = await get(ref(database, `patients/${currentOwnerId}/${visitData.patientId}`));
                     if (patSnap.exists()) {
@@ -65,8 +65,8 @@ export default function PrintOPDPage() {
     if (loading) return <div className="p-10 text-center font-bold text-slate-400 italic">Formatting for A4 High-Clarity Print...</div>;
     if (!visit) return <div className="p-10 text-center font-bold text-red-600">Prescription not found!</div>;
 
-    const themeGradient = branding.themeColor 
-        ? `linear-gradient(135deg, ${branding.themeColor} 0%, ${branding.themeColor}dd 100%)` 
+    const themeGradient = branding.themeColor
+        ? `linear-gradient(135deg, ${branding.themeColor} 0%, ${branding.themeColor}dd 100%)`
         : 'linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%)';
     const accentGradient = 'linear-gradient(90deg, #fbbf24, #f97316, #ef4444, #ec4899)';
 
@@ -90,7 +90,7 @@ export default function PrintOPDPage() {
                 <div className="header-logo-container">
                     {branding.logoUrl ? <img src={branding.logoUrl} className="header-logo" alt="Logo" /> : <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center font-black text-2xl">🏥</div>}
                 </div>
-                
+
                 <div className="header-center">
                     <h1>{branding.labName || 'Mediclo Lab'}</h1>
                     <p className="tagline">{branding.tagline || 'Leading Healthcare Through Digital Excellence'}</p>
@@ -108,7 +108,7 @@ export default function PrintOPDPage() {
                     <div className="header-meta-text">
                         <p className="meta-label">Clinical Prescription</p>
                         <p className="meta-date">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                         <p className="meta-time">{capturedTime}</p>
+                        <p className="meta-time">{capturedTime}</p>
                     </div>
                     <div className="header-qr"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(`https://medlab.spotnet.in/verify/${visitId}?oid=${ownerId}&type=rx`)}`} alt="QR" /></div>
                 </div>
@@ -117,23 +117,30 @@ export default function PrintOPDPage() {
             {/* 2. PHYSICIAN META STRIP (Optimized Layout) */}
             <div className="mx-6 -mt-4 relative z-20">
                 <div className="doctor-strip">
-                    <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1.5 whitespace-nowrap"><span className="text-indigo-300 uppercase text-[8px] font-black tracking-wider leading-none">Physician:</span><span className="italic text-[10px] font-black text-white">Dr. {visit.doctorName || doctor?.name}</span></div>
-                        <div className="w-[1px] h-3 bg-white/20"></div>
-                        <div className="flex items-center gap-1.5 whitespace-nowrap"><span className="text-blue-300 uppercase text-[8px] font-black tracking-wider leading-none">Type:</span><span className="text-[10px] font-black text-white">OPD Record</span></div>
+                    <div className="flex items-center gap-1.5 flex-1 pr-10">
+                        <span className="text-indigo-300 uppercase text-[8px] font-black tracking-wider leading-none whitespace-nowrap shrink-0">Physician:</span>
+                        <span className="italic text-[10px] font-black text-white whitespace-nowrap">Dr. {visit.doctorName || doctor?.name}</span>
+                    </div>
+
+                    <div className="flex items-center gap-4 shrink-0">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
+                            <span className="text-blue-300 uppercase text-[8px] font-black tracking-wider leading-none">Type:</span>
+                            <span className="text-[10px] font-black text-white">OPD Record</span>
+                        </div>
                         <div className="w-[1px] h-3 bg-white/20"></div>
                         <div className="flex items-center gap-1.5 whitespace-nowrap">
-                            <span className="text-[8px] font-black text-amber-300 uppercase tracking-wider leading-none">Follow-up:</span>
+                            <span className="text-amber-300 uppercase text-[8px] font-black tracking-wider leading-none">Follow-up:</span>
                             <span className="text-[10px] font-black text-white uppercase italic">
-                                {visit.prescription?.nextVisit || visit.prescription?.followUpDate || visit.nextVisit 
-                                    ? new Date(visit.prescription?.nextVisit || visit.prescription?.followUpDate || visit.nextVisit).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) 
+                                {visit.prescription?.nextVisit || visit.prescription?.followUpDate || visit.nextVisit
+                                    ? new Date(visit.prescription?.nextVisit || visit.prescription?.followUpDate || visit.nextVisit).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
                                     : 'SOS / As Advised'}
                             </span>
                         </div>
-                    </div>
-                     <div className="flex items-center gap-2 overflow-hidden shrink-0">
-                        <div className="flex items-center gap-1.5 border-l border-white/20 pl-2 pointer-events-none"><span className="text-slate-400 uppercase text-[8px] font-black tracking-wider leading-none">Record:</span><span className="text-white font-black text-[9.5px] tracking-tight">{displayRxId}</span></div>
-                        <div className="flex items-center gap-1.5 border-l border-white/20 pl-2 overflow-hidden"><span className="text-slate-400 uppercase text-[8px] font-black tracking-wider leading-none">UHID:</span><span className="text-white font-black text-[9.5px] tracking-tight truncate">{displayPatientId}</span></div>
+                        <div className="w-[1px] h-3 bg-white/20"></div>
+                        <div className="flex items-center gap-1.5 whitespace-nowrap overflow-hidden">
+                            <span className="text-slate-400 uppercase text-[8px] font-black tracking-wider leading-none">UHID:</span>
+                            <span className="text-white font-black text-[9.5px] tracking-tight truncate max-w-[120px]">{displayPatientId}</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -223,20 +230,24 @@ export default function PrintOPDPage() {
                     {/* Left: Digital Verification */}
                     <div className="flex flex-col gap-2 min-w-[160px] h-[85px] justify-center text-center">
                         <div className="digital-sign-box !py-2.5 !px-3 !w-full !h-full flex flex-col items-center justify-center border-slate-200">
-                             <p className="flex items-center justify-center gap-1 font-black text-slate-700 text-[6.5px] whitespace-nowrap"><span className="text-emerald-600 text-[8px]">✔</span> 🔐 DIGITAL SIGN</p>
-                             <div className="hash-text !text-[5.5px] text-slate-500 mt-1 uppercase tracking-tighter">HASH: {visitId.replace(/-/g, '').substring(0, 16).toUpperCase()}</div>
-                             <p className="mt-1.5 font-black text-slate-400 text-[6.5px] uppercase tracking-tighter italic leading-none">Verified • Secure Record</p>
+                            <p className="flex items-center justify-center gap-1 font-black text-slate-700 text-[6.5px] whitespace-nowrap"><span className="text-emerald-600 text-[8px]">✔</span> 🔐 DIGITAL SIGN</p>
+                            <div className="hash-text !text-[5.5px] text-slate-500 mt-1 uppercase tracking-tighter">HASH: {visitId.replace(/-/g, '').substring(0, 16).toUpperCase()}</div>
+                            <p className="mt-1.5 font-black text-slate-400 text-[6.5px] uppercase tracking-tighter italic leading-none">Verified • Secure Record</p>
                         </div>
                     </div>
 
-                    {/* Center: CLINICAL SUGGESTIONS (advice) */}
-                    <div className="flex-[2.5] min-h-[85px] p-3 bg-slate-50/50 rounded-xl border border-slate-200 border-dashed flex flex-col items-center justify-center overflow-hidden">
-                        <div className="text-[7.5px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-2 border-b border-indigo-100 pb-1 px-4">Clinical Suggestions</div>
-                        <div className="w-full text-[9px] text-slate-800 font-bold italic leading-tight whitespace-nowrap text-center space-y-0.5">
+                    {/* Center: PATIENT ADVICE (advice) */}
+                    <div className="flex-[2.5] min-h-[85px] p-3 bg-indigo-50/30 rounded-xl border border-indigo-200 border-dashed flex flex-col items-center justify-center overflow-hidden">
+                        <div className="text-[7.5px] font-black text-indigo-600 uppercase tracking-[0.2em] mb-2 border-b border-indigo-100 pb-1 px-4 italic">Patient Advice (AI Suggestions)</div>
+                        <div className="w-full text-[9px] text-slate-800 font-bold italic leading-tight text-center space-y-0.5">
                             {visit.prescription?.advice ? visit.prescription.advice.split('\n').map((line: string, i: number) => (
-                                <div key={i} className="truncate">{line}</div>
+                                <div key={i} className="break-words">{line}</div>
                             )) : (
-                                <div className="truncate">Monitor clinical symptoms. Maintain hydration. SOS if complaints persist.</div>
+                                <div className="space-y-0.5">
+                                    <div className="break-words">- Monitor clinical symptoms closely.</div>
+                                    <div className="break-words">- Maintain adequate hydration levels.</div>
+                                    <div className="break-words">- Follow-up SOS if complaints persist.</div>
+                                </div>
                             )}
                         </div>
                     </div>
@@ -245,12 +256,12 @@ export default function PrintOPDPage() {
                     <div className="text-center min-w-[200px] h-[85px] flex flex-col items-center justify-between py-1">
                         <p className="text-[7px] font-black text-slate-500 uppercase tracking-widest leading-none">Digitally Signed By</p>
                         <div className="relative inline-block">
-                             <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center opacity-[0.08] pointer-events-none rotate-[-8deg] z-0">
+                            <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center opacity-[0.08] pointer-events-none rotate-[-8deg] z-0">
                                 <span className="text-[20px] font-black tracking-[0.2em] text-indigo-600 italic whitespace-nowrap">AUTHORISED</span>
-                             </div>
-                             <p className="text-[15px] font-black text-indigo-950 italic leading-none uppercase tracking-tighter relative z-10">
+                            </div>
+                            <p className="text-[15px] font-black text-indigo-950 italic leading-none uppercase tracking-tighter relative z-10">
                                 Dr. {visit.doctorName || doctor?.name}
-                             </p>
+                            </p>
                         </div>
                         <div className="flex flex-col gap-0.5 border-t border-slate-100 pt-1 w-full">
                             <p className="text-[9px] font-black text-indigo-700 uppercase tracking-wide leading-none">{doctor?.specialization?.substring(0, 25) || 'Medical Professional'}</p>
@@ -264,7 +275,7 @@ export default function PrintOPDPage() {
                 {/* Formal Legal Disclaimer */}
                 <div className="px-6 pb-4 text-center">
                     <p className="text-[7.5px] text-slate-500 italic font-bold leading-relaxed max-w-[700px] mx-auto tracking-normal">
-                        * Authorized original computer-generated medical prescription for diagnostic reference. Validity is contingent upon correlation with the patient's identity and clinical examination. For dispensing: pharmacists must verify the digital hash or QR code. 
+                        * Authorized original computer-generated medical prescription for diagnostic reference. Validity is contingent upon correlation with the patient's identity and clinical examination. For dispensing: pharmacists must verify the digital hash or QR code.
                     </p>
                 </div>
 
@@ -272,14 +283,14 @@ export default function PrintOPDPage() {
                 <div className="final-px-bar" style={{ background: themeGradient }}>
                     <div className="f-bar-inner">
                         <div className="flex items-center gap-5">
-                           <span className="bg-white/20 px-2 py-0.5 rounded text-[8px] font-black tracking-widest border border-white/10 uppercase">Original Rx Record</span>
-                           <div className="flex items-center gap-3 border-l border-white/20 pl-4 uppercase font-bold text-[9px] tracking-tight">
+                            <span className="bg-white/20 px-2 py-0.5 rounded text-[8px] font-black tracking-widest border border-white/10 uppercase">Original Rx Record</span>
+                            <div className="flex items-center gap-3 border-l border-white/20 pl-4 uppercase font-bold text-[9px] tracking-tight">
                                 <p>UHID: {displayPatientId}</p>
                                 <div className="w-[1px] h-3 bg-white/30"></div>
                                 <p>DATE: {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                                 <div className="w-[1px] h-3 bg-white/30"></div>
                                 <p>PORTAL: medlab.spotnet.in/portal</p>
-                           </div>
+                            </div>
                         </div>
                         <p className="font-extrabold italic text-[10px] tracking-tight uppercase">RX ID: {displayRxId}</p>
                     </div>

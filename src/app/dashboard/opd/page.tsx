@@ -15,7 +15,7 @@ import dynamic from 'next/dynamic';
 const QuickReportModal = dynamic(() => import('@/components/QuickReportModal'), { ssr: false });
 const QuickOPDModal = dynamic(() => import('@/components/QuickOPDModal'), { ssr: false });
 
-import { suggestDiagnosis, checkDrugInteractions, suggestLifestyleAdvice, predictDosage } from '@/lib/groqAI';
+import { suggestDiagnosis, checkDrugInteractions, suggestLifestyleAdvice } from '@/lib/groqAI';
 
 export default function OPDPage() {
     const { user, userProfile } = useAuth();
@@ -33,6 +33,7 @@ export default function OPDPage() {
     // UI State
     const [searchQuery, setSearchQuery] = useState('');
     const [allRecentReports, setAllRecentReports] = useState<any[]>([]);
+    const [allRecentSamples, setAllRecentSamples] = useState<any[]>([]); // For flow status resolution
     const [showQuickSampleModal, setShowQuickSampleModal] = useState(false);
     const [selectedVisitForLab, setSelectedVisitForLab] = useState<any>(null);
     const [selectedDoctorId, setSelectedDoctorId] = useState('');
@@ -127,6 +128,14 @@ export default function OPDPage() {
             const list: any[] = [];
             snap.forEach(c => { list.push({ id: c.key, ...c.val() }); });
             setAllRecentReports(list.reverse());
+        });
+
+        // Fetch Samples for flow status
+        const samplesRef = query(ref(database, `samples/${ownerId}`), limitToLast(100));
+        const unsubSamples = onValue(samplesRef, (snap) => {
+            const list: any[] = [];
+            snap.forEach(c => { list.push({ id: c.key, ...c.val() }); });
+            setAllRecentSamples(list);
         });
 
         // Fetch Templates for Referrals
@@ -277,18 +286,9 @@ export default function OPDPage() {
         return () => clearTimeout(timer);
     }, [prescriptionForm.diagnosis, showPrescriptionModal]);
 
-    // 4. AI Dosage Prediction Handler
     const handleMedDosagePredict = async (idx: number, medName: string) => {
-        if (!medName || medName.length < 3) return;
-        try {
-            const res = await predictDosage(medName, parseInt(selectedVisit?.patientAge) || 30);
-            const newM = [...prescriptionForm.medicines];
-            newM[idx] = { ...newM[idx], ...res };
-            setPrescriptionForm({...prescriptionForm, medicines: newM});
-            showToast(`Dosage predicted for ${medName}`, 'success');
-        } catch (error) {
-            console.error('AI Dosage Prediction Error:', error);
-        }
+        // AI Dosage Prediction feature currently disabled
+        showToast(`AI dosage help for ${medName} is temporarily unavailable`, 'info');
     };
 
     const handleSaveTemplate = async () => {
@@ -506,13 +506,41 @@ export default function OPDPage() {
                                         )}
                                     </td>
                                     <td className="px-3 py-1.5">
-                                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-black border uppercase tracking-widest ${
-                                            visit.status === 'completed' 
-                                            ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
-                                            : 'bg-amber-50 text-amber-600 border-amber-100 shadow-sm'
-                                        }`}>
-                                            {visit.status === 'completed' ? 'CONSULTED' : 'PENDING'}
-                                        </span>
+                                        {(() => {
+                                            // Flow Status Resolver
+                                            const getFlowStatus = (v: any) => {
+                                                if (v.status === 'completed') return { label: 'CONSULTED', color: 'bg-emerald-50 text-emerald-600 border-emerald-100', icon: 'fas fa-check-double' };
+                                                const reportFound = allRecentReports.some(r => r.visitId === v.id);
+                                                if (reportFound) return { label: 'RESULT READY', color: 'bg-emerald-500 text-white border-emerald-500', icon: 'fas fa-file-medical-alt', bounce: true };
+                                                const sampleFound = allRecentSamples.some(s => s.visitId === v.id);
+                                                if (sampleFound) return { label: 'SAMPLE COLLECTED', color: 'bg-sky-500 text-white border-sky-500', icon: 'fas fa-vial' };
+                                                if (v.status === 'referred') return { label: 'SENT TO LAB', color: 'bg-orange-600 text-white border-orange-500', icon: 'fas fa-flask' };
+                                                return { label: (v.status || 'pending').toUpperCase(), color: 'bg-amber-50 text-amber-600 border-amber-100', icon: 'fas fa-user-clock' };
+                                            };
+
+                                            const f = getFlowStatus(visit);
+                                            
+                                            // If Sent to Lab and no sample collected yet, show actionable button
+                                            if (visit.status === 'referred' && f.label === 'SENT TO LAB') {
+                                                return (
+                                                    <button 
+                                                        onClick={() => { setSelectedVisitForLab(visit); setShowQuickSampleModal(true); }}
+                                                        className={`px-2 py-0.5 rounded-full text-[8px] font-black border uppercase tracking-widest ${f.color} shadow-sm hover:scale-105 transition-all active:scale-95 flex items-center gap-1 group/btn`}
+                                                        title="Click to Collect Sample"
+                                                    >
+                                                        <i className={`${f.icon} text-[7px] group-hover/btn:animate-pulse`}></i>
+                                                        {f.label}
+                                                    </button>
+                                                );
+                                            }
+
+                                            return (
+                                                <span className={`px-2 py-0.5 rounded-full text-[8px] font-black border uppercase tracking-widest flex items-center gap-1 w-fit ${f.color} ${f.bounce ? 'animate-bounce' : ''}`}>
+                                                    <i className={`${f.icon} text-[7px]`}></i>
+                                                    {f.label}
+                                                </span>
+                                            );
+                                        })()}
                                     </td>
                                     <td className="px-3 py-1.5 text-right">
                                         <div className="flex justify-end gap-1.5">

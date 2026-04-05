@@ -41,7 +41,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
         diagnosis: '',
         advice: '',
         complaints: '',
-        medicines: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
+        medicines: [{ id: Math.random().toString(16).slice(2), name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
         nextVisit: '',
         referredTests: [] as string[],
         followUpDate: ''
@@ -79,7 +79,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
             setForm({
                 diagnosis: visit.prescription?.diagnosis || '',
                 complaints: visit.prescription?.complaints || visit.complaints || '',
-                medicines: visit.prescription?.medicines || [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
+                medicines: visit.prescription?.medicines?.map((m: any) => ({ id: m.id || Math.random().toString(16).slice(2), ...m })) || [{ id: Math.random().toString(16).slice(2), name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
                 advice: visit.prescription?.advice || '',
                 referredTests: finalReferredTests,
                 followUpDate: visit.prescription?.followUpDate || '',
@@ -198,10 +198,13 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
             
             // Auto-fill only if fields are empty to assist without interrupting
             const newM = [...form.medicines];
-            if (!newM[idx].dosage) newM[idx].dosage = res.dosage;
-            if (!newM[idx].frequency) newM[idx].frequency = res.frequency;
-            if (!newM[idx].duration) newM[idx].duration = res.duration;
-            if (!newM[idx].instructions) newM[idx].instructions = res.instructions;
+            newM[idx] = { 
+                ...newM[idx], 
+                dosage: newM[idx].dosage || res.dosage,
+                frequency: newM[idx].frequency || res.frequency,
+                duration: newM[idx].duration || res.duration,
+                instructions: newM[idx].instructions || res.instructions
+            };
             
             setForm({...form, medicines: newM});
         } catch (error) {
@@ -216,10 +219,12 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
         }
         setIsAiLoading(true)
         try {
+            const treatmentContext = form.medicines.filter(m => m.name).map(m => m.name).join(', ');
             const historyContext = patientReports.slice(0, 3).map(r => `${r.testName} (${r.status})`).join(', ');
             const res = await suggestLifestyleAdvice(
                 form.diagnosis || visit?.complaints, 
                 visit?.complaints || '',
+                treatmentContext,
                 historyContext
             );
             let clean = (res || '').replace(/[*#]/g, '').trim();
@@ -454,7 +459,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                             <div className="px-4 md:px-6 py-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
                                 <span className="text-[9px] md:text-[10px] font-black text-gray-400 uppercase tracking-widest">Inventory & Dosing</span>
                                 {!readOnly && (
-                                    <button onClick={() => setForm({...form, medicines: [...form.medicines, { name: '', dosage: '', frequency: '', duration: '', instructions: '' }]})} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-indigo-700 active:scale-95 shadow-md shrink-0">
+                                    <button onClick={() => setForm({...form, medicines: [...form.medicines, { id: Math.random().toString(16).slice(2), name: '', dosage: '', frequency: '', duration: '', instructions: '' }]})} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-indigo-700 active:scale-95 shadow-md shrink-0">
                                         <i className="fas fa-plus mr-1"></i> Add Drug
                                     </button>
                                 )}
@@ -500,14 +505,14 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
                                         {form.medicines.map((med, idx) => (
-                                            <tr key={idx} className="hover:bg-indigo-50/5 group text-[11px]">
+                                            <tr key={med.id || idx} className="hover:bg-indigo-50/5 group text-[11px]">
                                                 <td className="px-2 py-3 text-center font-black text-slate-300 text-[10px]">{idx + 1}</td>
                                                 <td className="px-4 py-3 relative group/med">
                                                     <div className="flex items-center gap-2">
                                                         <input 
                                                             type="text" 
                                                             value={med.name}
-                                                            onChange={e => { const nm = [...form.medicines]; nm[idx].name = e.target.value; setForm({...form, medicines: nm}); }}
+                                                            onChange={e => { const nm = [...form.medicines]; nm[idx] = { ...nm[idx], name: e.target.value }; setForm({...form, medicines: nm}); }}
                                                             onBlur={e => !readOnly && handleDosagePredict(idx, e.target.value)}
                                                             onFocus={() => setActiveMedIdx(idx)}
                                                             className="flex-1 bg-transparent font-black text-slate-900 border-none outline-none uppercase placeholder:text-slate-200 text-[11px] truncate tracking-tight"
@@ -526,7 +531,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                                                     <input 
                                                         type="text" 
                                                         value={med.dosage}
-                                                        onChange={e => { const nm = [...form.medicines]; nm[idx].dosage = e.target.value; setForm({...form, medicines: nm}); }}
+                                                        onChange={e => { const nm = [...form.medicines]; nm[idx] = { ...nm[idx], dosage: e.target.value }; setForm({...form, medicines: nm}); }}
                                                         className="w-full bg-transparent text-[8.5px] font-bold text-slate-400 outline-none mt-0.5"
                                                         placeholder="Dosage Guidance..."
                                                         readOnly={readOnly}
@@ -534,7 +539,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                                                 </td>
                                                 <td className="px-2 py-3 text-center">
                                                     {!readOnly ? (
-                                                        <select value={med.frequency} onChange={e => { const nm = [...form.medicines]; nm[idx].frequency = e.target.value; setForm({...form, medicines: nm}); }} className="w-full bg-gray-50 border-none text-[10px] font-black text-indigo-600 outline-none p-1 rounded uppercase appearance-none text-center">
+                                                        <select value={med.frequency} onChange={e => { const nm = [...form.medicines]; nm[idx] = { ...nm[idx], frequency: e.target.value }; setForm({...form, medicines: nm}); }} className="w-full bg-gray-50 border-none text-[10px] font-black text-indigo-600 outline-none p-1 rounded uppercase appearance-none text-center">
                                                             <option value="">--</option>
                                                             <option value="OD">OD</option><option value="BD">BD</option><option value="TDS">TDS</option>
                                                             <option value="QID">QID</option><option value="STAT">STAT</option><option value="SOS">SOS</option>
@@ -544,7 +549,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                                                 </td>
                                                 <td className="px-2 py-3 text-center">
                                                     {!readOnly ? (
-                                                        <select value={med.duration} onChange={e => { const nm = [...form.medicines]; nm[idx].duration = e.target.value; setForm({...form, medicines: nm}); }} className="w-full bg-gray-50 border-none text-[10px] font-black text-slate-700 outline-none p-1 rounded uppercase appearance-none text-center">
+                                                        <select value={med.duration} onChange={e => { const nm = [...form.medicines]; nm[idx] = { ...nm[idx], duration: e.target.value }; setForm({...form, medicines: nm}); }} className="w-full bg-gray-50 border-none text-[10px] font-black text-slate-700 outline-none p-1 rounded uppercase appearance-none text-center">
                                                             <option value="">--</option>
                                                             {['1D','3D','5D','7D','10D','14D','1M','3M'].map(d => <option key={d} value={d}>{d}</option>)}
                                                             <option value="CONT.">CONT.</option>
@@ -553,7 +558,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                                                 </td>
                                                 <td className="px-3 py-3">
                                                     {!readOnly ? (
-                                                        <select value={med.instructions} onChange={e => { const nm = [...form.medicines]; nm[idx].instructions = e.target.value; setForm({...form, medicines: nm}); }} className="w-full bg-gray-50 border-none text-[10px] font-black text-slate-500 outline-none p-1 rounded uppercase italic truncate">
+                                                        <select value={med.instructions} onChange={e => { const nm = [...form.medicines]; nm[idx] = { ...nm[idx], instructions: e.target.value }; setForm({...form, medicines: nm}); }} className="w-full bg-gray-50 border-none text-[10px] font-black text-slate-500 outline-none p-1 rounded uppercase italic truncate">
                                                             <option value="">GUIDE...</option>
                                                             {['After Food','Before Food','Empty Stomach','With Milk','At Bedtime','Morning Only','Night Only'].map(i => <option key={i} value={i}>{i.toUpperCase()}</option>)}
                                                         </select>
@@ -561,7 +566,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                                                 </td>
                                                 {!readOnly && (
                                                     <td className="px-2 py-3 text-center">
-                                                        <button onClick={() => { const nm = [...form.medicines]; nm.splice(idx,1); setForm({...form, medicines: nm}); }} className="text-slate-300 hover:text-rose-500 transition-all"><i className="fas fa-trash-alt text-xs"></i></button>
+                                                        <button onClick={() => { const nm = form.medicines.filter((_, i) => i !== idx); setForm({...form, medicines: nm}); }} className="text-slate-300 hover:text-rose-500 transition-all"><i className="fas fa-trash-alt text-xs"></i></button>
                                                     </td>
                                                 )}
                                             </tr>
@@ -577,7 +582,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                             <div className="flex-[1.5] bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 relative">
                                 <div className="flex justify-between items-center mb-3">
                                     <h5 className="text-[10px] font-black text-indigo-700 uppercase tracking-widest flex items-center gap-2">
-                                        <i className="fas fa-bullhorn text-indigo-500"></i> Clinical Instructions
+                                        <i className="fas fa-bullhorn text-indigo-500"></i> AI Patient Advice (Top 3)
                                     </h5>
                                     {!readOnly && (
                                         <button onClick={handleGenerateAdvice} className="text-[9px] font-black text-indigo-600 bg-white px-3 py-1 rounded-full border border-indigo-200 hover:bg-indigo-600 hover:text-white shadow-sm flex items-center gap-1 uppercase transition-all">
@@ -673,7 +678,36 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                                 </div>
                             </div>
 
-                            {drugWarnings && <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 animate-in slide-in-from-bottom-2 flex gap-4 mt-4"><div className="w-8 h-8 rounded-full bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-lg text-xs"><i className="fas fa-shield-virus"></i></div><div><h4 className="text-[11px] font-black text-rose-900 uppercase">Drug Interaction Warning</h4><p className="text-xs font-bold text-rose-700 mt-0.5 leading-relaxed italic">"{drugWarnings}"</p></div></div>}
+                            {drugWarnings?.hasInteractions && (
+                                <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 animate-in slide-in-from-bottom-2 flex gap-4 mt-4 relative z-50 shadow-sm">
+                                    <div className="w-8 h-8 rounded-full bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-lg text-xs">
+                                        <i className="fas fa-shield-virus"></i>
+                                    </div>
+                                    <div className="flex-1">
+                                        <h4 className="text-[11px] font-black text-rose-900 uppercase flex items-center justify-between">
+                                            Drug Interaction Warning
+                                            <span className="text-[8px] px-1.5 py-0.5 bg-rose-200 text-rose-900 rounded-full font-black">AI GUARD</span>
+                                        </h4>
+                                        <div className="mt-1.5 space-y-1">
+                                            {drugWarnings.warnings?.map((w: string, i: number) => (
+                                                <p key={i} className="text-[11px] font-bold text-rose-700 leading-tight italic flex gap-2">
+                                                    <span className="shrink-0">•</span> <span>{w}</span>
+                                                </p>
+                                            ))}
+                                            {drugWarnings.suggestions?.length > 0 && (
+                                                <div className="mt-2 pt-2 border-t border-rose-100">
+                                                    <p className="text-[9px] font-black text-rose-400 uppercase tracking-widest mb-1">Suggestions</p>
+                                                    {drugWarnings.suggestions.map((s: string, i: number) => (
+                                                        <p key={i} className="text-[10px] font-bold text-rose-800 italic leading-none flex gap-2 mb-1">
+                                                            <i className="fas fa-lightbulb text-[8px] mt-0.5 text-amber-500"></i> {s}
+                                                        </p>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                     </div>
@@ -807,14 +841,27 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                     <div className="flex items-center gap-2">
                         {!readOnly ? (
                             <>
-                                <button type="button" onClick={onClose} className="px-3 py-2 text-white/30 font-black text-[9px] uppercase hover:text-white">Cancel</button>
+                                 <button type="button" onClick={onClose} className="px-3 py-2 text-white/30 font-black text-[9px] uppercase hover:text-white">Cancel</button>
+                                
                                 <button 
                                     type="button"
-                                    onClick={() => handleSave()} 
-                                    disabled={isSaving || !form.diagnosis} 
-                                    className={`px-8 py-2 md:px-10 md:py-2.5 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-lg active:scale-95 disabled:opacity-50 ${form.referredTests.length > 0 ? 'bg-orange-600 hover:bg-orange-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                                    onClick={() => handleSave({ status: 'referred' })} 
+                                    disabled={isSaving || !form.diagnosis || form.referredTests.length === 0} 
+                                    className="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2 border border-amber-500/50 transition-all hover:translate-y-[-1px]"
+                                    title={form.referredTests.length === 0 ? "Select at least one test to refer" : "Send to Lab"}
                                 >
-                                    {isSaving ? '...' : (form.referredTests.length > 0 ? 'Save & Refer Lab' : 'Authorize Rx')}
+                                    {isSaving ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-flask"></i>} 
+                                    Refer to Lab
+                                </button>
+
+                                <button 
+                                    type="button"
+                                    onClick={() => handleSave({ status: 'completed' })} 
+                                    disabled={isSaving || !form.diagnosis} 
+                                    className="px-8 py-2 md:px-10 md:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-lg active:scale-95 disabled:opacity-50 border border-indigo-500/50 transition-all hover:translate-y-[-1px]"
+                                >
+                                    {isSaving ? <i className="fas fa-spinner animate-spin"></i> : <i className="fas fa-check-double"></i>} 
+                                    Finalize Prescription
                                 </button>
                             </>
                         ) : <button type="button" onClick={onClose} className="px-6 py-2 bg-white/5 text-white text-[10px] font-black uppercase tracking-widest rounded-lg">Close</button>}

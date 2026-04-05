@@ -21,7 +21,11 @@ import { differenceInMinutes, parseISO } from 'date-fns';
 export function getArrivedReportsForVisit(visit: any, allReports: any[]): any[] {
     if (!visit || !allReports || allReports.length === 0) return [];
     
-    // Convert visit start time
+    // Primary Match: Check explicitly linked visitId
+    const linkedReports = allReports.filter(r => r.visitId === visit.id);
+    if (linkedReports.length > 0) return linkedReports;
+
+    // Fallback: Time-based correlation
     const visitStart = visit.createdAt ? parseISO(visit.createdAt) : new Date(0);
 
     return allReports.filter(report => {

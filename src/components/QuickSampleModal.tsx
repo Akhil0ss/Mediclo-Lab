@@ -49,11 +49,29 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
         collectedBy: '',
         remarks: '',
         date: new Date().toISOString().slice(0, 16),
-        selectedTests: [] as string[]
+        selectedTests: [] as string[],
+        visitId: ''
     });
 
     const sampleTypes = ['Whole Blood', 'Serum', 'Plasma', 'Urine', 'Stool', 'Swab', 'Sputum', 'Semen', 'Fluid', 'Tissue', 'Other'];
     const conditions = ['Random', 'Fasting', 'Post-Prandial (PP)', 'Timed Sample'];
+
+    useEffect(() => {
+        if (!isOpen) {
+            // Reset ID and other flags when modal is closed
+            setForm(prev => ({ ...prev, sampleNumber: '' }));
+            setShowNewDrInput(false);
+            setNewDrName('');
+            return;
+        }
+
+        // 0. Only generate ID once per open event
+        if (!form.sampleNumber && ownerId) {
+            generateSampleId(ownerId, labName || 'CLINIC').then(id => {
+                setForm(prev => ({ ...prev, sampleNumber: id }));
+            });
+        }
+    }, [isOpen, ownerId]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -104,13 +122,15 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
             });
         });
 
-        // 4. Generate Sample ID
-        generateSampleId(ownerId, labName || 'CLINIC').then(id => {
-            setForm(prev => ({ ...prev, sampleNumber: id }));
-        });
 
         // 5. Handle Initial Context (Auto-fill from Doctor Referral)
         if (initialVisit) {
+            const referredNames = initialVisit.prescription?.referredTests || [];
+            // Map test names from Rx output to our lab template IDs
+            const idsFromNames = templates
+                .filter(t => referredNames.includes(t.name) || referredNames.includes(t.id))
+                .map(t => t.id);
+
             setForm(prev => ({
                 ...prev,
                 patientId: initialVisit.patientId || '',
@@ -119,7 +139,8 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
                 patientGender: initialVisit.patientGender || 'Male',
                 patientMobile: initialVisit.patientMobile || '',
                 refDoctor: initialVisit.doctorName || 'Self',
-                selectedTests: initialVisit.prescription?.referredTests || []
+                selectedTests: idsFromNames,
+                visitId: initialVisit.id || ''
             }));
         } else if (initialPatient) {
             setForm(prev => ({
@@ -133,7 +154,7 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
             }));
         }
 
-    }, [isOpen, ownerId, labName, initialVisit, initialPatient]);
+    }, [isOpen, ownerId, labName, initialVisit, initialPatient, templates]);
 
     const selectPatient = (p: any) => {
         setForm({
@@ -186,6 +207,7 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
                 tests: testNames,
                 testIds: form.selectedTests,
                 status: 'Pending',
+                visitId: form.visitId || '', // Link to clinical visit if referred
                 createdAt: new Date().toISOString()
             };
 

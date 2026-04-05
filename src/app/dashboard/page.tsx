@@ -32,6 +32,7 @@ export default function DashboardPage() {
     const [historyTab, setHistoryTab] = useState<'visits' | 'samples' | 'reports' | 'ai'>('visits');
     const [showQuickSampleModal, setShowQuickSampleModal] = useState(false);
     const [allRecentReports, setAllRecentReports] = useState<any[]>([]);
+    const [allRecentSamples, setAllRecentSamples] = useState<any[]>([]); // For flow status resolution
     const [selectedVisitForLab, setSelectedVisitForLab] = useState<any>(null);
     const [selectedSample, setSelectedSample] = useState('');
     const [queueSearch, setQueueSearch] = useState('');
@@ -45,6 +46,17 @@ export default function DashboardPage() {
 
     // Date Keys
     const today = new Date().toISOString().split('T')[0];
+    
+    // Status Resolver for Laboratory Flow
+    const getFlowStatus = (v: any) => {
+        if (v.status === 'completed') return { label: 'FINALIZED', color: 'bg-indigo-600', icon: 'fas fa-check-double' };
+        const reportFound = allRecentReports.some(r => r.visitId === v.id);
+        if (reportFound) return { label: 'RESULT READY', color: 'bg-emerald-500', icon: 'fas fa-file-medical-alt', bounce: true };
+        const sampleFound = allRecentSamples.some(s => s.visitId === v.id);
+        if (sampleFound) return { label: 'SAMPLE COLLECTED', color: 'bg-sky-500', icon: 'fas fa-vial' };
+        if (v.status === 'referred') return { label: 'SENT TO LAB', color: 'bg-amber-500', icon: 'fas fa-flask' };
+        return { label: (v.status || 'pending').toUpperCase(), color: 'bg-blue-600', icon: 'fas fa-user-clock' };
+    };
 
     const dataOwnerId = useMemo(() => {
         if (!user) return '';
@@ -133,22 +145,24 @@ export default function DashboardPage() {
             setStats(p => ({ ...p, todayPatients: count }));
         });
 
-        // 2. Samples (Lab specific)
-        if (!isDoctor) {
-            onValue(query(ref(database, 'samples/' + dataOwnerId), orderByChild('createdAt'), limitToLast(100)), (snap) => {
-                const list: any = [];
-                let tCount = 0;
-                snap.forEach(c => {
-                    const val = c.val();
-                    if (val.date?.includes(today)) tCount++;
-                    if (val.status === 'Pending' || val.status === 'Processing') {
-                        list.push({ id: c.key, ...val });
-                    }
-                });
-                setPendingSamplesList(list.reverse() as any);
-                setStats(p => ({ ...p, todaySamples: tCount, pendingSamples: list.length }));
+        // 2. Samples (Lab specific fetching - Universal now for Status Resolution)
+        onValue(query(ref(database, 'samples/' + dataOwnerId), orderByChild('createdAt'), limitToLast(100)), (snap) => {
+            const list: any = [];
+            const all: any = [];
+            let tCount = 0;
+            snap.forEach(c => {
+                const val = c.val();
+                const sObj = { id: c.key, ...val };
+                all.push(sObj);
+                if (val.date?.includes(today)) tCount++;
+                if (val.status === 'Pending' || val.status === 'Processing') {
+                    list.push(sObj);
+                }
             });
-        }
+            setPendingSamplesList(list.reverse() as any);
+            setAllRecentSamples(all);
+            setStats(p => ({ ...p, todaySamples: tCount, pendingSamples: list.length }));
+        });
 
         // 3. Reports
         onValue(query(ref(database, 'reports/' + dataOwnerId), orderByChild('createdAt'), limitToLast(50)), (snap) => {
@@ -196,7 +210,7 @@ export default function DashboardPage() {
                     // 🏢 Full List (Queue Display) - Only active patients for today
                     if (val.status === 'pending' || val.status === 'in-consultation' || val.status === 'referred') fullList.push(visit);
 
-                    // 🧪 Lab Referrals (Only those on active hold for today)
+                    // 🧪 Lab Referrals (Only those on active hold - referred or awaiting results)
                     if (val.status === 'referred') {
                         referrals.push(visit);
                     }
@@ -603,6 +617,14 @@ export default function DashboardPage() {
                                                                 <div className="flex items-center gap-2">
                                                                     <h4 className="text-[13px] font-black text-gray-900 truncate uppercase tracking-tight">{v.patientName}</h4>
                                                                     <span className="text-[8px] font-black bg-gray-50 text-gray-400 px-1 py-0.5 rounded tracking-tighter shrink-0">{v.patientAge}{v.patientGender[0]}</span>
+                                                                    {(() => {
+                                                                        const f = getFlowStatus(v);
+                                                                        return (
+                                                                            <span className={`${f.color} text-white px-1 py-0.5 rounded-full text-[6px] font-black ${f.bounce ? 'animate-bounce' : ''} shadow-sm flex items-center gap-0.5 shrink-0`}>
+                                                                                {f.label} <i className={`${f.icon} text-[5px]`}></i>
+                                                                            </span>
+                                                                        );
+                                                                    })()}
                                                                 </div>
                                                                 <div className="flex flex-wrap gap-1 mt-1">
                                                                     {!Object.values(v.vitals || {}).some(val => val) ? (
@@ -688,6 +710,14 @@ export default function DashboardPage() {
                                                                     <span className="font-black text-gray-900 group-hover:text-blue-700 transition-colors uppercase tracking-tight truncate">{v.patientName}</span>
                                                                     <span className="text-[8px] font-black bg-gray-50 text-gray-400 px-1 py-0.5 rounded tracking-tighter shrink-0">{v.patientAge}Y/{v.patientGender[0]}</span>
                                                                     {v.isEmergency && <span className="bg-red-600 text-white text-[7px] font-black px-1 py-0.5 rounded uppercase tracking-widest animate-pulse shrink-0">ER</span>}
+                                                                    {(() => {
+                                                                        const f = getFlowStatus(v);
+                                                                        return (
+                                                                            <span className={`${f.color} text-white px-1.5 py-0.5 rounded-full text-[7px] font-black ${f.bounce ? 'animate-bounce' : ''} shadow-sm flex items-center gap-0.5 shrink-0`}>
+                                                                                {f.label} <i className={`${f.icon} text-[6px]`}></i>
+                                                                            </span>
+                                                                        );
+                                                                    })()}
                                                                 </div>
                                                             </td>
                                                             <td className="px-4 py-2">
@@ -775,10 +805,19 @@ export default function DashboardPage() {
                                                                 {v.token}
                                                             </div>
                                                         </td>
-                                                        <td className="px-4 py-2">
+                                                                 <td className="px-4 py-2">
                                                             <div className="flex items-center gap-2 min-w-0">
                                                                 <span className="font-black text-gray-900 uppercase tracking-tight truncate">{v.patientName}</span>
                                                                 <span className="text-[8px] font-black bg-gray-50 text-gray-400 px-1 py-0.5 rounded tracking-tighter shrink-0">{v.patientAge}Y/{v.patientGender[0]}</span>
+                                                                
+                                                                {(() => {
+                                                                    const f = getFlowStatus(v);
+                                                                    return (
+                                                                        <span className={`${f.color} text-white px-1.5 py-0.5 rounded-full text-[7px] font-black ${f.bounce ? 'animate-bounce' : ''} shadow-sm flex items-center gap-0.5`}>
+                                                                            {f.label} <i className={`${f.icon} text-[6px]`}></i>
+                                                                        </span>
+                                                                    );
+                                                                })()}
                                                             </div>
                                                         </td>
                                                         <td className="px-4 py-2">
@@ -1135,77 +1174,76 @@ export default function DashboardPage() {
                                                 <td className="px-3 py-2 flex items-center gap-1.5">
                                                     <span className={`text-sm font-black ${v.isEmergency && v.status === 'pending' ? 'text-red-700 animate-pulse' : 'text-blue-600'}`}>#{v.token}</span>
                                                     {v.isEmergency && v.status === 'pending' && <i className="fas fa-circle text-[6px] text-red-600 animate-ping"></i>}
-                                                    {hasReports && (v.status === 'referred' || v.status === 'pending') && (
-                                                        <span className="bg-emerald-500 text-white px-1.5 py-0.5 rounded-full text-[7px] font-black animate-bounce shadow-sm flex items-center gap-0.5">
-                                                            REPORT <i className="fas fa-check text-[6px]"></i>
-                                                        </span>
-                                                    )}
                                                 </td>
                                                 <td className="px-3 py-2 font-bold text-gray-800 text-xs truncate max-w-[100px] md:max-w-[140px]" title={v.patientName}>{v.patientName}</td>
                                                 <td className="px-3 py-2 text-[10px] font-semibold text-gray-500 whitespace-nowrap">Dr. {v.doctorName?.split(' ')[0]}</td>
                                                 <td className="px-3 py-2 text-right">
-                                                    {userProfile?.role === 'doctor' ? (
-                                                        <div className="flex items-center gap-1.5 justify-end">
-                                                            <button
-                                                                onClick={() => {
-                                                                    setHistoryPatient({ id: v.patientId, name: v.patientName });
-                                                                    setHistoryTab('ai');
-                                                                }}
-                                                                className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200 shadow-sm"
-                                                                title="AI Clinical Insight"
-                                                            >
-                                                                <i className="fas fa-brain text-[10px]"></i>
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleStartConsultation(v)}
-                                                                className={`text-[9px] px-2 py-1.5 rounded font-black transition uppercase cursor-pointer whitespace-nowrap ${v.status === 'in-consultation'
-                                                                        ? 'bg-indigo-600 text-white'
-                                                                        : v.status === 'referred'
-                                                                            ? 'bg-orange-600 text-white shadow-lg shadow-orange-100'
-                                                                            : (v.isEmergency && v.status === 'pending' ? 'bg-red-600 text-white shadow-lg shadow-red-200' : 'bg-green-600 text-white hover:bg-green-700 shadow-sm')
-                                                                    }`}
-                                                            >
-                                                                {v.status === 'in-consultation' ? 'RESUME' : (v.status === 'referred' ? 'LAB RE-CONSULT' : (v.isEmergency && v.status === 'pending' ? 'URGENT' : 'START'))}
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-center gap-1.5 justify-end">
-                                                            <div className={`text-[9px] px-2 py-1.5 rounded font-black uppercase whitespace-nowrap select-none flex items-center gap-1.5 ${v.status === 'in-consultation'
-                                                                    ? 'bg-rose-600 text-white shadow-lg shadow-rose-200'
-                                                                    : v.status === 'referred'
-                                                                        ? 'bg-orange-100 text-orange-700 border border-orange-200'
-                                                                        : v.status === 'completed'
-                                                                            ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-100'
-                                                                            : (v.status === 'pending'
-                                                                                ? (v.isEmergency ? 'bg-red-600 text-white shadow-lg shadow-red-200 animate-pulse' : 'bg-slate-100 text-slate-600 border border-slate-200')
-                                                                                : 'bg-emerald-50 text-emerald-700 border border-emerald-100')
-                                                                }`}>
-                                                                {v.status === 'in-consultation' && (
-                                                                    <span className="relative flex h-1.5 w-1.5">
-                                                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/40 opacity-75"></span>
-                                                                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white shadow-sm"></span>
-                                                                    </span>
-                                                                )}
-                                                                {v.status === 'pending' ? (v.isEmergency ? 'URGENT' : 'WAITING') : (v.status === 'in-consultation' ? 'IN CONSULT' : (v.status === 'referred' ? 'SENT TO LAB' : 'CONSULTED'))}
-                                                            </div>
-                                                            {v.status === 'completed' && (
+                                                    <div className="flex items-center gap-1.5 justify-end">
+                                                        {userProfile?.role === 'doctor' ? (
+                                                            <div className="flex items-center gap-1.5 justify-end">
                                                                 <button
-                                                                    onClick={() => setActiveRxVisit(v)}
-                                                                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-emerald-200 shadow-sm"
-                                                                    title="View Prescription"
+                                                                    onClick={() => {
+                                                                        setHistoryPatient({ id: v.patientId, name: v.patientName });
+                                                                        setHistoryTab('ai');
+                                                                    }}
+                                                                    className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200 shadow-sm"
+                                                                    title="AI Clinical Insight"
                                                                 >
-                                                                    <i className="fas fa-eye text-[10px]"></i>
+                                                                    <i className="fas fa-brain text-[10px]"></i>
                                                                 </button>
-                                                            )}
+                                                                <button
+                                                                    onClick={() => handleStartConsultation(v)}
+                                                                    className={`text-[9px] px-2 py-1.5 rounded font-black transition uppercase cursor-pointer whitespace-nowrap ${v.status === 'in-consultation'
+                                                                            ? 'bg-indigo-600 text-white'
+                                                                            : v.status === 'referred'
+                                                                                ? 'bg-orange-600 text-white shadow-lg shadow-orange-100'
+                                                                                : (v.isEmergency && v.status === 'pending' ? 'bg-red-600 text-white shadow-lg shadow-red-200' : 'bg-green-600 text-white hover:bg-green-700 shadow-sm')
+                                                                        }`}
+                                                                >
+                                                                    {v.status === 'in-consultation' ? 'RESUME' : (v.status === 'referred' ? 'LAB RE-CONSULT' : (v.isEmergency && v.status === 'pending' ? 'URGENT' : 'START'))}
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            (() => {
+                                                                const f = getFlowStatus(v);
+                                                                const isActionable = v.status === 'referred' && f.label === 'SENT TO LAB';
+
+                                                                return isActionable ? (
+                                                                    <button 
+                                                                        onClick={() => { setSelectedVisitForLab(v); setShowQuickSampleModal(true); }}
+                                                                        className="text-[9px] px-2 py-1.5 rounded font-black uppercase whitespace-nowrap flex items-center gap-1.5 bg-orange-600 text-white shadow-lg shadow-orange-100 hover:scale-105 transition-all active:scale-95 group/btn"
+                                                                        title="Click to Collect Sample / Start Lab Flow"
+                                                                    >
+                                                                        <i className={`${f.icon} text-[8px] group-hover/btn:animate-pulse`}></i>
+                                                                        {f.label}
+                                                                    </button>
+                                                                ) : (
+                                                                    <div className={`text-[9px] px-2 py-1.5 rounded font-black uppercase whitespace-nowrap select-none flex items-center gap-1.5 ${f.color} ${f.bounce ? 'animate-bounce shadow-lg shadow-emerald-200' : 'shadow-sm'} text-white`}>
+                                                                        <i className={`${f.icon} text-[8px]`}></i>
+                                                                        {f.label}
+                                                                    </div>
+                                                                );
+                                                            })()
+                                                        )}
+
+                                                        {v.status === 'completed' && (
                                                             <button
-                                                                onClick={() => handleDeleteQueue(v.id)}
-                                                                className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                                                title="Remove Queue Entry"
+                                                                onClick={() => setActiveRxVisit(v)}
+                                                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-emerald-200 shadow-sm"
+                                                                title="View Prescription"
                                                             >
-                                                                <i className="fas fa-times text-[10px]"></i>
+                                                                <i className="fas fa-eye text-[10px]"></i>
                                                             </button>
-                                                        </div>
-                                                    )}
+                                                        )}
+
+                                                        <button 
+                                                            onClick={() => handleDeleteQueue(v.id)} 
+                                                            className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                            title="Remove Queue Entry"
+                                                        >
+                                                            <i className="fas fa-times text-[10px]"></i>
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                             );
