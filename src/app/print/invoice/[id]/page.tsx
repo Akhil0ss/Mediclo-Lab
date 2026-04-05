@@ -178,7 +178,16 @@ function InvoiceContent() {
                     }
                     
                     .bg-slate-50 {
-                        background-color: #f5f5f5 !important;
+                        background-color: #f8fafc !important;
+                    }
+
+                    .bg-slate-900 {
+                        background-color: #f1f5f9 !important;
+                        border: 2px solid #000 !important;
+                    }
+
+                    .bg-slate-900 * {
+                        color: #000 !important;
                     }
                 }
             `}</style>
