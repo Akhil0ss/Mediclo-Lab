@@ -410,6 +410,128 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                 </div>
 
                 {/* 2. SPLIT WORKSPACE (Strictly Bounded Height) */}
+                {(readOnly && (visit?.status === 'completed' || visit?.status === 'referred' || visit?.pharmacyStatus === 'dispensed' || visit?.pharmacyStatus === 'pending')) ? (
+                    <div className="w-full space-y-6 overflow-y-auto pr-4 custom-scrollbar pb-6 bg-white p-2 md:p-6 flex-1">
+                        {/* Header / Patient info */}
+                        <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-[2rem] flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden shadow-sm mt-4 md:mt-0">
+                            <i className="fas fa-file-prescription absolute -right-6 -bottom-6 text-9xl text-indigo-500/10 rotate-12"></i>
+                            <div className="relative z-10 w-full md:w-auto">
+                                <h4 className="text-2xl font-black text-indigo-950 uppercase tracking-tighter mb-1">{visit?.patientName}</h4>
+                                <div className="flex items-center gap-3 opacity-90 flex-wrap">
+                                    <span className="text-[11px] font-black text-indigo-700 bg-indigo-100 px-3 py-1 rounded-md uppercase border border-indigo-200">{visit?.patientAge}Y / {visit?.patientGender}</span>
+                                    <span className="text-[11px] font-black text-indigo-700 bg-indigo-100 px-3 py-1 rounded-md uppercase tracking-widest border border-indigo-200">TK #{visit?.token}</span>
+                                    <span className="text-[11px] font-black text-indigo-700 bg-indigo-100 px-3 py-1 rounded-md uppercase tracking-widest border border-indigo-200">{visit?.createdAt ? new Date(visit.createdAt).toLocaleDateString() : 'N/A'}</span>
+                                </div>
+                            </div>
+                            <div className="relative z-10 text-left md:text-right w-full md:w-auto mt-2 md:mt-0 pt-4 md:pt-0 border-t md:border-t-0 border-indigo-200/50">
+                                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest block mb-1">Consulting Physician</span>
+                                <span className="text-base font-black text-indigo-900 uppercase">Dr. {doctorName || visit?.doctorName || 'Not Assigned'}</span>
+                            </div>
+                        </div>
+
+                        {/* Vitals Grid */}
+                        {visit?.vitals && Object.keys(visit.vitals).length > 0 && Object.values(visit.vitals).some(v => v) && (
+                            <div className="px-2">
+                                <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><i className="fas fa-heartbeat text-rose-400"></i> Clinical Vitals</h5>
+                                <div className="flex flex-wrap gap-3">
+                                    {Object.entries(visit.vitals).map(([k, v]) => v ? (
+                                        <div key={k} className="bg-gray-50 border border-gray-200 px-5 py-2.5 rounded-2xl flex items-center gap-3 shadow-sm hover:border-gray-300 transition-all">
+                                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{k}</span>
+                                            <span className="text-sm font-black text-gray-800">{v as string}</span>
+                                        </div>
+                                    ) : null)}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Complaints & Diagnosis Split */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 px-2 mt-4">
+                            <div className="bg-orange-50/50 border border-orange-100 p-6 rounded-3xl relative overflow-hidden group hover:border-orange-200 transition-all shadow-sm">
+                                <div className="absolute top-0 right-0 w-20 h-20 bg-orange-100 rounded-bl-[3rem] flex items-start justify-end p-4"><i className="fas fa-comment-medical text-orange-200 text-xl"></i></div>
+                                <h5 className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-3 relative z-10 flex items-center gap-2"><i className="fas fa-clipboard-list"></i> Chief Complaints & Symptoms</h5>
+                                <p className="text-sm font-bold text-gray-800 italic leading-relaxed relative z-10 break-words">{form.complaints || "No specific complaints recorded."}</p>
+                            </div>
+                            
+                            <div className="bg-blue-50/50 border border-blue-100 p-6 rounded-3xl relative overflow-hidden group hover:border-blue-200 transition-all shadow-sm">
+                                <div className="absolute top-0 right-0 w-20 h-20 bg-blue-100 rounded-bl-[3rem] flex items-start justify-end p-4"><i className="fas fa-stethoscope text-blue-200 text-xl"></i></div>
+                                <h5 className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-3 relative z-10 flex items-center gap-2"><i className="fas fa-microscope text-blue-500"></i> Provisional Diagnosis</h5>
+                                <p className="text-[15px] font-black text-blue-900 leading-relaxed relative z-10 uppercase break-words">{form.diagnosis || "Pending diagnostic confirmation."}</p>
+                            </div>
+                        </div>
+
+                        {/* Prescribed Medicines */}
+                        {form.medicines && form.medicines.length > 0 && form.medicines.some((m:any) => m.name) && (
+                            <div className="px-2 mt-6">
+                                <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3 flex items-center gap-2"><i className="fas fa-pills text-indigo-400"></i> Prescribed Medication</h5>
+                                <div className="bg-white border border-gray-200 rounded-[2rem] shadow-sm overflow-x-auto custom-scrollbar">
+                                    <table className="w-full text-left table-auto">
+                                        <thead className="bg-gray-50 border-b border-gray-100">
+                                            <tr>
+                                                <th className="px-6 py-4 text-[9px] font-black text-gray-400 uppercase tracking-widest w-12 text-center whitespace-nowrap">#</th>
+                                                <th className="px-6 py-4 text-[9px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap min-w-[150px]">Medicine Name</th>
+                                                <th className="px-6 py-4 text-[9px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Dosage / Freq</th>
+                                                <th className="px-6 py-4 text-[9px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Duration</th>
+                                                <th className="px-6 py-4 text-[9px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Instructions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-50">
+                                            {form.medicines.map((med: any, idx: number) => med.name ? (
+                                                <tr key={idx} className="hover:bg-blue-50/20 transition-colors group">
+                                                    <td className="px-6 py-4 text-center">
+                                                        <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-[10px] font-black mx-auto group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">{idx + 1}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-xs font-black text-gray-900 uppercase tracking-tighter">{med.name}</td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex flex-col gap-1 items-start">
+                                                            <span className="text-[11px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100 whitespace-nowrap">{med.dosage || '-'}</span>
+                                                            <span className="text-[9px] font-black text-gray-500 uppercase tracking-widest whitespace-nowrap">{med.frequency || '-'}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-[11px] font-black text-indigo-700 uppercase whitespace-nowrap">{med.duration || '-'}</td>
+                                                    <td className="px-6 py-4 text-[10px] font-bold text-gray-500 italic max-w-[200px] truncate" title={med.instructions}>{med.instructions || '-'}</td>
+                                                </tr>
+                                            ) : null)}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Patient Advice & Next Visit */}
+                        <div className="mx-2 mt-6 flex flex-col md:flex-row gap-6">
+                            <div className="flex-[2] bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-100 p-6 rounded-[2rem] flex gap-5 items-start relative overflow-hidden group shadow-sm">
+                                 <div className="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center shrink-0 border border-teal-100 relative z-10">
+                                    <i className="fas fa-leaf text-2xl text-teal-500"></i>
+                                 </div>
+                                 <i className="fas fa-shield-virus absolute -right-4 -top-4 text-7xl text-teal-600/5 rotate-12"></i>
+                                 <div className="relative z-10 flex-1">
+                                    <h5 className="text-[10px] font-black text-teal-700 uppercase tracking-widest mb-2 flex items-center gap-2">Lifestyle & Medical Advice</h5>
+                                    <div className="space-y-1.5 mt-1">
+                                        {(form.advice || "Standard medical precautions and rest are advised.")
+                                            .split('\n')
+                                            .filter(line => line.trim())
+                                            .map((line, idx) => (
+                                            <p key={idx} className="text-sm font-bold text-teal-900 leading-relaxed italic flex gap-2.5 items-start">
+                                                <span className="shrink-0 text-[10px] text-teal-500 mt-1"><i className="fas fa-check-circle"></i></span>
+                                                <span>{line.replace(/^[-*•\d.]+\s*/, '')}</span>
+                                            </p>
+                                        ))}
+                                    </div>
+                                 </div>
+                            </div>
+
+                            <div className="flex-1 bg-amber-50/50 border border-amber-100 p-6 rounded-[2rem] flex flex-col justify-center relative overflow-hidden group shadow-sm border-b-4 border-amber-200">
+                                 <i className="fas fa-calendar-check absolute -right-4 -bottom-4 text-7xl text-amber-500/5 rotate-12"></i>
+                                 <div className="relative z-10">
+                                    <h5 className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-2 flex items-center gap-2"><i className="fas fa-calendar-alt"></i> Follow-Up Visit</h5>
+                                    <p className="text-lg font-black text-amber-900 uppercase">
+                                        {form.followUpDate || visit?.prescription?.followUpDate ? new Date(form.followUpDate || visit.prescription.followUpDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : "As Required"}
+                                    </p>
+                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
                 <div className="flex flex-col md:flex-row flex-1 overflow-hidden h-full min-h-0">
                     {/* LEFT WORKSPACE: DATA ENTRY */}
                     <div className={`flex-1 md:flex-[2.5] flex flex-col h-full overflow-hidden min-h-0 bg-slate-50/30 ${currentTab === 'ai' ? 'hidden md:flex' : 'flex'}`}>
@@ -803,6 +925,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
                         </div>
                     </div>
                 </div>
+                )}
 
                 {/* 3. NARROW ACTION FOOTER */}
                 <div className="bg-slate-900 border-t border-white/10 p-2 flex flex-wrap items-center justify-between gap-3 relative z-30 shadow-[0_-15px_30px_rgba(0,0,0,0.4)]">

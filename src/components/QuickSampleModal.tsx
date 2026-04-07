@@ -121,10 +121,14 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
                 setDoctors([...docsOnly, ...ext].sort((a,b) => a.name.localeCompare(b.name)));
             });
         });
+    }, [isOpen, ownerId]);
 
+    // SECURE HYDRATION HOOK: Prevents Infinite Re-renders
+    useEffect(() => {
+        if (!isOpen) return;
 
         // 5. Handle Initial Context (Auto-fill from Doctor Referral)
-        if (initialVisit) {
+        if (initialVisit && form.visitId !== initialVisit.id && templates.length > 0) {
             const referredNames = initialVisit.prescription?.referredTests || [];
             // Map test names from Rx output to our lab template IDs
             const idsFromNames = templates
@@ -142,7 +146,7 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
                 selectedTests: idsFromNames,
                 visitId: initialVisit.id || ''
             }));
-        } else if (initialPatient) {
+        } else if (initialPatient && !initialVisit && form.patientId !== (initialPatient.id || initialPatient.patientId)) {
             setForm(prev => ({
                 ...prev,
                 patientId: initialPatient.id || initialPatient.patientId || '',
@@ -153,8 +157,7 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
                 refDoctor: initialPatient.refDoctor || 'Self'
             }));
         }
-
-    }, [isOpen, ownerId, labName, initialVisit, initialPatient, templates]);
+    }, [isOpen, initialVisit, initialPatient, templates, form.visitId, form.patientId]);
 
     const selectPatient = (p: any) => {
         setForm({

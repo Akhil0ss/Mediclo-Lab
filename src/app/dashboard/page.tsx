@@ -430,16 +430,6 @@ export default function DashboardPage() {
                                                 <td className="px-4 py-2.5 whitespace-nowrap">
                                                      <div className="flex flex-col">
                                                          <span className="font-black text-gray-900 uppercase tracking-tighter">{v.patientName}</span>
-                                                         {/* Inline Medicine List for Pharmacy Dispatch */}
-                                                         {v.prescription?.medicines?.length > 0 && (
-                                                             <div className="flex flex-wrap gap-1 mt-1.5 max-w-[250px]">
-                                                                 {v.prescription.medicines.map((m: any, mi: number) => m.name && (
-                                                                     <span key={mi} className="text-[7.5px] font-black bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded border border-indigo-100 uppercase tracking-tighter">
-                                                                         {m.name} {m.dosage ? `(${m.dosage})` : ''}
-                                                                     </span>
-                                                                 ))}
-                                                             </div>
-                                                         )}
                                                      </div>
                                                 </td>
                                                 <td className="px-4 py-2.5 font-bold text-gray-500 whitespace-nowrap">
