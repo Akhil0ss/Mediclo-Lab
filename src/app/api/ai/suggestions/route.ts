@@ -14,6 +14,13 @@ export async function POST(req: NextRequest) {
         );
     }
 
+    // AUTH CHECK: Verify request origin
+    const origin = req.headers.get('origin') || req.headers.get('referer') || '';
+    const isValidOrigin = origin.includes('localhost') || origin.includes('vercel.app') || origin.includes('mediclo');
+    if (!isValidOrigin) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const body = await req.json();
         const { patientCount = 0, sampleCount = 0, reportCount = 0 } = body;
@@ -39,8 +46,7 @@ Example: ["Tip 1 here", "Tip 2 here", "Tip 3 here"]`;
         });
 
         if (!response.ok) {
-            const err = await response.text();
-            console.error('Groq API error:', err);
+            console.error('Groq API error:', response.status);
             return NextResponse.json({ error: 'AI service unavailable.' }, { status: 502 });
         }
 

@@ -17,6 +17,8 @@ export default function UniversalPortalLogin() {
     const [patientId, setPatientId] = useState('');
     const [mobile, setMobile] = useState('');
     const [error, setError] = useState('');
+    const [loginAttempts, setLoginAttempts] = useState(0);
+    const [lockedUntil, setLockedUntil] = useState<number | null>(null);
 
     // Fetch all hospitals from branding node
     useEffect(() => {
@@ -46,6 +48,14 @@ export default function UniversalPortalLogin() {
 
         setLoading(true);
         setError('');
+
+        // AUTH-03: Brute force protection
+        if (lockedUntil && Date.now() < lockedUntil) {
+            const secsLeft = Math.ceil((lockedUntil - Date.now()) / 1000);
+            setError(`Too many attempts. Try again in ${secsLeft} seconds.`);
+            setLoading(false);
+            return;
+        }
 
         try {
             // Updated search logic: Search by 'patientId' property instead of Firebase Key
@@ -78,7 +88,15 @@ export default function UniversalPortalLogin() {
                 
                 router.push(`/portal/${selectedHospital.id}/dashboard`);
             } else {
-                setError('Mobile number mismatch');
+                const attempts = loginAttempts + 1;
+                setLoginAttempts(attempts);
+                if (attempts >= 5) {
+                    setLockedUntil(Date.now() + 30000); // 30 second lockout
+                    setError(`Too many failed attempts. Locked for 30 seconds.`);
+                    setLoginAttempts(0);
+                } else {
+                    setError(`Incorrect mobile number (${5 - attempts} attempts remaining)`);
+                }
             }
 
         } catch (err) {
@@ -266,7 +284,7 @@ export default function UniversalPortalLogin() {
 
                 <div className="mt-8 text-center">
                     <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">
-                        Powered by Mediclo v2.0 • HIPAA Compliant
+                        Powered by Mediclo v2.0 • Secure Clinical Platform
                     </p>
                 </div>
             </div>

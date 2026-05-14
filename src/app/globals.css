@@ -211,15 +211,7 @@ svg,
   /* Chrome, Safari, Opera */
 }
 
-/* Hide scrollbars for all modal dialogs */
-.overflow-y-auto::-webkit-scrollbar {
-  display: none;
-}
-
-.overflow-y-auto {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
+/* Modal-specific scrollbar hiding — NOT global */
 
 
 /* Status badges */

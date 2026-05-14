@@ -12,6 +12,8 @@ import { ToastProvider, useToast } from '@/contexts/ToastContext';
 import DashboardChat from '@/components/DashboardChat';
 import AILabSuggestions from '@/components/AILabSuggestions';
 import OnlineAppointmentModal from '@/components/OnlineAppointmentModal';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import ConnectionStatus from '@/components/ConnectionStatus';
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { user, userProfile, loading } = useAuth();
@@ -352,7 +354,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </aside>
                 )}
                 <main className={`flex-1 w-full min-h-[500px] ${isPharmacy ? 'max-w-full' : ''}`}>
-                    {children}
+                    <ErrorBoundary>{children}</ErrorBoundary>
                 </main>
             </div>
             
@@ -387,6 +389,8 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 onClose={() => setShowAppointmentModal(false)}
                 ownerId={dataOwnerId}
             />
+
+            <ConnectionStatus />
         </div>
     );
 }

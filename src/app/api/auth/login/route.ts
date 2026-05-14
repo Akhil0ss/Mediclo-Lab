@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { ref, get } from 'firebase/database';
 import { auth, database } from '@/lib/firebase';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { signInAnonymously } from 'firebase/auth';
 import { verifyPassword } from '@/lib/userUtils';
 import { generateUsername } from '@/lib/userUtils';
@@ -98,17 +100,27 @@ export async function POST(request: NextRequest) {
                     if (!isSubActive && r !== 'receptionist') {
                         return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
                     }
-                    return NextResponse.json({
-                        success: true,
-                        user: {
-                            userId: pUser.id || pUser.username,
-                            username: pUser.username,
-                            name: pUser.name,
-                            role: pUser.role || r,
-                            isActive: pUser.isActive !== false,
-                            ownerId: currentOwnerId
-                        }
+                    await logAudit(currentOwnerId, AUDIT_ACTIONS.STAFF_LOGIN, `Login via API portal: ${pUser.username} as ${r}`, pUser.name);
+                    
+                    const userData = {
+                        userId: pUser.id || pUser.username,
+                        username: pUser.username,
+                        name: pUser.name,
+                        role: pUser.role || r,
+                        isActive: pUser.isActive !== false,
+                        ownerId: currentOwnerId
+                    };
+                    
+                    const cookieStore = await cookies();
+                    cookieStore.set('medos_auth_token', Buffer.from(JSON.stringify(userData)).toString('base64'), {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: 'strict',
+                        path: '/',
+                        maxAge: 60 * 60 * 24 * 7
                     });
+
+                    return NextResponse.json({ success: true, user: userData });
                 }
             }
 
@@ -118,17 +130,27 @@ export async function POST(request: NextRequest) {
                     const staff = authData.staff[sId];
                     if (staff && staff.username === cleanUsername && verifyPassword(cleanPassword, staff.passwordHash)) {
                         if (!isSubActive) return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
-                        return NextResponse.json({
-                            success: true,
-                            user: {
-                                userId: sId,
-                                username: staff.username,
-                                name: staff.name,
-                                role: staff.role,
-                                isActive: staff.isActive !== false,
-                                ownerId: currentOwnerId
-                            }
+                        await logAudit(currentOwnerId, AUDIT_ACTIONS.STAFF_LOGIN, `Login via API portal: ${staff.username} as staff`, staff.name);
+                        
+                        const userData = {
+                            userId: sId,
+                            username: staff.username,
+                            name: staff.name,
+                            role: staff.role,
+                            isActive: staff.isActive !== false,
+                            ownerId: currentOwnerId
+                        };
+                        
+                        const cookieStore = await cookies();
+                        cookieStore.set('medos_auth_token', Buffer.from(JSON.stringify(userData)).toString('base64'), {
+                            httpOnly: true,
+                            secure: process.env.NODE_ENV === 'production',
+                            sameSite: 'strict',
+                            path: '/',
+                            maxAge: 60 * 60 * 24 * 7
                         });
+
+                        return NextResponse.json({ success: true, user: userData });
                     }
                 }
             }
@@ -139,17 +161,27 @@ export async function POST(request: NextRequest) {
                     const doctor = authData.doctors[dId];
                     if (doctor && doctor.username === cleanUsername && verifyPassword(cleanPassword, doctor.passwordHash)) {
                         if (!isSubActive) return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
-                        return NextResponse.json({
-                            success: true,
-                            user: {
-                                userId: dId,
-                                username: doctor.username,
-                                name: doctor.name,
-                                role: 'doctor',
-                                isActive: doctor.isActive !== false,
-                                ownerId: currentOwnerId
-                            }
+                        await logAudit(currentOwnerId, AUDIT_ACTIONS.STAFF_LOGIN, `Login via API portal: ${doctor.username} as associate doctor`, doctor.name);
+                        
+                        const userData = {
+                            userId: dId,
+                            username: doctor.username,
+                            name: doctor.name,
+                            role: doctor.role || 'doctor',
+                            isActive: doctor.isActive !== false,
+                            ownerId: currentOwnerId
+                        };
+
+                        const cookieStore = await cookies();
+                        cookieStore.set('medos_auth_token', Buffer.from(JSON.stringify(userData)).toString('base64'), {
+                            httpOnly: true,
+                            secure: process.env.NODE_ENV === 'production',
+                            sameSite: 'strict',
+                            path: '/',
+                            maxAge: 60 * 60 * 24 * 7
                         });
+
+                        return NextResponse.json({ success: true, user: userData });
                     }
                 }
             }

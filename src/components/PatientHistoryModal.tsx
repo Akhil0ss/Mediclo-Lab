@@ -206,7 +206,16 @@ export default function PatientHistoryModal({
     const handleGenerateAI = async () => {
         setAiLoading(true);
         setAiError('');
+        const cacheKey = `ai_insight_${patientId}_${visits.length}_${reports.length}`;
+
         try {
+            const cached = localStorage.getItem(cacheKey);
+            if (cached) {
+                setAiInsight(JSON.parse(cached));
+                setAiLoading(false);
+                return;
+            }
+
             // Mapping visits/reports to the structure expected by groqAI service
             const mappedVisits = visits.map(v => ({
                 date: v.visitDate || v.createdAt?.split('T')[0] || '',
@@ -222,6 +231,7 @@ export default function PatientHistoryModal({
 
             const result = await generateClinicalHistoryInsight(mappedVisits, mappedReports);
             setAiInsight(result);
+            localStorage.setItem(cacheKey, JSON.stringify(result));
         } catch (e) {
             console.error('AI Insight Error:', e);
             setAiError('Could not generate insight. Please check GROQ_API_KEY configuration.');

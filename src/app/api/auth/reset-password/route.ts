@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ref, get, set } from 'firebase/database';
 import { auth, database } from '@/lib/firebase';
 import { signInAnonymously } from 'firebase/auth';
-import { hashPassword } from '@/lib/userUtils';
+import { hashPassword, verifyPassword } from '@/lib/userUtils';
 
 export async function POST(request: NextRequest) {
     try {
-        // Sign in anonymously to bypass security rules
         await signInAnonymously(auth);
 
-        const { ownerId, username, newPassword } = await request.json();
+        const { ownerId, username, newPassword, currentPassword } = await request.json();
 
         if (!ownerId || !username || !newPassword) {
             return NextResponse.json({ error: 'Missing parameters' }, { status: 400 });
@@ -19,50 +18,76 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Password must be at least 12 characters' }, { status: 400 });
         }
 
+        // AUTH CHECK: Require current password to change password
+        if (!currentPassword) {
+            return NextResponse.json({ error: 'Current password is required to reset password' }, { status: 401 });
+        }
+
+        // Find user and verify current password
+        const authRef = ref(database, `users/${ownerId}/auth`);
+        const authSnap = await get(authRef);
+
+        if (!authSnap.exists()) {
+            return NextResponse.json({ error: 'Authentication data not found' }, { status: 404 });
+        }
+
+        const authData = authSnap.val();
         const rolePart = username.split('@')[1];
-        let path: string = '';
+        let targetPath: string = '';
+        let verified = false;
 
-        if (rolePart === 'receptionist') {
-            path = `owners/${ownerId}/receptionist`;
-        } else if (rolePart === 'lab') {
-            path = `owners/${ownerId}/lab`;
-        } else if (rolePart === 'pharmacy') {
-            path = `owners/${ownerId}/pharmacy`;
-        } else {
-            // Doctor - find by username
-            const doctorsRef = ref(database, `owners/${ownerId}/doctors`);
-            const snapshot = await get(doctorsRef);
-            if (!snapshot.exists()) {
-                return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        // Check primary roles
+        const primaryRoles: Record<string, string> = {
+            'receptionist': 'receptionist', 'admin': 'receptionist',
+            'lab': 'lab', 'pharmacy': 'pharmacy'
+        };
+
+        if (primaryRoles[rolePart]) {
+            const roleKey = primaryRoles[rolePart];
+            const user = authData[roleKey];
+            if (user && user.username === username.toLowerCase().trim()) {
+                if (verifyPassword(currentPassword, user.passwordHash)) {
+                    targetPath = `users/${ownerId}/auth/${roleKey}/passwordHash`;
+                    verified = true;
+                }
             }
+        }
 
-            const doctors = snapshot.val();
-            for (const doctorId in doctors) {
-                if (doctors[doctorId].username === username) {
-                    path = `owners/${ownerId}/doctors/${doctorId}`;
+        // Check staff
+        if (!verified && authData.staff) {
+            for (const sId in authData.staff) {
+                const staff = authData.staff[sId];
+                if (staff && staff.username === username.toLowerCase().trim()) {
+                    if (verifyPassword(currentPassword, staff.passwordHash)) {
+                        targetPath = `users/${ownerId}/auth/staff/${sId}/passwordHash`;
+                        verified = true;
+                    }
                     break;
                 }
             }
-            if (!path) {
-                return NextResponse.json({ error: 'User not found' }, { status: 404 });
+        }
+
+        // Check doctors
+        if (!verified && authData.doctors) {
+            for (const dId in authData.doctors) {
+                const doctor = authData.doctors[dId];
+                if (doctor && doctor.username === username.toLowerCase().trim()) {
+                    if (verifyPassword(currentPassword, doctor.passwordHash)) {
+                        targetPath = `users/${ownerId}/auth/doctors/${dId}/passwordHash`;
+                        verified = true;
+                    }
+                    break;
+                }
             }
         }
 
-        // Hash password
-        const hashedPassword = hashPassword(newPassword);
-
-        // Update in owners path (new structure)
-        await set(ref(database, `${path}/passwordHash`), hashedPassword);
-        console.log('✅ Updated owners path:', path);
-
-        // ALSO update in users path (old structure) for compatibility
-        const userPath = path.replace(`owners/${ownerId}`, `users/${ownerId}/auth`);
-        try {
-            await set(ref(database, `${userPath}/passwordHash`), hashedPassword);
-            console.log('✅ Updated users path:', userPath);
-        } catch (e) {
-            console.log('⚠️ Users path update failed (may not exist)');
+        if (!verified) {
+            return NextResponse.json({ error: 'Current password is incorrect' }, { status: 401 });
         }
+
+        // Hash and update
+        const hashedPassword = hashPassword(newPassword);
+        await set(ref(database, targetPath), hashedPassword);
 
         return NextResponse.json({
             success: true,
@@ -72,8 +97,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         console.error('Password reset API error:', error);
         return NextResponse.json({
-            error: 'Failed to reset password',
-            details: error instanceof Error ? error.message : 'Unknown error'
+            error: 'Failed to reset password'
         }, { status: 500 });
     }
 }

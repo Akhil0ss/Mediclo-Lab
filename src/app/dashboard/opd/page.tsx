@@ -3,12 +3,15 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import { useConfirm } from '@/contexts/ConfirmDialogContext';
 import { ref, onValue, push, update, remove, get, query, orderByChild, equalTo, limitToLast } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { formatIdFromDate, generateRxId } from '@/lib/idGenerator';
 import { getArrivedReportsForVisit } from '@/lib/clinicLogic';
 import QuickSampleModal from '@/components/QuickSampleModal';
 import Modal from '@/components/Modal';
+import SkeletonTable from '@/components/SkeletonTable';
 import { useSearchParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 
@@ -20,6 +23,7 @@ import { suggestDiagnosis, checkDrugInteractions, suggestLifestyleAdvice } from 
 export default function OPDPage() {
     const { user, userProfile } = useAuth();
     const { showToast } = useToast();
+    const { confirm } = useConfirm();
     const searchParams = useSearchParams();
     const router = useRouter();
     // Data State
@@ -29,6 +33,7 @@ export default function OPDPage() {
     const [reports, setReports] = useState<any[]>([]);
     const [templates, setTemplates] = useState<any[]>([]);
     const [isSaving, setIsSaving] = useState(false);
+    const [loading, setLoading] = useState(true);
 
     // UI State
     const [searchQuery, setSearchQuery] = useState('');
@@ -89,7 +94,7 @@ export default function OPDPage() {
         if (!ownerId) return;
 
         // Fetch Visits
-        const visitsRef = ref(database, `opd/${ownerId}`);
+        const visitsRef = query(ref(database, `opd/${ownerId}`), orderByChild('createdAt'), limitToLast(200));
         const unsubVisits = onValue(visitsRef, (snapshot) => {
             const data: any[] = [];
             snapshot.forEach((child) => {
@@ -97,13 +102,13 @@ export default function OPDPage() {
             });
             data.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
             setVisits(data);
+            setLoading(false);
         });
 
-        // Fetch Patients
-        const patientsRef = ref(database, `patients/${ownerId}`);
-        const unsubPatients = onValue(patientsRef, (snapshot) => {
+        // Fetch Patients (Performance Optimized: Last 500 only)
+        const unsubP = onValue(query(ref(database, `patients/${ownerId}`), orderByChild('createdAt'), limitToLast(500)), (snap) => {
             const data: any[] = [];
-            snapshot.forEach((child) => {
+            snap.forEach((child) => {
                 data.push({ id: child.key, ...child.val() });
             });
             setPatients(data);
@@ -138,15 +143,16 @@ export default function OPDPage() {
             setAllRecentSamples(list);
         });
 
-        // Fetch Templates for Referrals
+        // Fetch Templates for Referrals (using get() to avoid nested listener leak)
         const templatesRef = ref(database, `templates/${ownerId}`);
         const commonRef = ref(database, 'common_templates');
-        const unsubTemplates = onValue(templatesRef, (tsnap) => {
-            onValue(commonRef, (csnap) => {
+        const fetchTemplates = async () => {
+            try {
+                const [tsnap, csnap] = await Promise.all([get(templatesRef), get(commonRef)]);
                 const userT: any[] = [];
-                tsnap.forEach(c => { userT.push({id: c.key, ...c.val()}); });
+                if (tsnap.exists()) tsnap.forEach(c => { userT.push({id: c.key, ...c.val()}); });
                 const commonT: any[] = [];
-                csnap.forEach(c => { commonT.push({id: c.key, ...c.val()}); });
+                if (csnap.exists()) csnap.forEach(c => { commonT.push({id: c.key, ...c.val()}); });
                 const combined = [...userT];
                 commonT.forEach(ct => {
                     if (!combined.find(ut => ut.name.toLowerCase() === ct.name.toLowerCase())) {
@@ -154,14 +160,19 @@ export default function OPDPage() {
                     }
                 });
                 setTemplates(combined.sort((a,b) => a.name.localeCompare(b.name)));
-            });
-        });
+            } catch (err) {
+                console.error('Failed to fetch templates:', err);
+            }
+        };
+        // Listen for template changes but fetch common_templates via get() (no nesting)
+        const unsubTemplates = onValue(templatesRef, () => { fetchTemplates(); });
 
         return () => {
             unsubVisits();
-            unsubPatients();
+            unsubP();
             unsubStaff();
             unsubReports();
+            unsubSamples();
             unsubTemplates();
         };
     }, [ownerId]);
@@ -320,9 +331,10 @@ export default function OPDPage() {
     };
 
     const handleDeleteVisit = async (id: string) => {
-        if (window.confirm("NOTICE: Are you sure you want to permanently delete this OPD visit record? This action cannot be undone.")) {
+        if (await confirm("NOTICE: Are you sure you want to permanently delete this OPD visit record? This action cannot be undone.")) {
             try {
                 await remove(ref(database, `opd/${ownerId}/${id}`));
+                logAudit(ownerId, AUDIT_ACTIONS.OPD_VISIT_CREATED, `Deleted OPD visit record ${id}`, userProfile?.name || user?.uid || 'Unknown');
                 showToast('Visit Record Deleted', 'success');
             } catch (error) {
                 showToast('Failed to delete visit', 'error');
@@ -354,6 +366,7 @@ export default function OPDPage() {
                 updatedAt: new Date().toISOString()
             });
             showToast(status === 'completed' ? `Prescription Saved (${rxId})! Visit Completed.` : `Patient Referred (${rxId}) & Rx on Hold`, 'success');
+            logAudit(ownerId, AUDIT_ACTIONS.RX_CREATED, `Prescription ${rxId} saved for visit ${selectedVisit.id} (${status})`, userProfile?.name || user?.uid || 'Unknown');
             setShowPrescriptionModal(false);
             router.push('/dashboard/opd');
         } catch (error) {
@@ -435,6 +448,7 @@ export default function OPDPage() {
             </div>
 
             {/* Visits Table */}
+            {loading ? <SkeletonTable rows={10} columns={7} /> : (
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
@@ -586,6 +600,7 @@ export default function OPDPage() {
                     </div>
                 )}
             </div>
+            )}
 
             {/* Standardized Quick OPD Modal Integration */}
             <QuickOPDModal 

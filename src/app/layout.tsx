@@ -16,6 +16,7 @@ export const metadata: Metadata = {
 
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { ConfirmDialogProvider } from "@/contexts/ConfirmDialogContext";
 
 export default function RootLayout({
   children,
@@ -38,7 +39,9 @@ export default function RootLayout({
         <AuthProvider>
           <SubscriptionProvider>
             <ThemeProvider>
-              {children}
+              <ConfirmDialogProvider>
+                {children}
+              </ConfirmDialogProvider>
             </ThemeProvider>
           </SubscriptionProvider>
         </AuthProvider>

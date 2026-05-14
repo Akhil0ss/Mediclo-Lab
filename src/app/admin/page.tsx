@@ -3,8 +3,12 @@
 import { useEffect, useState } from 'react';
 import { database } from '@/lib/firebase';
 import { ref, onValue } from 'firebase/database';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'next/navigation';
 
 export default function AdminDashboard() {
+    const { user } = useAuth();
+    const router = useRouter();
     const [stats, setStats] = useState({
         totalUsers: 0,
         totalRevenue: 0,
@@ -14,7 +18,22 @@ export default function AdminDashboard() {
     });
     const [loading, setLoading] = useState(true);
 
+    // AUTH-04: Route guard — redirect non-admins
     useEffect(() => {
+        if (!user) {
+            router.push('/login');
+            return;
+        }
+        // Only allow admin email
+        if (user.email !== 'wdbyakt@gmail.com') {
+            router.push('/dashboard');
+            return;
+        }
+    }, [user, router]);
+
+    useEffect(() => {
+        if (!user || user.email !== 'wdbyakt@gmail.com') return;
+
         // 1. Users
         const unsubUsers = onValue(ref(database, 'users'), (snap) => {
             const data = snap.val();
@@ -74,15 +93,20 @@ export default function AdminDashboard() {
             unsubPayments();
             unsubSubs();
         };
-    }, []);
+    }, [user]);
 
     if (loading) return <div className="p-8 text-center text-gray-500">Loading Analytics...</div>;
+
+    // Block render for non-admins
+    if (!user || user.email !== 'wdbyakt@gmail.com') {
+        return <div className="p-8 text-center text-gray-500">Access Denied</div>;
+    }
 
     const cards = [
         { label: 'Total Users', value: stats.totalUsers, icon: 'fa-users', color: 'bg-blue-500' },
         { label: 'Premium Subscribers', value: stats.premiumUsers, icon: 'fa-crown', color: 'bg-yellow-500' },
         { label: 'Total Revenue', value: `₹${stats.totalRevenue.toLocaleString()}`, icon: 'fa-rupee-sign', color: 'bg-green-500' },
-        { label: 'Today\'s Revenue', value: `₹${stats.todayRevenue.toLocaleString()}`, icon: 'fa-chart-line', color: 'bg-emerald-500' },
+        { label: "Today's Revenue", value: `₹${stats.todayRevenue.toLocaleString()}`, icon: 'fa-chart-line', color: 'bg-emerald-500' },
     ];
 
     return (
@@ -94,7 +118,7 @@ export default function AdminDashboard() {
                             <p className="text-sm font-medium text-gray-500 mb-1">{card.label}</p>
                             <h3 className="text-2xl font-bold text-gray-800">{card.value}</h3>
                         </div>
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white text-xl ${card.color} shadow-lg shadow-${card.color.replace('bg-', '')}/30`}>
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white text-xl ${card.color} shadow-lg`}>
                             <i className={`fas ${card.icon}`}></i>
                         </div>
                     </div>
@@ -134,7 +158,7 @@ export default function AdminDashboard() {
                         </div>
                         <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                             <span className="text-gray-600">Secure Admin</span>
-                            <span className="text-purple-600 font-bold">wdbyakt@gmail.com</span>
+                            <span className="text-purple-600 font-bold">Authenticated</span>
                         </div>
                         <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                             <span className="text-gray-600">Pending Payments</span>

@@ -5,6 +5,7 @@ import { ref, push, onValue, get, query, orderByChild, limitToLast, remove, upda
 import { database } from '@/lib/firebase';
 import { getArrivedReportsForVisit } from '@/lib/clinicLogic';
 import { getDataOwnerId } from '@/lib/dataUtils';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 
@@ -45,7 +46,7 @@ export default function DashboardPage() {
     const [queueSubTab, setQueueSubTab] = useState<'regular' | 'emergency'>('regular');
 
     // Date Keys
-    const today = new Date().toISOString().split('T')[0];
+    const [today] = useState(() => new Date().toISOString().split('T')[0]);
     
     // Status Resolver for Laboratory Flow
     const getFlowStatus = (v: any) => {
@@ -85,19 +86,29 @@ export default function DashboardPage() {
         const ptsRef = ref(database, `patients/${dataOwnerId}`);
         const unsub = onValue(ptsRef, (snap) => {
             if (snap.exists()) {
-                setPatientsMap(snap.val());
+                const data = snap.val();
+                setPatientsMap(data);
+                
+                // Count today's patients
+                let count = 0;
+                Object.values(data).forEach((p: any) => {
+                    if (p.createdAt?.includes(today)) count++;
+                });
+                setStats(prev => ({ ...prev, todayPatients: count }));
             } else {
                 setPatientsMap({});
+                setStats(prev => ({ ...prev, todayPatients: 0 }));
             }
         });
         return () => unsub();
-    }, [dataOwnerId]);
+    }, [dataOwnerId, today]);
 
     const handleDeleteQueue = async (visitId: string) => {
         if (!dataOwnerId) return;
         if (!window.confirm("Are you sure you want to remove this patient from the queue?")) return;
         try {
             await remove(ref(database, `opd/${dataOwnerId}/${visitId}`));
+            logAudit(dataOwnerId, AUDIT_ACTIONS.OPD_VISIT_CREATED, `Removed visit ${visitId} from queue`, userProfile?.name || user?.email || 'Unknown');
         } catch (error) {
             console.error('Error deleting queue item:', error);
         }
@@ -130,23 +141,16 @@ export default function DashboardPage() {
                 pharmacyStatus: 'dispensed',
                 dispensedAt: new Date().toISOString()
             });
+            logAudit(dataOwnerId, AUDIT_ACTIONS.RX_DISPENSED, `Dispensed Rx for visit ${visitId}`, userProfile?.name || user?.email || 'Unknown');
         } catch (error) {
             console.error('Error dispensing RX:', error);
         }
     };
 
     useEffect(() => {
-        if (!user || !dataOwnerId) return;
-
-        // 1. Patients
-        onValue(query(ref(database, 'patients/' + dataOwnerId), orderByChild('createdAt'), limitToLast(50)), (snap) => {
-            let count = 0;
-            snap.forEach(c => { if (c.val().createdAt?.includes(today)) count++; });
-            setStats(p => ({ ...p, todayPatients: count }));
-        });
-
-        // 2. Samples (Lab specific fetching - Universal now for Status Resolution)
-        onValue(query(ref(database, 'samples/' + dataOwnerId), orderByChild('createdAt'), limitToLast(100)), (snap) => {
+        if (!user || !dataOwnerId) return;        
+        // 1. Samples (Lab specific fetching - Universal now for Status Resolution)
+        const unsub2 = onValue(query(ref(database, 'samples/' + dataOwnerId), orderByChild('createdAt'), limitToLast(100)), (snap) => {
             const list: any = [];
             const all: any = [];
             let tCount = 0;
@@ -165,7 +169,7 @@ export default function DashboardPage() {
         });
 
         // 3. Reports
-        onValue(query(ref(database, 'reports/' + dataOwnerId), orderByChild('createdAt'), limitToLast(50)), (snap) => {
+        const unsub3 = onValue(query(ref(database, 'reports/' + dataOwnerId), orderByChild('createdAt'), limitToLast(50)), (snap) => {
             let rCount = 0;
             const list: any[] = [];
             snap.forEach(c => { 
@@ -178,7 +182,7 @@ export default function DashboardPage() {
         });
 
         // 4. OPD Queue (Universal Synchronization)
-        onValue(query(ref(database, 'opd/' + dataOwnerId), orderByChild('visitDate')), (snap) => {
+        const unsub4 = onValue(query(ref(database, 'opd/' + dataOwnerId), orderByChild('visitDate')), (snap) => {
             const docList: any[] = [];
             const fullList: any[] = [];
             const referrals: any[] = [];
@@ -193,12 +197,26 @@ export default function DashboardPage() {
             let dInConsult = 0;
             let dCompleted = 0;
             let dReferred = 0;
+            
+            const pharmacyPending: any[] = [];
+            const pharmacyDispensed: any[] = [];
+            let pharmDispensedToday = 0;
 
             const userId = user?.uid;
 
             snap.forEach(c => {
                 const val = c.val();
-                const visit = { id: c.key, ...val };
+                let visit = { id: c.key, ...val };
+
+                if (isPharmacy || isOwnerOrAdmin) {
+                    const pProfile = patientsMap[val.patientId] || {};
+                    visit = {
+                        ...visit,
+                        patientPhone: pProfile.mobile || val.patientPhone || val.mobile || '',
+                        patientReadableId: pProfile.patientId || val.opdId || val.patientReadableId || '',
+                        patientName: pProfile.name || val.patientName || ''
+                    };
+                }
 
                 // 📊 Global Stats (Main Dash) - Only for TODAY
                 if (val.visitDate === today) {
@@ -228,10 +246,22 @@ export default function DashboardPage() {
                     }
                 }
 
-                // 📁 RX MANAGEMENT - Any date (Filtered by selectedRxDate)
+                // 📁 RX MANAGEMENT - Any date (Unfiltered to avoid state tearing, filter moved to render)
                 if (isDoctor && (val.doctorId === userId || userProfile?.role === 'dr-staff')) {
-                    if (val.status === 'completed' && val.visitDate === selectedRxDate) {
+                    if (val.status === 'completed') {
                         completedList.push(visit);
+                    }
+                }
+
+                // 💊 PHARMACY SPECIFIC (Integrated into main loop)
+                if (isPharmacy || isOwnerOrAdmin) {
+                    if (val.status === 'completed' && val.prescription) {
+                        if (!val.pharmacyStatus || val.pharmacyStatus === 'pending') {
+                            pharmacyPending.push(visit);
+                        } else if (val.pharmacyStatus === 'dispensed') {
+                            pharmacyDispensed.push(visit);
+                            if (val.dispensedAt?.includes(today)) pharmDispensedToday++;
+                        }
                     }
                 }
             });
@@ -243,44 +273,18 @@ export default function DashboardPage() {
             setLabReferrals(referrals.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()));
             setStats(p => ({ ...p, opdWaiting: globalWaiting, opdInConsult: globalInConsult, opdCompleted: globalCompleted, opdReferred: globalReferred }));
 
-            // 💊 PHARMACY SPECIFIC (Only if role is pharmacy or owner/admin)
             if (isPharmacy || isOwnerOrAdmin) {
-                const pending: any[] = [];
-                const dispensed: any[] = [];
-                let dToday = 0;
-
-                snap.forEach(c => {
-                    const val = c.val();
-                    const pProfile = patientsMap[val.patientId] || {};
-                    const visit = {
-                        id: c.key,
-                        ...val,
-                        // Override/Fallback with source of truth from patient profile
-                        patientPhone: pProfile.mobile || val.patientPhone || val.mobile || '',
-                        patientReadableId: pProfile.patientId || val.opdId || val.patientReadableId || '',
-                        patientName: pProfile.name || val.patientName || ''
-                    };
-
-                    if (val.status === 'completed' && val.prescription) {
-                        if (!val.pharmacyStatus || val.pharmacyStatus === 'pending') {
-                            pending.push(visit);
-                        } else if (val.pharmacyStatus === 'dispensed') {
-                            dispensed.push(visit);
-                            if (val.dispensedAt?.includes(today)) dToday++;
-                        }
-                    }
-                });
-
-                setPharmacyPendingQueue(pending.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()));
-                setPharmacyDispensedList(dispensed.sort((a, b) => new Date(b.dispensedAt || b.updatedAt).getTime() - new Date(a.dispensedAt || a.updatedAt).getTime()));
-                setPharmacyStats({ pending: pending.length, dispensedToday: dToday });
+                setPharmacyPendingQueue(pharmacyPending.sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime()));
+                setPharmacyDispensedList(pharmacyDispensed.sort((a, b) => new Date(b.dispensedAt || b.updatedAt).getTime() - new Date(a.dispensedAt || a.updatedAt).getTime()));
+                setPharmacyStats({ pending: pharmacyPending.length, dispensedToday: pharmDispensedToday });
             }
         });
 
         // 👨‍⚕️ FETCH DOCTORS (For Filters)
+        let unsub5 = () => { };
         if (isPharmacy || isOwnerOrAdmin) {
             const staffRef = ref(database, `users/${dataOwnerId}/auth/staff`);
-            onValue(staffRef, (snap) => {
+            unsub5 = onValue(staffRef, (snap) => {
                 if (snap.exists()) {
                     const list: any[] = [];
                     snap.forEach(child => {
@@ -295,8 +299,9 @@ export default function DashboardPage() {
         }
 
         // 5. Online Appointments
+        let unsub6 = () => { };
         if (isOwnerOrAdmin) {
-            onValue(ref(database, 'appointments/' + dataOwnerId), (snap) => {
+            unsub6 = onValue(ref(database, 'appointments/' + dataOwnerId), (snap) => {
                 let count = 0;
                 snap.forEach(c => {
                     if (c.val().status === 'pending') count++;
@@ -305,7 +310,14 @@ export default function DashboardPage() {
             });
         }
 
-    }, [user, dataOwnerId, today, isDoctor, userProfile, selectedRxDate, patientsMap, isOwnerOrAdmin]);
+        return () => {
+            unsub2();
+            unsub3();
+            unsub4();
+            unsub5();
+            unsub6();
+        };
+    }, [user, dataOwnerId, today, isDoctor, userProfile, patientsMap, isOwnerOrAdmin]);
 
     if (!user) return null;
 
@@ -881,9 +893,10 @@ export default function DashboardPage() {
                                         </thead>
                                         <tbody className="divide-y divide-gray-50">
                                             {completedRxList.filter(v =>
-                                                v.patientName.toLowerCase().includes(rxSearch.toLowerCase()) ||
+                                                v.visitDate === selectedRxDate &&
+                                                (v.patientName.toLowerCase().includes(rxSearch.toLowerCase()) ||
                                                 v.token.toString().includes(rxSearch) ||
-                                                (v.rxId && v.rxId.toLowerCase().includes(rxSearch.toLowerCase()))
+                                                (v.rxId && v.rxId.toLowerCase().includes(rxSearch.toLowerCase())))
                                             ).length === 0 ? (
                                                 <tr>
                                                     <td colSpan={4} className="px-6 py-16 text-center">
@@ -896,9 +909,10 @@ export default function DashboardPage() {
                                             ) : (
                                                 completedRxList
                                                     .filter(v =>
-                                                        v.patientName.toLowerCase().includes(rxSearch.toLowerCase()) ||
+                                                        v.visitDate === selectedRxDate &&
+                                                        (v.patientName.toLowerCase().includes(rxSearch.toLowerCase()) ||
                                                         v.token.toString().includes(rxSearch) ||
-                                                        (v.rxId && v.rxId.toLowerCase().includes(rxSearch.toLowerCase()))
+                                                        (v.rxId && v.rxId.toLowerCase().includes(rxSearch.toLowerCase())))
                                                     )
                                                     .map(v => (
                                                         <tr key={v.id} className="group hover:bg-purple-50/10 transition-all border-b border-gray-50 last:border-0 text-[13px]">

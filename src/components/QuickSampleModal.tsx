@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ref, onValue, push, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import Modal from './Modal';
 import { useToast } from '@/contexts/ToastContext';
 import { generateSampleId } from '@/lib/idGenerator';
@@ -188,6 +189,16 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
             return;
         }
 
+        if (form.patientName.length < 2 || form.patientName.length > 50) {
+            showToast('Patient name must be between 2 and 50 characters', 'error');
+            return;
+        }
+        
+        if (form.patientMobile && form.patientMobile.length !== 10) {
+            showToast('Mobile number must be exactly 10 digits', 'error');
+            return;
+        }
+
         setIsSaving(true);
         try {
             let finalRefDoctor = form.refDoctor;
@@ -215,6 +226,7 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
             };
 
             await push(ref(database, `samples/${ownerId}`), sampleData);
+            logAudit(ownerId, AUDIT_ACTIONS.SAMPLE_COLLECTED, `Sample collected for ${form.patientName} - ${testNames.join(', ')}`, form.patientName || 'Unknown');
             showToast('Sample Collected Successfully!', 'success');
             onClose();
             // Reset

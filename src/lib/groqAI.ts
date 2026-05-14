@@ -5,7 +5,7 @@
  * Model: llama-3.3-70b-versatile (best balance of speed/quality)
  */
 
-const GROQ_API_KEY = process.env.NEXT_PUBLIC_GROQ_API_KEY || '';
+// AI calls go through the secure server proxy at /api/ai/proxy
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL = 'llama-3.1-8b-instant'; // Fastest, cheapest, huge free limit
 

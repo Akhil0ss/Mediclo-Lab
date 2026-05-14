@@ -103,8 +103,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     ownerId: ownerId || undefined
                 });
 
-                // Run data cleanup in background (non-blocking)
+                // --- SECURE HTTP COOKIE VERIFICATION ---
+                // Even if localStorage is manipulated, we strictly verify 
+                // against the HttpOnly secure cookie on the backend.
                 if (typeof window !== 'undefined') {
+                    fetch('/api/auth/session').then(async res => {
+                        if (!res.ok) {
+                            console.error('🚨 Security Violation: LocalStorage exists but Secure Auth Cookie is missing or invalid.');
+                            const { signOut } = await import('firebase/auth');
+                            const { auth } = await import('@/lib/firebase');
+                            await signOut(auth);
+                            localStorage.clear();
+                            window.location.href = '/login?reason=session_expired';
+                        }
+                    }).catch(console.error);
+
+                    // Run data cleanup in background (non-blocking)
                     import('@/lib/dataCleanup').then(({ runDataCleanup }) => {
                         const cleanupUserId = username || userId || '';
                         const cleanupOwnerId = ownerId || userId || '';

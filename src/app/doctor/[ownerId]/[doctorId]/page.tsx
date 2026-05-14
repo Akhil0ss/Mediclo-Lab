@@ -87,7 +87,7 @@ export default function DoctorPortal() {
             const dbClean = (doctor.mobile || '').replace(/\D/g, '').slice(-10);
             const inputClean = accessCode.replace(/\D/g, '').slice(-10);
 
-            if (inputClean === dbClean || accessCode === '123456') { // Backdoor for demo if needed
+            if (inputClean === dbClean) {
                 setVerified(true);
                 setDoctorData(doctor);
                 fetchReports(doctorId);

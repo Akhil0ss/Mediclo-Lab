@@ -5,8 +5,9 @@
  * WITHOUT deleting patient records, reports, templates, or samples
  */
 
-import { ref, get, remove, update } from 'firebase/database';
+import { ref, get, remove, update, set } from 'firebase/database';
 import { database } from './firebase';
+import { logAudit, AUDIT_ACTIONS } from './audit';
 
 /**
  * Clean up read notifications older than 7 days
@@ -141,7 +142,7 @@ export async function cleanupStaleOPDQueues(ownerId: string) {
 
         const visits = snapshot.val();
         const today = new Date().toISOString().split('T')[0];
-        let cleanedCount = 0;
+        let archivedCount = 0;
 
         for (const visitId in visits) {
             const visit = visits[visitId];
@@ -150,17 +151,62 @@ export async function cleanupStaleOPDQueues(ownerId: string) {
             // If visit is from a previous day AND still in queue (not finished)
             if (visitDate && visitDate < today) {
                 if (visit.status === 'pending' || visit.status === 'in-consultation') {
+                    // ARCHIVE instead of DELETE — preserves data integrity
+                    await set(ref(database, `opd_archive/${ownerId}/${visitId}`), {
+                        ...visit,
+                        archivedAt: new Date().toISOString(),
+                        archiveReason: 'stale_queue_cleanup'
+                    });
                     await remove(ref(database, `opd/${ownerId}/${visitId}`));
-                    cleanedCount++;
+                    archivedCount++;
                 }
             }
         }
 
-        if (cleanedCount > 0) {
-            console.log(`🧹 Purged ${cleanedCount} stale OPD queue items from previous days`);
+        if (archivedCount > 0) {
+            logAudit(ownerId, AUDIT_ACTIONS.DATA_CLEANUP, `Archived ${archivedCount} stale OPD queue items from previous days`, 'SYSTEM');
         }
     } catch (error) {
         console.error('OPD cleanup error:', error);
+    }
+}
+
+/**
+ * INFRA-04: Clean up date-based counter keys older than 90 days.
+ * Counters accumulate keys like `counters/{ownerId}/ptIds/260401` forever.
+ */
+export async function cleanupOldCounters(ownerId: string) {
+    try {
+        const counterTypes = ['ptIds', 'sampleIds', 'reportIds', 'invoiceIds', 'rxIds'];
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 90);
+
+        for (const type of counterTypes) {
+            const counterRef = ref(database, `counters/${ownerId}/${type}`);
+            const snap = await get(counterRef);
+            if (!snap.exists()) continue;
+
+            const data = snap.val();
+            let cleaned = 0;
+            for (const dateKey in data) {
+                // Date keys are in YYMMDD format
+                if (dateKey.length === 6) {
+                    const year = 2000 + parseInt(dateKey.substring(0, 2));
+                    const month = parseInt(dateKey.substring(2, 4)) - 1;
+                    const day = parseInt(dateKey.substring(4, 6));
+                    const keyDate = new Date(year, month, day);
+                    if (keyDate < cutoff) {
+                        await remove(ref(database, `counters/${ownerId}/${type}/${dateKey}`));
+                        cleaned++;
+                    }
+                }
+            }
+            if (cleaned > 0) {
+                logAudit(ownerId, AUDIT_ACTIONS.DATA_CLEANUP, `Cleaned ${cleaned} old ${type} counter keys (>90 days)`, 'SYSTEM');
+            }
+        }
+    } catch (error) {
+        console.error('Counter cleanup error:', error);
     }
 }
 
@@ -176,7 +222,8 @@ export async function runDataCleanup(userId: string, ownerId: string) {
             cleanupNotifications(ownerId),
             archiveOldChats(ownerId),
             cleanupOldAppointments(ownerId),
-            cleanupStaleOPDQueues(ownerId)
+            cleanupStaleOPDQueues(ownerId),
+            cleanupOldCounters(ownerId)
         ]);
 
         console.log('✅ Data cleanup completed');

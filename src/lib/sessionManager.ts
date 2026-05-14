@@ -14,9 +14,15 @@ export interface SessionData {
     lastActivity: string;
 }
 
-// Generate unique session ID
+// Generate cryptographically secure session ID
 export function generateSessionId(): string {
-    return `session_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return `session_${crypto.randomUUID()}`;
+    }
+    // Fallback for environments without crypto.randomUUID
+    const array = new Uint8Array(16);
+    crypto.getRandomValues(array);
+    return `session_${Array.from(array, b => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 // Create new session in Firebase

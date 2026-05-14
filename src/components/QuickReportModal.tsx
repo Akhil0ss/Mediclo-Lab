@@ -6,6 +6,7 @@ import { createCriticalAlert } from '@/lib/notificationManager';
 import { useAuth } from '@/contexts/AuthContext';
 import { ref, onValue, push, set, update, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { generateReportId, generateInvoiceId } from '@/lib/idGenerator';
 import { useRouter } from 'next/navigation';
 import Modal from './Modal';
@@ -608,6 +609,7 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             // ---------------------------------------------------------
 
             showToast(skipPrint ? 'Test finalized successfully!' : 'Report generated successfully!', 'success');
+            logAudit(ownerId, AUDIT_ACTIONS.REPORT_FINALIZED, `Report ${reportId} generated for ${patientData.name} - ${selectedTests.map(id => templates.find(t => t.id === id)?.name).join(', ')}`, user?.displayName || user?.email || 'Lab');
             onClose();
 
             // Open print view only if not skipped

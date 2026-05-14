@@ -3,9 +3,11 @@
 import { useState, useEffect } from 'react';
 import { ref, push, onValue, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import Modal from './Modal';
 import { useToast } from '@/contexts/ToastContext';
 import { generatePatientId } from '@/lib/idGenerator';
+import { PatientSchema } from '@/lib/validations';
 import { getBrandingData } from '@/lib/dataUtils';
 
 interface QuickPatientModalProps {
@@ -63,8 +65,11 @@ export default function QuickPatientModal({ isOpen, onClose, ownerId }: QuickPat
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!form.name || !form.mobile) {
-            showToast('Name and Mobile are required', 'warning');
+        
+        // ZOD VALIDATION: Global Input Defense
+        const valRes = PatientSchema.safeParse(form);
+        if (!valRes.success) {
+            showToast(valRes.error.issues[0].message, 'error');
             return;
         }
 
@@ -95,6 +100,7 @@ export default function QuickPatientModal({ isOpen, onClose, ownerId }: QuickPat
             };
 
             await push(ref(database, `patients/${ownerId}`), patientData);
+            logAudit(ownerId, AUDIT_ACTIONS.PATIENT_CREATED, `Registered patient ${form.name} (${patientReadableId})`, 'Staff');
             showToast(`Patient Registered: ${patientReadableId}`, 'success');
             onClose();
             // Reset
