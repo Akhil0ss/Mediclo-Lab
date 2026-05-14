@@ -60,33 +60,25 @@ export default function PrintReportPage() {
                     reportData = { id: reportId, ...reportData };
                 }
 
-                // Fetch Patient Details to ensure correct Display ID
-                if (reportData.patientId) {
-                    try {
-                        const pSnap = await get(ref(database, `patients/${ownerId}/${reportData.patientId}`));
-                        if (pSnap.exists()) {
-                            reportData.patientDisplayId = pSnap.val().patientId;
-                        }
-                    } catch (e) { console.log('Err fetching patient:', e); }
+                // PARALLELIZE ALL REMAINING FETCHES
+                const [pSnap, brandingSnapshot, subSnapshot, qrBase64] = await Promise.all([
+                    reportData.patientId 
+                        ? get(ref(database, `patients/${ownerId}/${reportData.patientId}`)).catch(() => ({ exists: () => false, val: () => null }))
+                        : Promise.resolve({ exists: () => false, val: () => null }),
+                    get(ref(database, `branding/${ownerId}`)).catch(() => ({ val: () => ({}) })),
+                    get(ref(database, `subscriptions/${ownerId}`)).catch(() => ({ val: () => ({}) })),
+                    QRCode.toDataURL(`https://medlab.spotnet.in/verify/${reportData.id}?oid=${ownerId}`, { width: 150, margin: 1 }).catch(() => '')
+                ]);
+
+                // Apply Patient Details if exists
+                if (reportData.patientId && pSnap.exists()) {
+                    reportData.patientDisplayId = pSnap.val().patientId;
                 }
 
-                // Fetch Branding
-                const brandingSnapshot = await get(ref(database, `branding/${ownerId}`));
                 const brandingData = brandingSnapshot.val() || {};
-
-                // Fetch Subscription
-                const subSnapshot = await get(ref(database, `subscriptions/${ownerId}`));
                 const subData = subSnapshot.val() || {};
 
-                // Generate QR Code Locally
-                try {
-                    const qrUrl = `https://medlab.spotnet.in/verify/${reportData.id}?oid=${ownerId}`;
-                    const qrBase64 = await QRCode.toDataURL(qrUrl, { width: 150, margin: 1 });
-                    setQrCodeDataUrl(qrBase64);
-                } catch (e) {
-                    console.error('Error generating QR code:', e);
-                }
-
+                setQrCodeDataUrl(qrBase64);
                 setReport(reportData);
                 setBranding(brandingData);
                 setSubscription(subData);

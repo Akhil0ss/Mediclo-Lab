@@ -39,28 +39,17 @@ export default function PrintOPDPage() {
                 const visitData = visitSnap.val();
                 setVisit(visitData);
 
-                const brandingSnap = await get(ref(database, `branding/${currentOwnerId}`));
+                const [brandingSnap, docSnap, patSnap, qrBase64] = await Promise.all([
+                    get(ref(database, `branding/${currentOwnerId}`)).catch(() => ({ val: () => ({}) })),
+                    visitData.doctorId ? get(ref(database, `users/${currentOwnerId}/auth/staff/${visitData.doctorId}`)).catch(() => ({ val: () => null })) : Promise.resolve({ val: () => null }),
+                    visitData.patientId ? get(ref(database, `patients/${currentOwnerId}/${visitData.patientId}`)).catch(() => ({ exists: () => false, val: () => null })) : Promise.resolve({ exists: () => false, val: () => null }),
+                    QRCode.toDataURL(`https://medlab.spotnet.in/verify/${visitId}?oid=${currentOwnerId}&type=rx`, { width: 150, margin: 0 }).catch(() => '')
+                ]);
+
                 setBranding(brandingSnap.val() || {});
-
-                if (visitData.doctorId) {
-                    const docSnap = await get(ref(database, `users/${currentOwnerId}/auth/staff/${visitData.doctorId}`));
-                    setDoctor(docSnap.val());
-                }
-
-                if (visitData.patientId) {
-                    const patSnap = await get(ref(database, `patients/${currentOwnerId}/${visitData.patientId}`));
-                    if (patSnap.exists()) {
-                        setPatient(patSnap.val());
-                    }
-                }
-                
-                try {
-                    const qrUrl = `https://medlab.spotnet.in/verify/${visitId}?oid=${currentOwnerId}&type=rx`;
-                    const qrBase64 = await QRCode.toDataURL(qrUrl, { width: 150, margin: 0 });
-                    setQrCodeDataUrl(qrBase64);
-                } catch (e) {
-                    console.error('Error generating QR code:', e);
-                }
+                if (visitData.doctorId) setDoctor(docSnap.val());
+                if (visitData.patientId && patSnap.exists()) setPatient(patSnap.val());
+                setQrCodeDataUrl(qrBase64);
 
                 setLoading(false);
             } catch (error) {
