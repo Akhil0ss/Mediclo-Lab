@@ -50,27 +50,44 @@ function InvoiceContent() {
                     return;
                 }
 
-                // 3. Fetch Branding
-                const brandingSnapshot = await get(ref(database, `branding/${ownerId}`));
-                const brandingData = brandingSnapshot.val() || {};
-                setBranding(brandingData);
+                // 3. Initialize Branding instantly from cache
+                try {
+                    const bCached = localStorage.getItem(`global_branding_${ownerId}`);
+                    if (bCached) setBranding(JSON.parse(bCached));
+                } catch(e) {}
+
+                // Fetch fresh branding asynchronously
+                get(ref(database, `branding/${ownerId}`))
+                    .then(snap => {
+                        if (snap.exists()) setBranding(snap.val());
+                    })
+                    .catch(() => {});
 
                 // 4. Fetch from DB if needed
                 if (!initialData) {
                     let data = null;
-                    const paths = [`invoices/${ownerId}`, `billing/${ownerId}`];
-                    for (const path of paths) {
-                        const snap = await get(ref(database, path));
-                        if (snap.exists()) {
-                            // Invoices are pushed with auto-ID usually, so we search children
-                            snap.forEach(child => {
-                                const val = child.val();
-                                if (val.invoiceNumber === invoiceId || child.key === invoiceId) {
-                                    data = val;
-                                }
-                            });
+                    
+                    try {
+                        const cached = localStorage.getItem(`print_cache_invoice_${invoiceId}`);
+                        if (cached) {
+                            data = JSON.parse(cached);
                         }
-                        if (data) break;
+                    } catch (e) {}
+
+                    if (!data) {
+                        const paths = [`invoices/${ownerId}`, `billing/${ownerId}`];
+                        for (const path of paths) {
+                            const snap = await get(ref(database, path));
+                            if (snap.exists()) {
+                                snap.forEach(child => {
+                                    const val = child.val();
+                                    if (val.invoiceNumber === invoiceId || child.key === invoiceId) {
+                                        data = val;
+                                    }
+                                });
+                            }
+                            if (data) break;
+                        }
                     }
                     if (data) setInvoiceData(data);
                 }

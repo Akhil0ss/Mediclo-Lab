@@ -50,7 +50,13 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         // Branding
         const brandingRef = ref(database, 'branding/' + dataOwnerId);
         const unsubBranding = onValue(brandingRef, (snapshot: any) => {
-            if (snapshot.exists()) setBranding(snapshot.val());
+            if (snapshot.exists()) {
+                const bData = snapshot.val();
+                setBranding(bData);
+                try {
+                    localStorage.setItem(`global_branding_${dataOwnerId}`, JSON.stringify(bData));
+                } catch(e) {}
+            }
         });
 
         // Notifications

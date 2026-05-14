@@ -106,6 +106,12 @@ export default function AllReportsPage() {
 
     const handleDownloadPDF = (reportId: string) => {
         const dataSourceId = userProfile?.ownerId || user?.uid || '';
+        const report = reports.find(r => r.id === reportId);
+        if (report) {
+            try {
+                localStorage.setItem(`print_cache_report_${reportId}`, JSON.stringify(report));
+            } catch (e) { console.error('Cache failed', e); }
+        }
         window.open(`/print/report/${reportId}?ownerId=${dataSourceId}`, '_blank');
     };
 

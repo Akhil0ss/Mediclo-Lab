@@ -576,7 +576,10 @@ export default function OPDPage() {
                                                 <i className="fas fa-eye text-[10px]"></i>
                                             </button>
                                             <button 
-                                                onClick={() => window.open(`/print/opd/${visit.id}`, '_blank')}
+                                                onClick={() => {
+                                                    try { localStorage.setItem(`print_cache_opd_${visit.id}`, JSON.stringify(visit)); } catch(e) {}
+                                                    window.open(`/print/opd/${visit.id}`, '_blank');
+                                                }}
                                                 className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors border border-blue-50" title="Print Prescription"
                                             >
                                                 <i className="fas fa-print text-[10px]"></i>
@@ -764,7 +767,12 @@ export default function OPDPage() {
                             <div className="flex justify-end gap-3 pt-6 border-t border-gray-100 mt-8 mb-2 mx-2">
                                 <button 
                                     type="button"
-                                    onClick={() => window.open(`/print/opd/${selectedVisit.id}`, '_blank')}
+                                    onClick={() => {
+                                        if (selectedVisit) {
+                                            try { localStorage.setItem(`print_cache_opd_${selectedVisit.id}`, JSON.stringify(selectedVisit)); } catch(e) {}
+                                            window.open(`/print/opd/${selectedVisit.id}`, '_blank');
+                                        }
+                                    }}
                                     className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl shadow-blue-200 transition-all active:scale-95 flex items-center gap-2 border-b-4 border-indigo-900 group"
                                 >
                                     <i className="fas fa-print group-hover:rotate-12 transition-transform"></i>

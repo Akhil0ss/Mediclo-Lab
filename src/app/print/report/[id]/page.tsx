@@ -45,8 +45,29 @@ export default function PrintReportPage() {
                 }
 
                 if (ownerId) {
-                    const reportSnapshot = await get(ref(database, `reports/${ownerId}/${reportId}`));
-                    reportData = reportSnapshot.val();
+                    try {
+                        const bCached = localStorage.getItem(`global_branding_${ownerId}`);
+                        if (bCached) setBranding(JSON.parse(bCached));
+                        
+                        const cached = localStorage.getItem(`print_cache_report_${reportId}`);
+                        if (cached) {
+                            reportData = JSON.parse(cached);
+                            // Instant Load Strategy: render the main report data immediately!
+                            if (!reportData.id) reportData = { id: reportId, ...reportData };
+                            setReport(reportData);
+                            setReportOwnerId(ownerId);
+                            setLoading(false); 
+                            
+                            // Generate QR locally and instantly without waiting
+                            QRCode.toDataURL(`https://medlab.spotnet.in/verify/${reportData.id}?oid=${ownerId}`, { width: 150, margin: 1 })
+                                .then(setQrCodeDataUrl).catch(() => {});
+                        }
+                    } catch (e) { }
+
+                    if (!reportData) {
+                        const reportSnapshot = await get(ref(database, `reports/${ownerId}/${reportId}`));
+                        reportData = reportSnapshot.val();
+                    }
                 }
 
                 if (!reportData || !ownerId) {
@@ -55,35 +76,45 @@ export default function PrintReportPage() {
                     return;
                 }
 
-                // Inject ID if missing
                 if (!reportData.id) {
                     reportData = { id: reportId, ...reportData };
                 }
 
-                // PARALLELIZE ALL REMAINING FETCHES
-                const [pSnap, brandingSnapshot, subSnapshot, qrBase64] = await Promise.all([
+                // If we didn't have cache, set the basic report data now
+                setReport(reportData);
+                setReportOwnerId(ownerId);
+
+                // Fetch secondary data asynchronously
+                Promise.all([
                     reportData.patientId 
                         ? get(ref(database, `patients/${ownerId}/${reportData.patientId}`)).catch(() => ({ exists: () => false, val: () => null }))
                         : Promise.resolve({ exists: () => false, val: () => null }),
                     get(ref(database, `branding/${ownerId}`)).catch(() => ({ val: () => ({}) })),
                     get(ref(database, `subscriptions/${ownerId}`)).catch(() => ({ val: () => ({}) })),
+                    // If QR wasn't generated yet
                     QRCode.toDataURL(`https://medlab.spotnet.in/verify/${reportData.id}?oid=${ownerId}`, { width: 150, margin: 1 }).catch(() => '')
-                ]);
+                ]).then(([pSnap, brandingSnapshot, subSnapshot, qrBase64]) => {
+                    const brandingData = brandingSnapshot.val() || {};
+                    const subData = subSnapshot.val() || {};
 
-                // Apply Patient Details if exists
-                if (reportData.patientId && pSnap.exists()) {
-                    reportData.patientDisplayId = pSnap.val().patientId;
-                }
+                    if (reportData.patientId && pSnap.exists()) {
+                        const pData = pSnap.val();
+                        setReport((prev: any) => ({
+                            ...prev,
+                            patientDisplayId: pData.patientId,
+                            patientAge: pData.age || prev?.patientAge,
+                            patientGender: pData.gender || prev?.patientGender
+                        }));
+                    }
 
-                const brandingData = brandingSnapshot.val() || {};
-                const subData = subSnapshot.val() || {};
-
-                setQrCodeDataUrl(qrBase64);
-                setReport(reportData);
-                setBranding(brandingData);
-                setSubscription(subData);
-                setReportOwnerId(ownerId);
-                setLoading(false);
+                    setBranding(brandingData);
+                    setSubscription(subData);
+                    if (qrBase64) setQrCodeDataUrl(qrBase64);
+                    setLoading(false);
+                }).catch(err => {
+                    console.error('Background fetch error:', err);
+                    setLoading(false);
+                });
 
             } catch (error) {
                 console.error('Error fetching data:', error);

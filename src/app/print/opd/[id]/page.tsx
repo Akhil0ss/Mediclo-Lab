@@ -34,24 +34,48 @@ export default function PrintOPDPage() {
                 if (!currentOwnerId) { setLoading(false); return; }
 
                 setOwnerId(currentOwnerId);
-                const visitSnap = await get(ref(database, `opd/${currentOwnerId}/${visitId}`));
-                if (!visitSnap.exists()) { setLoading(false); return; }
-                const visitData = visitSnap.val();
+                
+                let visitData = null;
+                try {
+                    const bCached = localStorage.getItem(`global_branding_${currentOwnerId}`);
+                    if (bCached) setBranding(JSON.parse(bCached));
+
+                    const cached = localStorage.getItem(`print_cache_opd_${visitId}`);
+                    if (cached) {
+                        visitData = JSON.parse(cached);
+                        // Instant Load Strategy
+                        setVisit(visitData);
+                        setLoading(false);
+                        
+                        QRCode.toDataURL(`https://medlab.spotnet.in/verify/${visitId}?oid=${currentOwnerId}&type=rx`, { width: 150, margin: 0 })
+                            .then(setQrCodeDataUrl).catch(() => {});
+                    }
+                } catch (e) { }
+
+                if (!visitData) {
+                    const visitSnap = await get(ref(database, `opd/${currentOwnerId}/${visitId}`));
+                    if (!visitSnap.exists()) { setLoading(false); return; }
+                    visitData = visitSnap.val();
+                }
+
                 setVisit(visitData);
 
-                const [brandingSnap, docSnap, patSnap, qrBase64] = await Promise.all([
+                // Fetch secondary data asynchronously without blocking the UI
+                Promise.all([
                     get(ref(database, `branding/${currentOwnerId}`)).catch(() => ({ val: () => ({}) })),
                     visitData.doctorId ? get(ref(database, `users/${currentOwnerId}/auth/staff/${visitData.doctorId}`)).catch(() => ({ val: () => null })) : Promise.resolve({ val: () => null }),
                     visitData.patientId ? get(ref(database, `patients/${currentOwnerId}/${visitData.patientId}`)).catch(() => ({ exists: () => false, val: () => null })) : Promise.resolve({ exists: () => false, val: () => null }),
                     QRCode.toDataURL(`https://medlab.spotnet.in/verify/${visitId}?oid=${currentOwnerId}&type=rx`, { width: 150, margin: 0 }).catch(() => '')
-                ]);
-
-                setBranding(brandingSnap.val() || {});
-                if (visitData.doctorId) setDoctor(docSnap.val());
-                if (visitData.patientId && patSnap.exists()) setPatient(patSnap.val());
-                setQrCodeDataUrl(qrBase64);
-
-                setLoading(false);
+                ]).then(([brandingSnap, docSnap, patSnap, qrBase64]) => {
+                    setBranding(brandingSnap.val() || {});
+                    if (visitData.doctorId) setDoctor(docSnap.val());
+                    if (visitData.patientId && patSnap.exists()) setPatient(patSnap.val());
+                    if (qrBase64) setQrCodeDataUrl(qrBase64);
+                    setLoading(false);
+                }).catch(err => {
+                    console.error('Background fetch error:', err);
+                    setLoading(false);
+                });
             } catch (error) {
                 console.error('Error fetching print data:', error);
                 setLoading(false);

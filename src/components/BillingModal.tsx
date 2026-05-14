@@ -334,6 +334,9 @@ export default function BillingModal({ isOpen, onClose, patient, ownerId, userId
         });
 
         // Open Print
+        try {
+            localStorage.setItem(`print_cache_invoice_${invNum}`, JSON.stringify(invData));
+        } catch (e) {}
         const printData = encodeURIComponent(JSON.stringify(invData));
         window.open(`/print/invoice/${invNum}?data=${printData}&ownerId=${ownerId}`, '_blank');
         onClose();
@@ -341,6 +344,9 @@ export default function BillingModal({ isOpen, onClose, patient, ownerId, userId
 
     const handleReprint = () => {
         if (!existingInvoice) return;
+        try {
+            localStorage.setItem(`print_cache_invoice_${existingInvoice.invoiceNumber}`, JSON.stringify(existingInvoice));
+        } catch (e) {}
         const printData = encodeURIComponent(JSON.stringify(existingInvoice));
         window.open(`/print/invoice/${existingInvoice.invoiceNumber}?data=${printData}&ownerId=${ownerId}`, '_blank');
         onClose();
