@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { ref, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import QRCode from 'qrcode';
 
 export default function PrintReportPage() {
     const params = useParams();
@@ -11,6 +12,7 @@ export default function PrintReportPage() {
     const [report, setReport] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
 
     const reportId = params?.id as string;
     const ownerId = searchParams.get('ownerId');
@@ -55,6 +57,14 @@ export default function PrintReportPage() {
                     }
 
                     setReport(reportData);
+
+                    try {
+                        const qrUrl = `https://medlab.spotnet.in/verify/${reportId}?oid=${ownerId}`;
+                        const qrBase64 = await QRCode.toDataURL(qrUrl, { width: 150, margin: 1 });
+                        setQrCodeDataUrl(qrBase64);
+                    } catch (e) {
+                        console.error('Error generating QR code:', e);
+                    }
                 } else {
                     setError(`Report not found at path: reports/${ownerId}/${reportId}`);
                 }
@@ -184,7 +194,7 @@ export default function PrintReportPage() {
                 <div className="bg-gradient-to-r from-gray-800 to-gray-700 text-white px-5 py-3 flex justify-between items-center">
                     <div className="flex items-center gap-3">
                         <div className="w-12 h-12 bg-white rounded p-0.5">
-                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(reportId || '')}`} alt="QR" className="w-full h-full" />
+                            {qrCodeDataUrl && <img src={qrCodeDataUrl} alt="QR" className="w-full h-full" />}
                         </div>
                         <div>
                             <h2 className="text-sm font-bold tracking-wide">ID: {reportId}</h2>

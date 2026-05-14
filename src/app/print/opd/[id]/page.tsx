@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { ref, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import QRCode from 'qrcode';
 
 export default function PrintOPDPage() {
     const params = useParams();
@@ -14,6 +15,7 @@ export default function PrintOPDPage() {
     const [doctor, setDoctor] = useState<any>(null);
     const [patient, setPatient] = useState<any>(null);
     const [ownerId, setOwnerId] = useState<string>('');
+    const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const printTriggeredRef = useRef(false);
 
@@ -51,6 +53,15 @@ export default function PrintOPDPage() {
                         setPatient(patSnap.val());
                     }
                 }
+                
+                try {
+                    const qrUrl = `https://medlab.spotnet.in/verify/${visitId}?oid=${currentOwnerId}&type=rx`;
+                    const qrBase64 = await QRCode.toDataURL(qrUrl, { width: 150, margin: 0 });
+                    setQrCodeDataUrl(qrBase64);
+                } catch (e) {
+                    console.error('Error generating QR code:', e);
+                }
+
                 setLoading(false);
             } catch (error) {
                 console.error('Error fetching print data:', error);
@@ -110,7 +121,7 @@ export default function PrintOPDPage() {
                         <p className="meta-date">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
                         <p className="meta-time">{capturedTime}</p>
                     </div>
-                    <div className="header-qr"><img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(`https://medlab.spotnet.in/verify/${visitId}?oid=${ownerId}&type=rx`)}`} alt="QR" /></div>
+                    <div className="header-qr">{qrCodeDataUrl && <img src={qrCodeDataUrl} alt="QR" />}</div>
                 </div>
             </header>
 

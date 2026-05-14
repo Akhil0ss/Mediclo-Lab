@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import { ref, onValue, get } from 'firebase/database';
+import { ref, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { useAuth } from '@/contexts/AuthContext';
+import QRCode from 'qrcode';
 
 export default function PrintReportPage() {
     const params = useParams();
@@ -13,6 +14,7 @@ export default function PrintReportPage() {
     const [branding, setBranding] = useState<any>(null);
     const [subscription, setSubscription] = useState<any>(null);
     const [reportOwnerId, setReportOwnerId] = useState<string>('');
+    const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
     const [loading, setLoading] = useState(true);
     const printTriggeredRef = useRef(false);
 
@@ -75,6 +77,15 @@ export default function PrintReportPage() {
                 // Fetch Subscription
                 const subSnapshot = await get(ref(database, `subscriptions/${ownerId}`));
                 const subData = subSnapshot.val() || {};
+
+                // Generate QR Code Locally
+                try {
+                    const qrUrl = `https://medlab.spotnet.in/verify/${reportData.id}?oid=${ownerId}`;
+                    const qrBase64 = await QRCode.toDataURL(qrUrl, { width: 150, margin: 1 });
+                    setQrCodeDataUrl(qrBase64);
+                } catch (e) {
+                    console.error('Error generating QR code:', e);
+                }
 
                 setReport(reportData);
                 setBranding(brandingData);
@@ -797,7 +808,7 @@ export default function PrintReportPage() {
                                     <p style="margin-top: 5px; color: #fbbf24; font-weight: 800; font-size: 8px;">Verify your report by QR →</p>
                                 </div>
                                 <div class="header-qr">
-                                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`https://medlab.spotnet.in/verify/${report.id}?oid=${reportOwnerId}`)}" alt="QR" style="width:100%; height:100%; object-fit: contain;">
+                                    <img src="${qrCodeDataUrl}" alt="QR" style="width:100%; height:100%; object-fit: contain;">
                                 </div>
                             </div>
                         </div>
