@@ -29,7 +29,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="MedOS Lab" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
       </head>
-      <body className="font-sans antialiased">
+      <body>
         <AuthProvider>
           <SubscriptionProvider>
             <ThemeProvider>
