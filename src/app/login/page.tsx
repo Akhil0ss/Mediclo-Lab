@@ -13,7 +13,6 @@ import { auth, googleProvider, database } from '@/lib/firebase';
 import { ref, set } from 'firebase/database';
 import LegalModal from '@/components/LegalModals';
 import { logAudit } from '@/lib/audit';
-import { authenticateUser } from '@/lib/auth';
 
 export default function LoginPage() {
     const [activeTab, setActiveTab] = useState<'owner' | 'staff'>('owner');
@@ -97,15 +96,27 @@ export default function LoginPage() {
         try {
             if (activeTab === 'staff') {
                 // STAFF AUTHENTICATION
-                // Ensure anonymous session for database permission
-                await signInAnonymously(auth);
-                const user = await authenticateUser(email, password);
+                // Use the server route so the secure session cookie is issued
+                const loginResponse = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: email,
+                        password
+                    })
+                });
 
-                if (!user) {
-                    setError('Invalid username or password.');
+                const loginPayload = await loginResponse.json().catch(() => ({}));
+
+                if (!loginResponse.ok || !loginPayload?.user) {
+                    setError(loginPayload?.error || 'Invalid username or password.');
                     setLoading(false);
                     return;
                 }
+
+                const user = loginPayload.user;
 
                 if (user.isActive === false) {
                     setError('This account has been deactivated. Contact your lab owner.');
@@ -114,7 +125,10 @@ export default function LoginPage() {
                 }
 
                 // Sign in anonymously to Firebase for database access
-                const anonResult = await signInAnonymously(auth);
+                const existingAuthUser = auth.currentUser;
+                const anonResult = existingAuthUser?.isAnonymous
+                    ? { user: existingAuthUser }
+                    : await signInAnonymously(auth);
                 const firebaseUid = anonResult.user.uid;
 
                 // --- NEW: Fetch Owner's Lab Name for branding sync ---

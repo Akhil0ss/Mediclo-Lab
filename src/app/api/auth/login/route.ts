@@ -97,6 +97,9 @@ export async function POST(request: NextRequest) {
             for (const r of primaryRoles) {
                 const pUser = authData[r];
                 if (pUser && typeof pUser === 'object' && pUser.username === cleanUsername && verifyPassword(cleanPassword, pUser.passwordHash)) {
+                    if (pUser.isActive === false) {
+                        return NextResponse.json({ error: 'This account has been deactivated. Contact your lab owner.' }, { status: 403 });
+                    }
                     if (!isSubActive && r !== 'receptionist') {
                         return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
                     }
@@ -129,6 +132,9 @@ export async function POST(request: NextRequest) {
                 for (const sId in authData.staff) {
                     const staff = authData.staff[sId];
                     if (staff && staff.username === cleanUsername && verifyPassword(cleanPassword, staff.passwordHash)) {
+                        if (staff.isActive === false) {
+                            return NextResponse.json({ error: 'This account has been deactivated. Contact your lab owner.' }, { status: 403 });
+                        }
                         if (!isSubActive) return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
                         await logAudit(currentOwnerId, AUDIT_ACTIONS.STAFF_LOGIN, `Login via API portal: ${staff.username} as staff`, staff.name);
                         
@@ -160,6 +166,9 @@ export async function POST(request: NextRequest) {
                 for (const dId in authData.doctors) {
                     const doctor = authData.doctors[dId];
                     if (doctor && doctor.username === cleanUsername && verifyPassword(cleanPassword, doctor.passwordHash)) {
+                        if (doctor.isActive === false) {
+                            return NextResponse.json({ error: 'This account has been deactivated. Contact your lab owner.' }, { status: 403 });
+                        }
                         if (!isSubActive) return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
                         await logAudit(currentOwnerId, AUDIT_ACTIONS.STAFF_LOGIN, `Login via API portal: ${doctor.username} as associate doctor`, doctor.name);
                         
