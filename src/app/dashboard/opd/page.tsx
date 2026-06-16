@@ -200,11 +200,12 @@ export default function OPDPage() {
     useEffect(() => {
         if (!ownerId || !user?.uid) return;
         const ptRef = ref(database, `prescription_templates/${ownerId}/${user.uid}`);
-        onValue(ptRef, (snap) => {
+        const unsub = onValue(ptRef, (snap) => {
             const data: any[] = [];
             snap.forEach(c => { data.push({ id: c.key, ...c.val() }); });
             setPrescTemplates(data);
         });
+        return () => unsub();
     }, [ownerId, user]);
 
     // Filtering & Sorting

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ref, onValue, push, get, update } from 'firebase/database';
+import { ref, onValue, push, get, update, query, orderByChild, equalTo } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import Modal from './Modal';
 import { useToast } from '@/contexts/ToastContext';
@@ -65,11 +65,10 @@ export default function OnlineAppointmentModal({ isOpen, onClose, ownerId }: Onl
             
             let tokenCount = isNaN(manualToken) ? 1 : manualToken;
             if (isNaN(manualToken)) {
-                const opdRef = ref(database, `opd/${ownerId}`);
+                const opdRef = query(ref(database, `opd/${ownerId}`), orderByChild('visitDate'), equalTo(today));
                 const snapshot = await get(opdRef);
                 if (snapshot.exists()) {
-                    const visits = Object.values(snapshot.val());
-                    tokenCount = visits.filter((v: any) => v.visitDate === today).length + 1;
+                    tokenCount = snapshot.size + 1;
                 }
             }
 

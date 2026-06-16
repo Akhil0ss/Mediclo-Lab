@@ -10,7 +10,6 @@ import {
     updateProfile
 } from 'firebase/auth';
 import { auth, googleProvider, database } from '@/lib/firebase';
-import { ref, set } from 'firebase/database';
 import LegalModal from '@/components/LegalModals';
 import { logAudit } from '@/lib/audit';
 
@@ -132,12 +131,8 @@ export default function LoginPage() {
                     : await signInAnonymously(auth);
                 const firebaseUid = anonResult.user.uid;
 
-                // --- NEW: Fetch Owner's Lab Name for branding sync ---
-                const { get, ref, set } = await import('firebase/database');
-                const ownerProfileRef = ref(database, `users/${user.ownerId}/profile`);
-                const ownerSnap = await get(ownerProfileRef);
-                const ownerData = ownerSnap.exists() ? ownerSnap.val() : {};
-                const syncLabName = ownerData.labName || ownerData.hospitalName || 'My Laboratory';
+                const { ref, set } = await import('firebase/database');
+                const syncLabName = user.labName || 'My Laboratory';
 
                 // Create session in Firebase
                 await set(ref(database, `sessions/${firebaseUid}`), {

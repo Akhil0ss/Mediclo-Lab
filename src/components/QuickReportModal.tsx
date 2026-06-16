@@ -1,17 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { generateLabSuggestions, analyzeLabReport } from '@/lib/groqAI';
 import { createCriticalAlert } from '@/lib/notificationManager';
 import { useAuth } from '@/contexts/AuthContext';
 import { ref, onValue, push, set, update, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { generateReportId, generateInvoiceId } from '@/lib/idGenerator';
-import { useRouter } from 'next/navigation';
 import Modal from './Modal';
 import AIReportAnalysis from './AIReportAnalysis';
-import { defaultTemplates } from '@/lib/defaultTemplates';
 import { getParameterTrend } from '@/lib/trendAnalysis';
 import { mergeTemplates } from '@/lib/templateUtils';
 import { calculateBilling } from '@/lib/billingCalculator';
@@ -29,7 +26,6 @@ import { useSubscription } from '@/contexts/SubscriptionContext';
 export default function QuickReportModal({ onClose, ownerId, initialSampleId }: QuickReportModalProps) {
     const { user, userProfile } = useAuth();
     const { isPremium } = useSubscription();
-    const router = useRouter();
 
     // Security: Only Laboratory and Owners can create reports
     const allowedRoles = ['owner', 'lab'];
@@ -77,12 +73,11 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
 
     useEffect(() => {
         if (!user || !ownerId) return;
+        let unsubStaff = () => {};
 
         const patientsRef = ref(database, `patients/${ownerId}`);
         const templatesRef = ref(database, `templates/${ownerId}`);
         const samplesRef = ref(database, `samples/${ownerId}`);
-        const doctorsRef = ref(database, `doctors/${ownerId}`);
-        const externalDoctorsRef = ref(database, `externalDoctors/${ownerId}`);
         const brandingRef = ref(database, `branding/${ownerId}`);
 
         const unsubscribes = [
@@ -107,8 +102,10 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             onValue(ref(database, `externalDoctors/${ownerId}`), (snapshot) => {
                 const ext: any[] = [];
                 snapshot.forEach(child => { ext.push({ id: child.key, ...child.val(), type: 'External' }); });
+                setExternalDoctors(ext);
                 
-                onValue(ref(database, `users/${ownerId}/auth/staff`), (staffSnap) => {
+                unsubStaff();
+                unsubStaff = onValue(ref(database, `users/${ownerId}/auth/staff`), (staffSnap) => {
                     const staff: any[] = [];
                     staffSnap.forEach(child => {
                         const val = child.val();
@@ -128,7 +125,10 @@ export default function QuickReportModal({ onClose, ownerId, initialSampleId }: 
             })
         ];
 
-        return () => unsubscribes.forEach(unsub => unsub());
+        return () => {
+            unsubscribes.forEach(unsub => unsub());
+            unsubStaff();
+        };
     }, [user, ownerId]);
 
     // Auto-load tests and Sync Doctor when sample is selected

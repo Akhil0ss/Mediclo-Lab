@@ -29,13 +29,47 @@ export default function AILabSuggestions({ dataOwnerId }: { dataOwnerId: string 
 
             // Check cache first
             const cacheKey = `ai_lab_tips_v4_${dataOwnerId}_${todayStr}`;
-            const cachedData = sessionStorage.getItem(cacheKey);
-            const isRefreshWindow = (hours === 13 && minutes < 30) || (hours === 16 && minutes < 30);
+            let cachedData: string | null = null;
+            try {
+                cachedData = localStorage.getItem(cacheKey) || sessionStorage.getItem(cacheKey);
+            } catch {
+                cachedData = null;
+            }
+            const refreshSlot = hours === 13 && minutes < 30 ? '13' : (hours === 16 && minutes < 30 ? '16' : '');
+            const refreshSlotKey = `ai_lab_tips_refresh_v4_${dataOwnerId}_${todayStr}`;
+            let lastRefreshSlot: string | null = null;
+            try {
+                lastRefreshSlot = localStorage.getItem(refreshSlotKey) || sessionStorage.getItem(refreshSlotKey);
+            } catch {
+                lastRefreshSlot = null;
+            }
+            const shouldRefresh = !!refreshSlot && lastRefreshSlot !== refreshSlot;
+            const cacheTips = (tips: { icon: string; text: string }[]) => {
+                const serialized = JSON.stringify(tips);
+                try {
+                    sessionStorage.setItem(cacheKey, serialized);
+                    if (refreshSlot) sessionStorage.setItem(refreshSlotKey, refreshSlot);
+                } catch {}
+                try {
+                    localStorage.setItem(cacheKey, serialized);
+                    if (refreshSlot) localStorage.setItem(refreshSlotKey, refreshSlot);
+                } catch {}
+            };
 
-            if (cachedData && !isRefreshWindow) {
-                setSuggestions(JSON.parse(cachedData));
-                setLoading(false);
-                return;
+            if (cachedData && !shouldRefresh) {
+                try {
+                    const cachedTips = JSON.parse(cachedData);
+                    if (Array.isArray(cachedTips)) {
+                        setSuggestions(cachedTips);
+                        setLoading(false);
+                        return;
+                    }
+                } catch {
+                    try {
+                        sessionStorage.removeItem(cacheKey);
+                        localStorage.removeItem(cacheKey);
+                    } catch {}
+                }
             }
 
             try {
@@ -61,7 +95,7 @@ export default function AILabSuggestions({ dataOwnerId }: { dataOwnerId: string 
 
                     if (finalTips.length > 0) {
                         setSuggestions(finalTips);
-                        sessionStorage.setItem(cacheKey, JSON.stringify(finalTips));
+                        cacheTips(finalTips);
                         setLoading(false);
                         return;
                     }
@@ -72,7 +106,7 @@ export default function AILabSuggestions({ dataOwnerId }: { dataOwnerId: string 
 
             // Fallback tips if API unavailable
             setSuggestions(FALLBACK_TIPS);
-            sessionStorage.setItem(cacheKey, JSON.stringify(FALLBACK_TIPS));
+            cacheTips(FALLBACK_TIPS);
             setLoading(false);
         };
 

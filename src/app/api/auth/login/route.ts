@@ -5,7 +5,31 @@ import { auth, database } from '@/lib/firebase';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/audit';
 import { signInAnonymously } from 'firebase/auth';
 import { verifyPassword } from '@/lib/userUtils';
-import { generateUsername } from '@/lib/userUtils';
+
+type OwnerAuthRecord = {
+    id: string;
+    data: {
+        auth: Record<string, unknown>;
+        profile: Record<string, unknown>;
+    };
+};
+
+type LoginUserRecord = {
+    id?: string;
+    username?: string;
+    passwordHash?: string;
+    name?: string;
+    role?: string;
+    isActive?: boolean;
+};
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object';
+}
+
+function isLoginUserRecord(value: unknown): value is LoginUserRecord {
+    return isObjectRecord(value);
+}
 
 export async function POST(request: NextRequest) {
     try {
@@ -22,8 +46,8 @@ export async function POST(request: NextRequest) {
             try {
                 await signInAnonymously(auth);
                 console.log('✅ Server authenticated anonymously for login query');
-            } catch (err: any) {
-                console.warn('⚠️ Server-side auth warning:', err.message);
+            } catch (err: unknown) {
+                console.warn('⚠️ Server-side auth warning:', err instanceof Error ? err.message : err);
                 // Continue anyway, as some rules might allow public access
             }
         }
@@ -46,15 +70,24 @@ export async function POST(request: NextRequest) {
         const prefixRef = ref(database, `prefixes/${prefix}`);
         const prefixSnap = await get(prefixRef);
         
-        let ownerId = prefixSnap.exists() ? prefixSnap.val() : null;
-        let usersToSearch = [];
+        const ownerId = prefixSnap.exists() ? prefixSnap.val() : null;
+        const usersToSearch: OwnerAuthRecord[] = [];
 
         if (ownerId && typeof ownerId === 'string') {
             console.log(`🎯 Prefix matched! Owner: ${ownerId}`);
-            const ownerRef = ref(database, `users/${ownerId}`);
-            const ownerSnap = await get(ownerRef);
-            if (ownerSnap.exists()) {
-                usersToSearch.push({ id: ownerId, data: ownerSnap.val() });
+            const [authSnap, profileSnap] = await Promise.all([
+                get(ref(database, `users/${ownerId}/auth`)),
+                get(ref(database, `users/${ownerId}/profile`))
+            ]);
+
+            if (authSnap.exists()) {
+                usersToSearch.push({
+                    id: ownerId,
+                    data: {
+                        auth: authSnap.val(),
+                        profile: profileSnap.exists() ? profileSnap.val() : {}
+                    }
+                });
             }
         }
 
@@ -63,27 +96,25 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Laboratory not found. Owner must login via Google first to index.' }, { status: 404 });
         }
 
-        // 4. Fetch Subscriptions
-        const subsSnap = await get(ref(database, 'subscriptions'));
-        const subscriptions = subsSnap.exists() ? subsSnap.val() : {};
-
-        // 5. Match User
+        // 4. Match User
         for (const item of usersToSearch) {
             const currentOwnerId = item.id;
             const userData = item.data;
             if (!userData || !userData.auth) continue;
 
             const authData = userData.auth;
+            const subSnap = await get(ref(database, `subscriptions/${currentOwnerId}`));
+            const subData = subSnap.exists() ? subSnap.val() : null;
+            const ownerLabName = String(userData?.profile?.labName || userData?.profile?.hospitalName || userData?.profile?.lab_name || 'My Laboratory');
             
             // Sub Status Helper
             const isOwnerSubActive = () => {
-                const subData = subscriptions[currentOwnerId];
                 const now = new Date();
                 if (subData && subData.isPremium) {
                     return new Date(subData.expiryDate) > now;
                 }
                 const createdAt = userData?.profile?.createdAt;
-                if (createdAt) {
+                if (typeof createdAt === 'string' || typeof createdAt === 'number') {
                     const trialDuration = 14 * 24 * 60 * 60 * 1000;
                     return (now.getTime() - new Date(createdAt).getTime()) < trialDuration;
                 }
@@ -96,8 +127,9 @@ export async function POST(request: NextRequest) {
             const primaryRoles = ['receptionist', 'lab', 'pharmacy'];
             for (const r of primaryRoles) {
                 const pUser = authData[r];
-                if (pUser && typeof pUser === 'object' && pUser.username === cleanUsername && verifyPassword(cleanPassword, pUser.passwordHash)) {
-                    if (pUser.isActive === false) {
+                if (isLoginUserRecord(pUser) && pUser.username === cleanUsername && pUser.passwordHash && verifyPassword(cleanPassword, pUser.passwordHash)) {
+                    const pUserIsActive = pUser.isActive !== false;
+                    if (!pUserIsActive) {
                         return NextResponse.json({ error: 'This account has been deactivated. Contact your lab owner.' }, { status: 403 });
                     }
                     if (!isSubActive && r !== 'receptionist') {
@@ -110,8 +142,9 @@ export async function POST(request: NextRequest) {
                         username: pUser.username,
                         name: pUser.name,
                         role: pUser.role || r,
-                        isActive: pUser.isActive !== false,
-                        ownerId: currentOwnerId
+                        isActive: pUserIsActive,
+                        ownerId: currentOwnerId,
+                        labName: ownerLabName
                     };
                     
                     const cookieStore = await cookies();
@@ -128,11 +161,11 @@ export async function POST(request: NextRequest) {
             }
 
             // Check staff collection
-            if (authData.staff && typeof authData.staff === 'object') {
-                for (const sId in authData.staff) {
-                    const staff = authData.staff[sId];
-                    if (staff && staff.username === cleanUsername && verifyPassword(cleanPassword, staff.passwordHash)) {
-                        if (staff.isActive === false) {
+            if (isObjectRecord(authData.staff)) {
+                for (const [sId, staff] of Object.entries(authData.staff)) {
+                    if (isLoginUserRecord(staff) && staff.username === cleanUsername && staff.passwordHash && verifyPassword(cleanPassword, staff.passwordHash)) {
+                        const staffIsActive = staff.isActive !== false;
+                        if (!staffIsActive) {
                             return NextResponse.json({ error: 'This account has been deactivated. Contact your lab owner.' }, { status: 403 });
                         }
                         if (!isSubActive) return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
@@ -143,8 +176,9 @@ export async function POST(request: NextRequest) {
                             username: staff.username,
                             name: staff.name,
                             role: staff.role,
-                            isActive: staff.isActive !== false,
-                            ownerId: currentOwnerId
+                            isActive: staffIsActive,
+                            ownerId: currentOwnerId,
+                            labName: ownerLabName
                         };
                         
                         const cookieStore = await cookies();
@@ -162,11 +196,11 @@ export async function POST(request: NextRequest) {
             }
 
             // Check doctors collection
-            if (authData.doctors && typeof authData.doctors === 'object') {
-                for (const dId in authData.doctors) {
-                    const doctor = authData.doctors[dId];
-                    if (doctor && doctor.username === cleanUsername && verifyPassword(cleanPassword, doctor.passwordHash)) {
-                        if (doctor.isActive === false) {
+            if (isObjectRecord(authData.doctors)) {
+                for (const [dId, doctor] of Object.entries(authData.doctors)) {
+                    if (isLoginUserRecord(doctor) && doctor.username === cleanUsername && doctor.passwordHash && verifyPassword(cleanPassword, doctor.passwordHash)) {
+                        const doctorIsActive = doctor.isActive !== false;
+                        if (!doctorIsActive) {
                             return NextResponse.json({ error: 'This account has been deactivated. Contact your lab owner.' }, { status: 403 });
                         }
                         if (!isSubActive) return NextResponse.json({ error: 'Subscription Expired. Please contact owner.' }, { status: 403 });
@@ -177,8 +211,9 @@ export async function POST(request: NextRequest) {
                             username: doctor.username,
                             name: doctor.name,
                             role: doctor.role || 'doctor',
-                            isActive: doctor.isActive !== false,
-                            ownerId: currentOwnerId
+                            isActive: doctorIsActive,
+                            ownerId: currentOwnerId,
+                            labName: ownerLabName
                         };
 
                         const cookieStore = await cookies();
@@ -197,12 +232,13 @@ export async function POST(request: NextRequest) {
         }
 
         return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
-    } catch (error: any) {
-        console.error('CRITICAL Auth API Error:', error.message);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error('CRITICAL Auth API Error:', message);
         return NextResponse.json({ 
             error: 'Authentication failed. Please try again later.', 
-            debug: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            debug: message,
+            stack: process.env.NODE_ENV === 'development' && error instanceof Error ? error.stack : undefined
         }, { status: 500 });
     }
 }

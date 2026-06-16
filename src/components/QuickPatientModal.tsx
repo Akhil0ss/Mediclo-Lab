@@ -37,6 +37,7 @@ export default function QuickPatientModal({ isOpen, onClose, ownerId }: QuickPat
 
     useEffect(() => {
         if (!isOpen || !ownerId) return;
+        let unsubStaff = () => {};
 
         // 1. Fetch External Doctors (Correct Path: externalDoctors)
         const extDocsRef = ref(database, `externalDoctors/${ownerId}`);
@@ -48,7 +49,8 @@ export default function QuickPatientModal({ isOpen, onClose, ownerId }: QuickPat
             
             // 2. Fetch Internal Staff (Doctors)
             const staffRef = ref(database, `users/${ownerId}/auth/staff`);
-            onValue(staffRef, (staffSnap) => {
+            unsubStaff();
+            unsubStaff = onValue(staffRef, (staffSnap) => {
                 const staff: any[] = [];
                 staffSnap.forEach(child => {
                     const val = child.val();
@@ -60,7 +62,10 @@ export default function QuickPatientModal({ isOpen, onClose, ownerId }: QuickPat
             });
         });
 
-        return () => unsubExt();
+        return () => {
+            unsubExt();
+            unsubStaff();
+        };
     }, [isOpen, ownerId]);
 
     const handleSubmit = async (e: React.FormEvent) => {

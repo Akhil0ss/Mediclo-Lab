@@ -46,7 +46,10 @@ export default function DashboardChat({ dataOwnerId, userRole, userName, channel
 
     // 1. Data Listener (Only setMessages, No side-effects)
     useEffect(() => {
-        if (!dataOwnerId) return;
+        if (!dataOwnerId || !isOpen) {
+            setMessages([]);
+            return;
+        }
 
         const currentChannel = isOwner ? activeChannel : channel;
         const chatRef = ref(database, `chats/v2/${dataOwnerId}/${currentChannel}`);
@@ -65,7 +68,7 @@ export default function DashboardChat({ dataOwnerId, userRole, userName, channel
         });
 
         return () => unsubscribe();
-    }, [dataOwnerId, isOwner, activeChannel, channel]);
+    }, [dataOwnerId, isOpen, isOwner, activeChannel, channel]);
 
     // 2. Mark as Read (Separate effect, triggered by messages or opening chat)
     useEffect(() => {

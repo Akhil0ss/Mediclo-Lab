@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ref, onValue, push, get, update } from 'firebase/database';
+import { ref, onValue, push, get, update, query, orderByChild, equalTo } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import Modal from './Modal';
 import { useToast } from '@/contexts/ToastContext';
@@ -172,12 +172,11 @@ export default function QuickOPDModal({ isOpen, onClose, ownerId, editData }: Qu
                 const today = new Date().toISOString().split('T')[0];
                 
                 // Get current count for token
-                const opdRef = ref(database, `opd/${ownerId}`);
+                const opdRef = query(ref(database, `opd/${ownerId}`), orderByChild('visitDate'), equalTo(today));
                 const snapshot = await get(opdRef);
                 let tokenCount = 1;
                 if (snapshot.exists()) {
-                    const visits = Object.values(snapshot.val());
-                    tokenCount = visits.filter((v: any) => v.visitDate === today).length + 1;
+                    tokenCount = snapshot.size + 1;
                 }
 
                 const visitDate = today;

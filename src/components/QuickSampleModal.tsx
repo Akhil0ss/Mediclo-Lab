@@ -86,14 +86,15 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
 
     useEffect(() => {
         if (!isOpen || !ownerId) return;
+        const unsubscribes: Array<() => void> = [];
 
         // 1. Fetch Patients
         const patientsRef = ref(database, `patients/${ownerId}`);
-        onValue(patientsRef, (snapshot) => {
+        unsubscribes.push(onValue(patientsRef, (snapshot) => {
             const data: any[] = [];
             snapshot.forEach(child => { data.push({ id: child.key, ...child.val() }); });
             setPatients(data.sort((a,b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()));
-        });
+        }));
 
         // 2. Fetch Templates
         const userTRef = ref(database, `templates/${ownerId}`);
@@ -108,12 +109,14 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
 
         // 3. Fetch Clinicians (Internal + External)
         const extDocsRef = ref(database, `externalDoctors/${ownerId}`);
-        onValue(extDocsRef, (snapshot) => {
+        let unsubStaff = () => {};
+        unsubscribes.push(onValue(extDocsRef, (snapshot) => {
             const ext: any[] = [];
             snapshot.forEach(child => { ext.push({ id: child.key, name: child.val().name, type: 'External' }); });
             
             const staffRef = ref(database, `users/${ownerId}/auth/staff`);
-            onValue(staffRef, (staffSnap) => {
+            unsubStaff();
+            unsubStaff = onValue(staffRef, (staffSnap) => {
                 const docsOnly: any[] = [];
                 staffSnap.forEach(child => {
                     const val = child.val();
@@ -121,7 +124,12 @@ export default function QuickSampleModal({ isOpen, onClose, ownerId, labName, in
                 });
                 setDoctors([...docsOnly, ...ext].sort((a,b) => a.name.localeCompare(b.name)));
             });
-        });
+        }));
+
+        return () => {
+            unsubscribes.forEach(unsub => unsub());
+            unsubStaff();
+        };
     }, [isOpen, ownerId]);
 
     // SECURE HYDRATION HOOK: Prevents Infinite Re-renders

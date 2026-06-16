@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ref, onValue, get, update, push, set } from 'firebase/database';
+import { ref, get, update, push, set, query, orderByChild, equalTo } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { calculateBilling, createBillingItem, formatCurrency } from '@/lib/billingCalculator';
 import { mergeTemplates, getPriceMap } from '@/lib/templateUtils';
@@ -42,9 +42,10 @@ export default function BillingModal({ isOpen, onClose, patient, ownerId, userId
         const templatesRef = ref(database, `templates/${ownerId}`);
         const commonTemplatesRef = ref(database, 'common_templates');
         const staffRef = ref(database, `users/${ownerId}/auth/staff`);
-        const opdRef = ref(database, `opd/${ownerId}`);
-        const reportsRef = ref(database, `reports/${ownerId}`);
-        const samplesRef = ref(database, `samples/${ownerId}`);
+        const opdRef = query(ref(database, `opd/${ownerId}`), orderByChild('patientId'), equalTo(patient?.id || ''));
+        const reportsRef = query(ref(database, `reports/${ownerId}`), orderByChild('patientId'), equalTo(patient?.id || ''));
+        const samplesByPatientRef = query(ref(database, `samples/${ownerId}`), orderByChild('patientId'), equalTo(patient?.id || ''));
+        const samplesByKeyRef = query(ref(database, `samples/${ownerId}`), orderByChild('patientKey'), equalTo(patient?.id || ''));
         const brandingRef = ref(database, `branding/${ownerId}`);
 
         const fetchData = async () => {
@@ -82,24 +83,29 @@ export default function BillingModal({ isOpen, onClose, patient, ownerId, userId
                 const opdSnap = await get(opdRef);
                 const opdList: any[] = [];
                 opdSnap.forEach(c => {
-                    const v = c.val();
-                    if (v.patientId === patient?.id) opdList.push({ id: c.key, ...v });
+                    opdList.push({ id: c.key, ...c.val() });
                 });
                 setOpdVisits(opdList);
 
                 const reportsSnap = await get(reportsRef);
                 const reportsList: any[] = [];
                 reportsSnap.forEach(c => {
-                    const r = c.val();
-                    if (r.patientId === patient?.id) reportsList.push({ id: c.key, ...r });
+                    reportsList.push({ id: c.key, ...c.val() });
                 });
                 setReports(reportsList);
 
-                const samplesSnap = await get(samplesRef);
+                const [samplesSnap, samplesByKeySnap] = await Promise.all([
+                    get(samplesByPatientRef),
+                    get(samplesByKeyRef)
+                ]);
+                const sampleIds = new Set<string>();
                 const samplesList: any[] = [];
-                samplesSnap.forEach(c => {
-                    const s = c.val();
-                    if (s.patientId === patient?.id || s.patientKey === patient?.id) samplesList.push({ id: c.key, ...s });
+                [samplesSnap, samplesByKeySnap].forEach(snapshot => {
+                    snapshot.forEach(c => {
+                        if (!c.key || sampleIds.has(c.key)) return;
+                        sampleIds.add(c.key);
+                        samplesList.push({ id: c.key, ...c.val() });
+                    });
                 });
                 setSamples(samplesList);
 

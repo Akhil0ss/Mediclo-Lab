@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ref, update, onValue, get } from 'firebase/database';
+import { ref, update, onValue, get, query, orderByChild, equalTo } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import Modal from './Modal';
 import { useToast } from '@/contexts/ToastContext';
@@ -9,7 +9,6 @@ import { generateRxId } from '@/lib/idGenerator';
 import { suggestDiagnosis, checkDrugInteractions, suggestLifestyleAdvice, getMedicineIntelligence } from '@/lib/groqAI';
 import { getBrandingData } from '@/lib/dataUtils';
 import { getArrivedReportsForVisit, filterCompletedReferrals } from '@/lib/clinicLogic';
-import { query, orderByChild, limitToLast } from 'firebase/database';
 
 interface RxModalProps {
     isOpen: boolean;
@@ -91,7 +90,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
     // Fetch Full Patient History (Past OPD Visits)
     useEffect(() => {
         if (!isOpen || !visit?.patientId || !ownerId) return;
-        const opdRef = ref(database, `opd/${ownerId}`);
+        const opdRef = query(ref(database, `opd/${ownerId}`), orderByChild('patientId'), equalTo(visit.patientId));
         const unsub = onValue(opdRef, (snap) => {
             const data: any[] = [];
             snap.forEach(c => {
@@ -119,7 +118,7 @@ export default function RxModal({ isOpen, onClose, visit, ownerId, doctorName, l
     // Fetch Patient Reports for clinical review
     useEffect(() => {
         if (!isOpen || !visit?.patientId || !ownerId) return;
-        const reportsRef = ref(database, `reports/${ownerId}`);
+        const reportsRef = query(ref(database, `reports/${ownerId}`), orderByChild('patientId'), equalTo(visit.patientId));
         const unsub = onValue(reportsRef, (snap) => {
             const reports: any[] = [];
             snap.forEach(c => {

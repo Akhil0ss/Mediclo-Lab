@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { ref, push, onValue, get, query, orderByChild, limitToLast, remove, update } from 'firebase/database';
+import { ref, push, onValue, get, query, orderByChild, equalTo, limitToLast, remove, update } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { getArrivedReportsForVisit } from '@/lib/clinicLogic';
 import { getDataOwnerId } from '@/lib/dataUtils';
@@ -79,6 +79,7 @@ export default function DashboardPage() {
     const [pharmacyDoctor, setPharmacyDoctor] = useState('all');
     const [doctorsList, setDoctorsList] = useState<any[]>([]);
     const [patientsMap, setPatientsMap] = useState<Record<string, any>>({});
+    const patientsMapRef = useRef<Record<string, any>>({});
 
     // 🏥 FETCH PATIENTS MAP (Source of Truth)
     useEffect(() => {
@@ -87,6 +88,7 @@ export default function DashboardPage() {
         const unsub = onValue(ptsRef, (snap) => {
             if (snap.exists()) {
                 const data = snap.val();
+                patientsMapRef.current = data;
                 setPatientsMap(data);
                 
                 // Count today's patients
@@ -96,6 +98,7 @@ export default function DashboardPage() {
                 });
                 setStats(prev => ({ ...prev, todayPatients: count }));
             } else {
+                patientsMapRef.current = {};
                 setPatientsMap({});
                 setStats(prev => ({ ...prev, todayPatients: 0 }));
             }
@@ -209,7 +212,7 @@ export default function DashboardPage() {
                 let visit = { id: c.key, ...val };
 
                 if (isPharmacy || isOwnerOrAdmin) {
-                    const pProfile = patientsMap[val.patientId] || {};
+                    const pProfile = patientsMapRef.current[val.patientId] || {};
                     visit = {
                         ...visit,
                         patientPhone: pProfile.mobile || val.patientPhone || val.mobile || '',
@@ -301,11 +304,9 @@ export default function DashboardPage() {
         // 5. Online Appointments
         let unsub6 = () => { };
         if (isOwnerOrAdmin) {
-            unsub6 = onValue(ref(database, 'appointments/' + dataOwnerId), (snap) => {
+            unsub6 = onValue(query(ref(database, 'appointments/' + dataOwnerId), orderByChild('status'), equalTo('pending')), (snap) => {
                 let count = 0;
-                snap.forEach(c => {
-                    if (c.val().status === 'pending') count++;
-                });
+                snap.forEach(() => { count++; });
                 setStats(p => ({ ...p, onlineAppts: count }));
             });
         }
@@ -317,7 +318,7 @@ export default function DashboardPage() {
             unsub5();
             unsub6();
         };
-    }, [user, dataOwnerId, today, isDoctor, userProfile, patientsMap, isOwnerOrAdmin]);
+    }, [user, dataOwnerId, today, isDoctor, isPharmacy, isOwnerOrAdmin, userProfile]);
 
     if (!user) return null;
 

@@ -2,7 +2,7 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { signOut } from 'firebase/auth';
 import { auth, database } from '@/lib/firebase';
-import { ref, onValue, update, query, limitToLast } from 'firebase/database';
+import { ref, onValue, update, query, limitToLast, orderByChild, equalTo } from 'firebase/database';
 
 import { useRouter, usePathname } from 'next/navigation';
 import { useState, useEffect, useMemo } from 'react';
@@ -20,7 +20,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     const router = useRouter();
     const pathname = usePathname();
     const [activeTab, setActiveTab] = useState('dashboard');
-    const [branding, setBranding] = useState<{ logoUrl?: string; tagline?: string }>({});
+    const [branding, setBranding] = useState<{ logoUrl?: string; tagline?: string; labName?: string }>({});
     const [notifications, setNotifications] = useState<any[]>([]);
     const [showNotifications, setShowNotifications] = useState(false);
     const [showAppointmentModal, setShowAppointmentModal] = useState(false);
@@ -47,6 +47,13 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         if (!user || !dataOwnerId) return;
 
+        try {
+            const cachedBranding = localStorage.getItem(`global_branding_${dataOwnerId}`);
+            setBranding(cachedBranding ? JSON.parse(cachedBranding) : {});
+        } catch {
+            setBranding({});
+        }
+
         // Branding
         const brandingRef = ref(database, 'branding/' + dataOwnerId);
         const unsubBranding = onValue(brandingRef, (snapshot: any) => {
@@ -55,6 +62,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 setBranding(bData);
                 try {
                     localStorage.setItem(`global_branding_${dataOwnerId}`, JSON.stringify(bData));
+                } catch(e) {}
+            } else {
+                setBranding({});
+                try {
+                    localStorage.removeItem(`global_branding_${dataOwnerId}`);
                 } catch(e) {}
             }
         });
@@ -72,11 +84,13 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         });
 
         // Pending Appointments Count
-        const apptRef = ref(database, 'appointments/' + dataOwnerId);
+        const apptRef = query(ref(database, 'appointments/' + dataOwnerId), orderByChild('status'), equalTo('pending'));
         const unsubAppt = onValue(apptRef, (snapshot) => {
             if (snapshot.exists()) {
-                const data = snapshot.val();
-                const pending = Object.values(data).filter((a: any) => a.status === 'pending').length;
+                let pending = 0;
+                snapshot.forEach(() => {
+                    pending++;
+                });
                 setPendingApptCount(pending);
             } else {
                 setPendingApptCount(0);

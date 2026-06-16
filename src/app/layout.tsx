@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 // Version: 1.0.1 - Fixed QuickReportModal crash
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
 
 export const metadata: Metadata = {
   title: "Spotnet MedOS - Lab Management System",
@@ -35,7 +29,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="MedOS Lab" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
       </head>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className="font-sans antialiased">
         <AuthProvider>
           <SubscriptionProvider>
             <ThemeProvider>

@@ -102,6 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const userId = localStorage.getItem('userId');
             const doctorId = localStorage.getItem('doctorId');
             const ownerId = localStorage.getItem('ownerId');
+            const labName = localStorage.getItem('labName') || undefined;
 
             console.log('🔍 AuthContext: Username login detected', {
                 role,
@@ -118,7 +119,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     name: userName || username,
                     email: '',
                     doctorId: doctorId || undefined,
-                    ownerId: ownerId || undefined
+                    ownerId: ownerId || undefined,
+                    labName,
+                    hospitalName: labName
                 });
 
                 // --- SECURE HTTP COOKIE VERIFICATION ---
@@ -139,12 +142,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         }
                     }).catch(console.error);
 
-                    // Run data cleanup in background (non-blocking)
-                    import('@/lib/dataCleanup').then(({ runDataCleanup }) => {
-                        const cleanupUserId = username || userId || '';
-                        const cleanupOwnerId = ownerId || userId || '';
-                        runDataCleanup(cleanupUserId, cleanupOwnerId).catch(console.error);
-                    });
+                    // Login must not mutate tenant data unless explicitly enabled.
+                    if (process.env.NEXT_PUBLIC_MEDOS_AUTO_CLEANUP_ON_LOGIN === 'true') {
+                        import('@/lib/dataCleanup').then(({ runDataCleanup }) => {
+                            const cleanupUserId = username || userId || '';
+                            const cleanupOwnerId = ownerId || userId || '';
+                            runDataCleanup(cleanupUserId, cleanupOwnerId).catch(console.error);
+                        });
+                    }
                 }
 
                 // --- INTERNAL USER SESSION MONITORING ---
