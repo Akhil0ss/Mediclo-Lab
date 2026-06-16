@@ -77,6 +77,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const authMethod = localStorage.getItem('authMethod');
 
         if (authMethod === 'username') {
+            if (typeof window !== 'undefined' && window.location.pathname.includes('/login')) {
+                [
+                    'authMethod',
+                    'userId',
+                    'userRole',
+                    'username',
+                    'userName',
+                    'doctorId',
+                    'ownerId',
+                    'sessionId',
+                    'labName'
+                ].forEach((key) => localStorage.removeItem(key));
+                setUser(null);
+                setUserProfile(null);
+                setLoading(false);
+                return;
+            }
+
             // Internal username/password authentication - fully independent from Firebase Auth
             const role = localStorage.getItem('userRole') as UserProfile['role'] | null;
             const username = localStorage.getItem('username');
@@ -107,7 +125,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Even if localStorage is manipulated, we strictly verify 
                 // against the HttpOnly secure cookie on the backend.
                 if (typeof window !== 'undefined') {
-                    fetch('/api/auth/session').then(async res => {
+                    fetch('/api/auth/session', {
+                        credentials: 'same-origin',
+                        cache: 'no-store'
+                    }).then(async res => {
                         if (!res.ok) {
                             console.error('🚨 Security Violation: LocalStorage exists but Secure Auth Cookie is missing or invalid.');
                             const { signOut } = await import('firebase/auth');

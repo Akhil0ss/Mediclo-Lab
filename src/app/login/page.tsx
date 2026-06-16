@@ -99,6 +99,7 @@ export default function LoginPage() {
                 // Use the server route so the secure session cookie is issued
                 const loginResponse = await fetch('/api/auth/login', {
                     method: 'POST',
+                    credentials: 'same-origin',
                     headers: {
                         'Content-Type': 'application/json'
                     },
